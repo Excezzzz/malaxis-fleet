@@ -1,0 +1,343 @@
+<template>
+  <div>
+    <div class="flex justify-between items-center mb-8">
+      <h1 class="text-4xl font-bold">🎭 Custom Roles & Permissions</h1>
+      <button @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
+        <Plus class="w-5 h-5" />
+        <span>Create New Role</span>
+      </button>
+    </div>
+
+    <!-- Existing Roles -->
+    <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div v-for="role in customRoles" :key="role.id" class="bg-gray-800 border border-gray-700 rounded-lg p-6 shadow">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-3">
+              <span class="w-5 h-5 rounded-full" :style="{ backgroundColor: role.color_hex }"></span>
+              <h3 class="text-xl font-bold text-white">{{ role.name }}</h3>
+            </div>
+            <div class="flex space-x-2">
+              <button @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit Role">
+                <Edit class="w-5 h-5" />
+              </button>
+              <button @click="deleteRole(role)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete Role">
+                <Trash2 class="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+        <div class="mb-3">
+          <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
+                :style="{ backgroundColor: role.color_hex, color: '#ffffff' }">
+            {{ role.name }}
+          </span>
+        </div>
+
+        <div class="space-y-2">
+          <p class="text-sm font-medium text-gray-400">Permissions:</p>
+          <div v-if="parsePermissions(role.permissions_json).length > 0" class="flex flex-wrap gap-2">
+            <span v-for="perm in parsePermissions(role.permissions_json)" :key="perm" class="px-2 py-1 bg-gray-700 text-xs text-gray-300 rounded">
+              {{ permLabel(perm) }}
+            </span>
+          </div>
+          <p v-else class="text-sm text-gray-500">No permissions assigned</p>
+        </div>
+
+        <div class="mt-4 text-xs text-gray-500">
+          Created: {{ new Date(role.created_at).toLocaleDateString() }}
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="text-center py-16">
+      <Shield class="w-16 h-16 text-gray-600 mx-auto mb-4" />
+      <p class="text-gray-500 text-lg">No custom roles created yet.</p>
+      <p class="text-gray-600 text-sm mt-2">Create a custom role to assign granular permissions to users.</p>
+    </div>
+
+    <!-- Create Role Modal -->
+    <div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-800 rounded-lg p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-2xl font-bold mb-6">Create New Custom Role</h2>
+
+        <form @submit.prevent="handleCreateRole">
+          <div class="space-y-6">
+            <div>
+              <label for="role_name" class="block text-sm font-medium text-gray-400 mb-1">Role Name</label>
+              <input v-model="newRole.name" type="text" id="role_name" placeholder="e.g. Co-Creator, Moderator"
+                     class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500" required>
+            </div>
+            <div>
+              <label for="role_color" class="block text-sm font-medium text-gray-400 mb-1">Role Color</label>
+              <div class="flex items-center space-x-3 mt-1">
+                <input v-model="newRole.color_hex" type="color" id="role_color_picker"
+                       class="h-10 w-16 rounded cursor-pointer bg-gray-700 border-gray-600">
+                <input v-model="newRole.color_hex" type="text" id="role_color_hex" placeholder="#FF5733"
+                       class="flex-1 bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-400 mb-2">Permissions</label>
+              <div class="space-y-3 bg-gray-700 rounded-lg p-4">
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" value="can_view_nodes"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">View Nodes</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" value="can_switch_vpn"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Switch VPN</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" value="can_edit_sub"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Edit Subscription URL</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" value="can_manage_users"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Manage Users</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" value="can_view_audit"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">View Audit Logs</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" value="can_export_backups"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Export Backups</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="mt-8 flex justify-end space-x-4">
+            <button type="button" @click="showCreateModal = false"
+                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+            <button type="submit"
+                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">Create Role</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Edit Role Modal -->
+    <div v-if="editingRole" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div class="bg-gray-800 rounded-lg p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-2xl font-bold mb-6">Edit Role: {{ editingRole.name }}</h2>
+
+        <form @submit.prevent="handleEditRole">
+          <div class="space-y-6">
+            <div>
+              <label for="edit_role_name" class="block text-sm font-medium text-gray-400 mb-1">Role Name</label>
+              <input v-model="editForm.name" type="text" id="edit_role_name"
+                     class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500" required>
+            </div>
+            <div>
+              <label for="edit_role_color" class="block text-sm font-medium text-gray-400 mb-1">Role Color</label>
+              <div class="flex items-center space-x-3 mt-1">
+                <input v-model="editForm.color_hex" type="color" id="edit_role_color_picker"
+                       class="h-10 w-16 rounded cursor-pointer bg-gray-700 border-gray-600">
+                <input v-model="editForm.color_hex" type="text" id="edit_role_color_hex" placeholder="#FF5733"
+                       class="flex-1 bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-400 mb-2">Permissions</label>
+              <div class="space-y-3 bg-gray-700 rounded-lg p-4">
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" value="can_view_nodes"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">View Nodes</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" value="can_switch_vpn"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Switch VPN</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" value="can_edit_sub"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Edit Subscription URL</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" value="can_manage_users"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Manage Users</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" value="can_view_audit"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">View Audit Logs</span>
+                </label>
+                <label class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" value="can_export_backups"
+                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-gray-300">Export Backups</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="mt-8 flex justify-end space-x-4">
+            <button type="button" @click="editingRole = null"
+                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+            <button type="submit"
+                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted } from 'vue';
+import { Plus, Trash2, Shield, Edit } from 'lucide-vue-next';
+
+const PERMISSION_LABELS = {
+  can_view_nodes: 'View Nodes',
+  can_switch_vpn: 'Switch VPN',
+  can_edit_sub: 'Edit Subscription URL',
+  can_manage_users: 'Manage Users',
+  can_view_audit: 'View Audit Logs',
+  can_export_backups: 'Export Backups',
+};
+
+const ALL_PERMS = ['can_view_nodes', 'can_switch_vpn', 'can_edit_sub', 'can_manage_users', 'can_view_audit', 'can_export_backups'];
+
+export default {
+  name: 'RoleManager',
+  components: { Plus, Trash2, Shield, Edit },
+  setup() {
+    const customRoles = ref([]);
+    const showCreateModal = ref(false);
+    const editingRole = ref(null);
+    const newRole = ref({ name: '', color_hex: '#FF5733', permissions: [] });
+    const editForm = ref({ name: '', color_hex: '#FF5733', permissions: [] });
+
+    const fetchCustomRoles = async () => {
+      try {
+        const response = await fetch('/api/web/roles');
+        if (response.ok) {
+          customRoles.value = await response.json();
+        }
+      } catch (e) {
+        console.error('Error fetching custom roles:', e);
+      }
+    };
+
+    const parsePermissions = (permissionsJson) => {
+      if (!permissionsJson) return [];
+      try {
+        const parsed = JSON.parse(permissionsJson);
+        if (Array.isArray(parsed)) return parsed;
+        if (typeof parsed === 'object' && parsed !== null) return ALL_PERMS.filter(p => parsed[p] === true);
+        return [];
+      } catch (e) {
+        return permissionsJson.split(',').filter(p => p.trim());
+      }
+    };
+
+    const permLabel = (perm) => PERMISSION_LABELS[perm] || perm;
+
+    const handleCreateRole = async () => {
+      try {
+        const roleData = {
+          name: newRole.value.name,
+          color_hex: newRole.value.color_hex,
+          permissions_json: JSON.stringify(newRole.value.permissions),
+        };
+        const response = await fetch('/api/web/roles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(roleData),
+        });
+        if (!response.ok) throw new Error('Failed to create role');
+
+        newRole.value = { name: '', color_hex: '#FF5733', permissions: [] };
+        showCreateModal.value = false;
+        await fetchCustomRoles();
+        alert('Custom role created successfully!');
+      } catch (error) {
+        console.error('Error creating role:', error);
+        alert('Could not create role.');
+      }
+    };
+
+    const openEditModal = (role) => {
+      editingRole.value = role;
+      editForm.value = {
+        name: role.name,
+        color_hex: role.color_hex,
+        permissions: [...parsePermissions(role.permissions_json)],
+      };
+    };
+
+    const handleEditRole = async () => {
+      if (!editingRole.value) return;
+      try {
+        const roleData = {
+          name: editForm.value.name,
+          color_hex: editForm.value.color_hex,
+          permissions_json: JSON.stringify(editForm.value.permissions),
+        };
+        const response = await fetch(`/api/web/roles/${editingRole.value.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(roleData),
+        });
+        if (!response.ok) throw new Error('Failed to update role');
+
+        editingRole.value = null;
+        await fetchCustomRoles();
+        alert('Custom role updated successfully!');
+      } catch (error) {
+        console.error('Error updating role:', error);
+        alert('Could not update role.');
+      }
+    };
+
+    const deleteRole = async (role) => {
+      if (!confirm(`Delete the role "${role.name}"? This action cannot be undone.`)) return;
+      try {
+        const response = await fetch(`/api/web/roles/${role.id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(errText || 'Failed to delete role');
+        }
+        await fetchCustomRoles();
+      } catch (error) {
+        console.error('Error deleting role:', error);
+        alert(error.message || 'Could not delete role.');
+      }
+    };
+
+    onMounted(() => {
+      fetchCustomRoles();
+    });
+
+    return {
+      customRoles,
+      showCreateModal,
+      editingRole,
+      newRole,
+      editForm,
+      parsePermissions,
+      permLabel,
+      handleCreateRole,
+      openEditModal,
+      handleEditRole,
+      deleteRole,
+    };
+  },
+};
+</script>
+
+<style>
+.bg-gray-850 {
+  background-color: #1f2937;
+}
+</style>

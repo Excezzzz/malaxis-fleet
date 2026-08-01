@@ -1,0 +1,63 @@
+services:
+  node-agent:
+    build: .
+    container_name: node-agent
+    restart: always
+    working_dir: /app
+    environment:
+      - SERVER_URL=https://api-fleet.malaxis.ru
+      - SECRET_TOKEN=${FLEET_SECRET:-malaxis_printer_secret_2026}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - .:/app
+    networks:
+      - fleet-net
+    healthcheck:
+      test: ["CMD-SHELL", "docker inspect -f '{{.State.Running}}' xray-node 2>/dev/null | grep -q true || docker inspect -f '{{.State.Running}}' singbox-node 2>/dev/null | grep -q true || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  xray-node:
+    image: ghcr.io/xtls/xray-core:latest
+    container_name: xray-node
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6357:6357/tcp"
+      - "127.0.0.1:6357:6357/udp"
+      - "127.0.0.1:6358:6358/tcp"
+    networks:
+      - fleet-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    volumes:
+      - ./configs/xray_config.json:/etc/xray/config.json
+    command: run -c /etc/xray/config.json
+
+  singbox-node:
+    image: ghcr.io/sagernet/sing-box:latest
+    container_name: singbox-node
+    restart: "no"
+    network_mode: "container:xray-node"
+    depends_on:
+      - xray-node
+    environment:
+      - ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true
+      - ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true
+      - ENABLE_DEPRECATED_LEGACY_DOMAIN_STRATEGY_OPTIONS=true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    volumes:
+      - ./configs/singbox_config.json:/etc/sing-box/config.json
+    command: -D /var/lib/sing-box -C /etc/sing-box/ run
+
+networks:
+  fleet-net:
+    driver: bridge

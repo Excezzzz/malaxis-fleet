@@ -1,0 +1,16 @@
+[Unit]
+Description=Malaxis Fleet Agent
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/fleet-agent
+ExecStart=/usr/bin/docker compose up -d --build
+ExecStop=/usr/bin/docker compose down
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
