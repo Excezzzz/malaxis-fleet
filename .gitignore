@@ -1,0 +1,13 @@
+.env
+*.db
+*.db-journal
+data/
+master_server
+*.exe
+agent_state.json
+xray_config.json
+singbox_config.json
+node_modules/
+dist/
+__pycache__/
+*.pyc

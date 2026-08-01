@@ -1,0 +1,257 @@
+package api
+
+import (
+	"embed"
+	"encoding/json"
+	"io/fs"
+	"log"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+
+	"malaxis-fleet/internal/audit"
+	"malaxis-fleet/internal/auth"
+	"malaxis-fleet/internal/backup"
+	"malaxis-fleet/internal/config"
+	"malaxis-fleet/internal/repository"
+
+	"github.com/gorilla/mux"
+	"golang.org/x/time/rate"
+)
+
+// BotManager defines the interface for bot lifecycle operations.
+type BotManager interface {
+	Reboot() error
+	SendAdminMessage(text string)
+}
+
+// API holds the dependencies for the API handlers.
+type API struct {
+	repo         repository.Repository
+	config       *config.Config
+	auditLogger  *audit.Logger
+	backupEngine *backup.Engine
+	visitors     map[string]*rate.Limiter
+	mu           sync.Mutex
+	botManager   BotManager
+}
+
+//go:embed web/dist
+var webFS embed.FS
+
+//go:embed deploy
+var deployFS embed.FS
+
+// RegisterRoutes sets up all the API routes for the application.
+func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.Config, botMgr BotManager) {
+	api := &API{
+		repo:         repo,
+		config:       cfg,
+		auditLogger:  audit.NewLogger(repo),
+		backupEngine: backup.NewEngine(cfg),
+		visitors:     make(map[string]*rate.Limiter),
+		botManager:   botMgr,
+	}
+
+	// Subdomain routing
+	dashboardRouter := router.Host(stripPort(cfg.DashboardDomain)).Subrouter()
+	apiRouter := router.Host(stripPort(cfg.ApiDomain)).Subrouter()
+	joinRouter := router.Host(stripPort(cfg.JoinDomain)).Subrouter()
+	subRouter := router.Host(stripPort(cfg.SubDomain)).Subrouter()
+
+	// --- API Routes (api-fleet.malaxis.ru) ---
+	agentAPI := apiRouter.PathPrefix("/api").Subrouter()
+	agentAPI.Handle("/poll", api.AgentTokenMiddleware(http.HandlerFunc(api.PollHandler))).Methods("POST")
+	agentAPI.Handle("/report", api.AgentTokenMiddleware(http.HandlerFunc(api.ReportHandler))).Methods("POST")
+	agentAPI.HandleFunc("/health", api.HealthHandler).Methods("GET")
+	agentAPI.HandleFunc("/agent/latest", api.serveNodeAgent).Methods("GET")
+
+	// Subscription validation endpoint for client onboarding
+	agentAPI.HandleFunc("/subscription/validate", api.ValidateSubscriptionHandler).Methods("POST")
+
+	// Client API endpoints (password change, own nodes)
+	clientAPI := apiRouter.PathPrefix("/api/client").Subrouter()
+	clientAPI.Use(auth.Middleware(cfg))
+	clientAPI.Use(auth.RequireRole(repo, "client", "admin", "owner"))
+	clientAPI.HandleFunc("/nodes", api.GetOwnNodesHandler).Methods("GET")
+	clientAPI.HandleFunc("/password", api.UpdateOwnPasswordHandler).Methods("POST")
+
+	// --- Dashboard Routes (dash-fleet.malaxis.ru) ---
+	webAPIRouter := dashboardRouter.PathPrefix("/api").Subrouter()
+
+	// Auth routes (login is the only heavily rate-limited route)
+	authRoutes := webAPIRouter.PathPrefix("/auth").Subrouter()
+	authRoutes.Handle("/login", api.RateLimit(5.0/60.0, 1, http.HandlerFunc(api.LoginHandler))).Methods("POST")
+	authRoutes.HandleFunc("/logout", api.LogoutHandler).Methods("POST")
+	authRoutes.HandleFunc("/me", api.MeHandler).Methods("GET")
+
+	// Web UI routes - Vue 3 frontend compatible endpoints
+	// All /api/web/* routes are authenticated + RBAC enforced
+
+	// GET /api/web/devices and /api/web/nodes - list all nodes (permission can_view_nodes, admin/owner bypass)
+	webAPIRouter.Handle("/web/devices", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_nodes")(http.HandlerFunc(api.GetNodesHandler)))).Methods("GET")
+	webAPIRouter.Handle("/web/nodes", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_nodes")(http.HandlerFunc(api.GetNodesHandler)))).Methods("GET")
+
+	// PUT /api/web/nodes/{id}/sub - update node subscription URL (permission can_edit_sub)
+	webAPIRouter.Handle("/web/nodes/{id}/sub", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateNodeSubHandler)))).Methods("PUT")
+
+	// POST /api/web/devices/mass-update-sub - mass update subscription URL for all nodes (permission can_edit_sub)
+	webAPIRouter.Handle("/web/devices/mass-update-sub", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateSubHandler)))).Methods("POST")
+
+	// DELETE /api/web/devices/{id} - delete a node (permission can_edit_sub)
+	webAPIRouter.Handle("/web/devices/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.DeleteNodeHandler)))).Methods("DELETE")
+
+	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_url (permission can_edit_sub)
+	webAPIRouter.Handle("/web/devices/mass-update-domain", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateDomainHandler)))).Methods("POST")
+
+	// GET /api/web/roles - list all roles (permission can_manage_users)
+	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.GetRolesHandler)))).Methods("GET")
+
+	// POST /api/web/roles - create custom role (permission can_manage_users)
+	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.CreateCustomRoleHandler)))).Methods("POST")
+
+	// PUT /api/web/roles/{id} - update custom role (permission can_manage_users)
+	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.UpdateCustomRoleHandler)))).Methods("PUT")
+
+	// DELETE /api/web/roles/{id} - delete custom role (Owner only)
+	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.DeleteCustomRoleHandler)))).Methods("DELETE")
+
+	// GET /api/web/users - list users (permission can_manage_users)
+	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.GetUsersHandler)))).Methods("GET")
+
+	// POST /api/web/users - create user (Owner only)
+	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.CreateUserHandler)))).Methods("POST")
+
+	// PUT /api/web/users/{id} - update user (Owner only)
+	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateUserHandler)))).Methods("PUT")
+
+	// DELETE /api/web/users/{id} - delete user (Owner only)
+	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.DeleteUserHandler)))).Methods("DELETE")
+
+	// GET /api/web/audit - audit logs (permission can_view_audit)
+	webAPIRouter.Handle("/web/audit", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_audit")(http.HandlerFunc(api.GetAuditLogsHandler)))).Methods("GET")
+
+	// GET /api/web/backup/download - backup download (permission can_export_backups)
+	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_export_backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
+
+	// POST /api/web/devices/{id}/command - send a command to a specific node (permission can_switch_vpn)
+	webAPIRouter.Handle("/web/devices/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
+
+	// Admin/Owner routes (alternative paths)
+	adminAPIRoutes := webAPIRouter.PathPrefix("/admin").Subrouter()
+	adminAPIRoutes.Use(auth.Middleware(cfg))
+	adminAPIRoutes.Use(auth.RequireAdminOrOwner(repo))
+	adminAPIRoutes.HandleFunc("/nodes", api.GetNodesHandler).Methods("GET")
+	adminAPIRoutes.HandleFunc("/nodes/{id}", api.UpdateNodeHandler).Methods("PUT")
+	adminAPIRoutes.HandleFunc("/nodes/{id}", api.DeleteNodeHandler).Methods("DELETE")
+	adminAPIRoutes.HandleFunc("/nodes/{id}/assign/{userId}", api.AssignNodeToUserHandler).Methods("POST")
+	adminAPIRoutes.HandleFunc("/users", api.GetUsersHandler).Methods("GET")
+	adminAPIRoutes.HandleFunc("/users/{id}/reset-password", api.ResetUserPasswordHandler).Methods("POST")
+
+	// Owner-only routes
+	ownerAPIRoutes := webAPIRouter.PathPrefix("/owner").Subrouter()
+	ownerAPIRoutes.Use(auth.Middleware(cfg))
+	ownerAPIRoutes.Use(auth.RequireOwner(repo))
+	ownerAPIRoutes.HandleFunc("/users", api.CreateUserHandler).Methods("POST")
+	ownerAPIRoutes.HandleFunc("/users/{id}", api.DeleteUserHandler).Methods("DELETE")
+	ownerAPIRoutes.HandleFunc("/users/{id}", api.UpdateUserHandler).Methods("PUT")
+	ownerAPIRoutes.HandleFunc("/settings/bot", api.UpdateBotSettingsHandler).Methods("POST")
+	ownerAPIRoutes.HandleFunc("/backup/download", api.DownloadBackupHandler).Methods("GET")
+	ownerAPIRoutes.HandleFunc("/custom-roles", api.CreateCustomRoleHandler).Methods("POST")
+	ownerAPIRoutes.HandleFunc("/custom-roles", api.GetCustomRolesHandler).Methods("GET")
+	ownerAPIRoutes.HandleFunc("/custom-roles/{id}", api.DeleteCustomRoleHandler).Methods("DELETE")
+
+	// Web UI settings (Owner only)
+	webAPIRouter.Handle("/web/settings", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetSettingsHandler)))).Methods("GET")
+	settingsWeb := webAPIRouter.PathPrefix("/settings").Subrouter()
+	settingsWeb.Use(auth.Middleware(cfg))
+	settingsWeb.Use(auth.RequireOwner(repo))
+	settingsWeb.HandleFunc("/bot", api.GetBotSettingsHandler).Methods("GET")
+
+	// Bot settings update + test from web UI
+	webAPIRouter.Handle("/web/settings/bot", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateBotSettingsHandler)))).Methods("PUT")
+	webAPIRouter.Handle("/web/settings/bot/test", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.TestTelegramBotHandler)))).Methods("POST")
+
+	// Serve the embedded Vue.js dashboard (skip in Low-RAM mode)
+	if !cfg.LowRAMMode {
+		distFS, err := fs.Sub(webFS, "web/dist")
+		if err != nil {
+			log.Printf("Warning: web/dist not found, dashboard will not be served: %v", err)
+		} else {
+			dashboardRouter.PathPrefix("/").Handler(http.FileServer(http.FS(distFS)))
+		}
+	} else {
+		log.Println("Low-RAM mode: Web UI rendering disabled. API endpoints remain active.")
+		// In low-RAM mode, serve a minimal landing page
+		dashboardRouter.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "running",
+				"mode":    "low-ram",
+				"message": "Web dashboard disabled in Low-RAM mode. Use Telegram Bot or API.",
+			})
+		})
+	}
+
+	// --- Public Bootstrap Routes ---
+	joinRouter.HandleFunc("/", api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript")).Methods("GET")
+	joinRouter.HandleFunc("/fleet-cli", api.serveFile(deployFS, "deploy/fleet-cli.sh", "application/x-shellscript")).Methods("GET")
+	joinRouter.HandleFunc("/fleet-agent.service", api.serveFile(deployFS, "deploy/fleet-agent.service", "text/plain")).Methods("GET")
+	subRouter.HandleFunc("/docker-compose.yml", api.serveDockerCompose).Methods("GET")
+	subRouter.HandleFunc("/Dockerfile.client", api.serveFile(deployFS, "deploy/Dockerfile.client", "text/plain")).Methods("GET")
+	subRouter.HandleFunc("/requirements.txt", api.serveFile(deployFS, "deploy/requirements.txt", "text/plain")).Methods("GET")
+	subRouter.HandleFunc("/entrypoint.sh", api.serveFile(deployFS, "deploy/entrypoint.sh", "application/x-shellscript")).Methods("GET")
+	subRouter.HandleFunc("/node_agent.py", api.serveNodeAgent).Methods("GET")
+	subRouter.HandleFunc("/configs/xray_config.json", api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json")).Methods("GET")
+	subRouter.HandleFunc("/configs/singbox_config.json", api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json")).Methods("GET")
+}
+
+// serveFile is a helper to serve an embedded file.
+func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fileBytes, err := efs.ReadFile(path)
+		if err != nil {
+			http.Error(w, "Internal Server Error: File not found", http.StatusInternalServerError)
+			log.Printf("Error reading embedded file %s: %v", path, err)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Write(fileBytes)
+	}
+}
+
+// RateLimit returns middleware with configurable requests per duration.
+// Uses sliding window via golang.org/x/time/rate.
+func (a *API) RateLimit(rps float64, burst int, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+
+		a.mu.Lock()
+		limiter, exists := a.visitors["rl:"+ip]
+		if !exists {
+			limiter = rate.NewLimiter(rate.Limit(rps), burst)
+			a.visitors["rl:"+ip] = limiter
+		}
+		a.mu.Unlock()
+
+		if !limiter.Allow() {
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// stripPort removes the port from a domain if it exists (e.g. localhost:8080 -> localhost)
+func stripPort(domain string) string {
+	if strings.Contains(domain, ":") {
+		return strings.Split(domain, ":")[0]
+	}
+	return domain
+}

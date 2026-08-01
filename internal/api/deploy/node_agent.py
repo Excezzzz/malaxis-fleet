@@ -1,0 +1,1722 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+import base64
+import errno
+import hashlib
+import hmac
+import json
+import os
+import platform
+import random
+import re
+import requests
+import signal
+import socket
+import subprocess
+import sys
+import time
+import traceback
+import uuid
+import urllib.error
+import urllib.parse
+import urllib.request
+from typing import Optional, Tuple, Union
+
+SERVER_URL = os.environ.get("SERVER_URL", "https://api-fleet.malaxis.ru")
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
+POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
+HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
+
+CONFIG_DIR = "/app/configs"
+NODE_ID_FILE = os.path.join(CONFIG_DIR, "node_id.txt")
+
+def _load_node_id() -> str:
+    if os.path.exists(NODE_ID_FILE):
+        with open(NODE_ID_FILE) as f:
+            val = f.read().strip()
+            if val:
+                return val
+    val = uuid.uuid4().hex[:12]
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(NODE_ID_FILE, "w") as f:
+        f.write(val)
+    return val
+
+NODE_ID = _load_node_id()
+
+POLL_URL = f"{SERVER_URL}/api/poll"
+REPORT_URL = f"{SERVER_URL}/api/report"
+CONFIG_DIR = "/app/configs"
+XRAY_CONFIG = os.path.join(CONFIG_DIR, "xray_config.json")
+SINGBOX_CONFIG = os.path.join(CONFIG_DIR, "singbox_config.json")
+SUBCACHE = os.path.join(CONFIG_DIR, "subscription_cache.json")
+AGENT_STATE = "/app/configs/agent_state.json"
+ROLLBACK_DIR = os.path.join(CONFIG_DIR, ".rollback")
+
+DEFAULT_XRAY_CONFIG = {
+    "log": {"loglevel": "warning"},
+    "dns": {
+        "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
+        "queryStrategy": "UseIPv4",
+    },
+    "inbounds": [
+        {
+            "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
+            "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
+            "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+            "tag": "socks-in",
+            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+        },
+        {
+            "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
+            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+        },
+    ],
+    "outbounds": [{"protocol": "freedom", "tag": "direct"}],
+    "routing": {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+            {"type": "field", "port": 53, "network": "udp", "outboundTag": "direct"},
+        ],
+    },
+}
+DEFAULT_SINGBOX_CONFIG = {
+    "dns": {
+        "servers": [
+            {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "prefer_ipv4"},
+            {"tag": "block", "address": "rcode://success"},
+        ],
+        "final": "resolver",
+        "independent_cache": True,
+    },
+    "inbounds": [
+        {"type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357},
+        {"type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358},
+    ],
+    "outbounds": [{"type": "direct", "tag": "direct"}],
+    "route": {"final": "direct", "auto_detect_interface": True},
+    "experimental": {"cache_file": {"enabled": True}},
+}
+
+
+def log(msg: str) -> None:
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [agent] {msg}", flush=True)
+
+
+# --- Config Persistence ---
+
+def ensure_default_configs():
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    for path, default in [(XRAY_CONFIG, DEFAULT_XRAY_CONFIG), (SINGBOX_CONFIG, DEFAULT_SINGBOX_CONFIG)]:
+        if not os.path.exists(path) or os.path.getsize(path) == 0:
+            with open(path, "w") as f:
+                json.dump(default, f, indent=2)
+            log(f"Created default {os.path.basename(path)}")
+    state = load_state()
+    engine = state.get("active_engine", "xray")
+    if engine == "singbox":
+        log("Starting singbox-node (xray dummy config for network)...")
+        _ensure_xray_running()
+        os.system("docker start singbox-node 2>/dev/null || docker restart singbox-node 2>/dev/null || true")
+    else:
+        log("Stopping singbox-node to free ports 6357/6358...")
+        os.system("docker stop singbox-node 2>/dev/null")
+        os.system("docker start xray-node 2>/dev/null || true")
+
+
+def load_json(path: str) -> Union[dict, list]:
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {} if path.endswith(".json") else []
+
+
+def save_json(path: str, data: Union[dict, list]) -> None:
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def load_state() -> dict:
+    d = load_json(AGENT_STATE)
+    if not isinstance(d, dict):
+        d = {}
+    return d
+
+load_agent_state = load_state
+
+
+def save_state(state: dict) -> None:
+    save_json(AGENT_STATE, state)
+
+
+def load_cache() -> list:
+    c = load_json(SUBCACHE)
+    if not isinstance(c, list):
+        c = []
+    return c
+
+
+def save_cache(servers: list) -> None:
+    normalized = []
+    for idx, s in enumerate(servers):
+        tag = s.get("tag", "")
+        proto = s.get("type", "")
+        name = tag or f"Server {idx + 1} ({proto.upper()})"
+        normalized.append({
+            "id": idx + 1,
+            "name": name,
+            "proto": proto,
+            "engine": s.get("engine", "xray"),
+            "host": s.get("hostname", ""),
+            "port": s.get("port", 0),
+            "url": s.get("full_link", ""),
+        })
+    save_json(SUBCACHE, normalized)
+    log(f"Saved {len(normalized)} servers to cache")
+
+
+def save_rollback(engine: str) -> None:
+    os.makedirs(ROLLBACK_DIR, exist_ok=True)
+    src = XRAY_CONFIG if engine == "xray" else SINGBOX_CONFIG
+    dst = os.path.join(ROLLBACK_DIR, f"{engine}_config.json")
+    if os.path.exists(src):
+        import shutil
+        shutil.copy2(src, dst)
+        log(f"Saved rollback for {engine}")
+
+
+def restore_rollback(engine: str) -> bool:
+    dst = XRAY_CONFIG if engine == "xray" else SINGBOX_CONFIG
+    src = os.path.join(ROLLBACK_DIR, f"{engine}_config.json")
+    if os.path.exists(src):
+        import shutil
+        shutil.copy2(src, dst)
+        log(f"Restored rollback for {engine}")
+        return True
+    return False
+
+
+def clear_rollback(engine: str) -> None:
+    path = os.path.join(ROLLBACK_DIR, f"{engine}_config.json")
+    if os.path.exists(path):
+        os.remove(path)
+
+
+# --- HTTP ---
+
+def _sign(body: bytes, ts: int) -> str:
+    mac = hmac.new(SECRET_TOKEN.encode(), str(ts).encode() + body, hashlib.sha256)
+    return mac.hexdigest()
+
+
+def _request(method: str, url: str, payload: dict) -> Tuple[int, Union[dict, str]]:
+    body = json.dumps(payload).encode()
+    ts = int(time.time())
+    headers = {
+        "X-Fleet-Timestamp": str(ts),
+        "X-Fleet-Signature": _sign(body, ts),
+        "Content-Type": "application/json",
+    }
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read()
+            if resp.status == 200:
+                try:
+                    return resp.status, json.loads(raw)
+                except json.JSONDecodeError:
+                    return resp.status, raw.decode()
+            return resp.status, raw.decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode(errors="replace")
+    except urllib.error.URLError as e:
+        return 0, str(e)
+
+def poll():
+    status, data = _request("POST", POLL_URL, {
+        "id": NODE_ID,
+        "hostname": platform.node(),
+        "ip_lan": _lan_ip(),
+    })
+    if status == 200 and isinstance(data, dict):
+        if "command" in data:
+            log(f"Command: {data['command']}")
+            return data
+        if data.get("status") == "ok":
+            return None
+    log(f"Poll status={status}")
+    return None
+
+
+def report(**kw) -> None:
+    payload = {"id": NODE_ID}
+    payload.update(kw)
+    code, _ = _request("POST", REPORT_URL, payload)
+    if code != 200:
+        log(f"Report returned {code}")
+
+
+def _lan_ip() -> str:
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.5)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return ""
+
+
+# --- Subscription Parsing ---
+
+SUB_USER_AGENT = "v2rayN/6.23 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+def parse_subscription(sub_url: str) -> list:
+    servers = []
+    try:
+        resp = requests.get(sub_url, headers={"User-Agent": SUB_USER_AGENT}, verify=False, timeout=15)
+        log(f"Sub response status: {resp.status_code}, length: {len(resp.text)}")
+        if resp.status_code != 200:
+            log(f"Subscription fetch returned {resp.status_code}")
+            return servers
+        raw_text = resp.text
+    except Exception as e:
+        log(f"Subscription fetch failed for {sub_url}: {e}")
+        log(traceback.format_exc())
+        return servers
+
+    stripped = raw_text.strip()
+    lines = []
+    try:
+        padded = stripped + "=" * (-len(stripped) % 4)
+        decoded = base64.b64decode(padded).decode("utf-8", errors="ignore")
+        lines = decoded.splitlines()
+    except Exception:
+        lines = stripped.splitlines()
+
+    for line in lines:
+        line = line.strip()
+        if not line or "://" not in line:
+            continue
+        try:
+            srv = _parse_link(line)
+            if srv:
+                servers.append(srv)
+        except Exception as e:
+            log(f"Parse error: {e}")
+            continue
+
+    log(f"Parsed {len(servers)} servers from subscription")
+    return servers
+
+
+def _parse_link(link: str) -> Optional[dict]:
+    scheme, _, rest = link.partition("://")
+    if not scheme or not rest:
+        return None
+
+    tag = "Server"
+    if "#" in link:
+        tag = urllib.parse.unquote(link.split("#", 1)[1].strip())
+
+    info = {
+        "full_link": link,
+        "type": scheme,
+        "tag": tag,
+        "pretty_name": tag,
+    }
+
+    if scheme in ("vless", "vmess"):
+        _parse_vlike(link, info)
+        info["protocol"] = scheme
+        if scheme == "vless" and info.get("network", "tcp") == "xhttp":
+            info["engine"] = "xray"
+        else:
+            info["engine"] = "singbox"
+    elif scheme == "trojan":
+        info["engine"] = "singbox"
+        info["protocol"] = "trojan"
+        _parse_trojan(link, info)
+    elif scheme == "ss":
+        info["engine"] = "singbox"
+        info["protocol"] = "ss"
+        _parse_ss(link, info)
+    elif scheme in ("hysteria2", "hy2"):
+        info["engine"] = "singbox"
+        info["protocol"] = "hysteria2"
+        _parse_hysteria2(link, info)
+    elif scheme == "tuic":
+        info["engine"] = "singbox"
+        info["protocol"] = "tuic"
+        _parse_tuic(link, info)
+    elif scheme == "wireguard":
+        info["engine"] = "singbox"
+        info["protocol"] = "wireguard"
+        _parse_wireguard(link, info)
+    else:
+        info["engine"] = "xray"
+
+    parsed = urllib.parse.urlparse(link)
+    if not info.get("hostname"):
+        info["hostname"] = parsed.hostname or ""
+    if not info.get("port"):
+        info["port"] = str(parsed.port or 0)
+
+    return info
+
+
+def _get_param(query: str, key: str, default: str = "") -> str:
+    for part in query.split("&"):
+        if "=" in part:
+            k, v = part.split("=", 1)
+            if k == key:
+                return urllib.parse.unquote(v)
+    return default
+
+
+def _parse_vlike(link: str, info: dict) -> None:
+    parsed = urllib.parse.urlparse(link)
+    info["hostname"] = parsed.hostname or ""
+    info["port"] = parsed.port or 0
+    info["uuid"] = parsed.username or ""
+
+    if parsed.query:
+        for k in ["flow", "encryption", "security", "fp", "pbk", "sid", "sni", "spx", "headerType", "path", "host", "alpn", "allowInsecure", "mode"]:
+            v = _get_param(parsed.query, k)
+            if v:
+                info[k] = v
+        if not info.get("sni") and info.get("host"):
+            info["sni"] = info["host"]
+        transport = _get_param(parsed.query, "type")
+        if transport:
+            info["network"] = transport
+    if not info.get("encryption"):
+        info["encryption"] = "none"
+    if not info.get("security"):
+        info["security"] = "reality"
+    if not info.get("network"):
+        info["network"] = "tcp"
+
+
+def _parse_trojan(link: str, info: dict) -> None:
+    parsed = urllib.parse.urlparse(link)
+    info["hostname"] = parsed.hostname or ""
+    info["port"] = parsed.port or 0
+    info["password"] = parsed.username or ""
+    if parsed.query:
+        for k in ["sni", "peer", "security", "path", "host", "alpn", "allowInsecure"]:
+            v = _get_param(parsed.query, k)
+            if v:
+                info[k] = v
+        transport = _get_param(parsed.query, "type")
+        if transport:
+            info["network"] = transport
+    if not info.get("security"):
+        info["security"] = "tls"
+    if not info.get("network"):
+        info["network"] = "tcp"
+
+
+def _parse_ss(link: str, info: dict) -> None:
+    parsed = urllib.parse.urlparse(link)
+    raw = parsed.username or ""
+    try:
+        decoded = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode(errors="replace")
+        if ":" in decoded:
+            info["method"], info["password"] = decoded.split(":", 1)
+    except Exception:
+        info["password"] = raw
+        info["method"] = "chacha20-ietf-poly1305"
+    if parsed.hostname:
+        info["hostname"] = parsed.hostname
+    info["port"] = parsed.port or 0
+    if parsed.query:
+        for k in ["plugin", "obfs", "path"]:
+            v = _get_param(parsed.query, k)
+            if v:
+                info[k] = v
+
+
+def _parse_hysteria2(link: str, info: dict) -> None:
+    parsed = urllib.parse.urlparse(link)
+    info["hostname"] = parsed.hostname or ""
+    info["port"] = parsed.port or 0
+    info["password"] = parsed.username or ""
+    if parsed.query:
+        for k in ["sni", "insecure", "obfs", "obfs-password", "pinSHA256"]:
+            v = _get_param(parsed.query, k)
+            if v:
+                info[k] = v
+    info["insecure"] = info.get("insecure", "0") == "1"
+
+
+def _parse_tuic(link: str, info: dict) -> None:
+    parsed = urllib.parse.urlparse(link)
+    info["hostname"] = parsed.hostname or ""
+    info["port"] = parsed.port or 0
+    info["uuid"] = parsed.username or ""
+    info["password"] = parsed.password or ""
+    if parsed.query:
+        for k in ["sni", "congestion_control", "udp_relay_mode", "alpn", "allowInsecure"]:
+            v = _get_param(parsed.query, k)
+            if v:
+                info[k] = v
+    if not info.get("congestion_control"):
+        info["congestion_control"] = "bbr"
+    if not info.get("udp_relay_mode"):
+        info["udp_relay_mode"] = "native"
+
+
+def _parse_wireguard(link: str, info: dict) -> None:
+    parsed = urllib.parse.urlparse(link)
+    info["hostname"] = parsed.hostname or ""
+    info["port"] = parsed.port or 0
+    if parsed.query:
+        for k in ["private_key", "public_key", "endpoint", "mtu", "reserved", "allowed_ips"]:
+            v = _get_param(parsed.query, k)
+            if v:
+                info[k] = v
+    if not info.get("private_key"):
+        info["private_key"] = parsed.username or ""
+    if not info.get("public_key"):
+        info["public_key"] = parsed.password or ""
+    if not info.get("endpoint"):
+        info["endpoint"] = parsed.hostname or ""
+        if parsed.port:
+            info["endpoint"] += f":{parsed.port}"
+    if info.get("mtu"):
+        try:
+            info["mtu"] = int(info["mtu"])
+        except (ValueError, TypeError):
+            info["mtu"] = 1420
+    if info.get("reserved"):
+        try:
+            info["reserved"] = [int(x) for x in info["reserved"].split(",")]
+        except Exception:
+            pass
+
+
+# --- Config Generation ---
+
+def build_xray_config(servers: list, active_idx: int = 0) -> dict:
+    cfg = {
+        "log": {"loglevel": "warning"},
+        "dns": {
+            "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
+            "queryStrategy": "UseIPv4",
+        },
+        "inbounds": [
+            {
+                "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
+                "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                "tag": "socks-in",
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+            {
+                "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        ],
+        "outbounds": [],
+    }
+    for i, srv in enumerate(servers):
+        ob = _xray_outbound(srv)
+        if ob:
+            ob["tag"] = srv.get("tag", f"server-{i}")
+            cfg["outbounds"].append(ob)
+    tag = servers[active_idx].get("tag", f"server-{active_idx}") if servers else "direct"
+    cfg["outbounds"].append({"protocol": "freedom", "tag": "direct"})
+    cfg["routing"] = {
+        "domainStrategy": "IPIfNonMatch",
+        "rules": [
+            {"type": "field", "port": 53, "network": "udp", "outboundTag": tag},
+            {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": tag},
+        ],
+    }
+    return cfg
+
+
+def _normalize_fp(fp: str) -> str:
+    normalized = fp.strip().lower()
+    if normalized in ("randomized", "random", "ios", "firefox", "edge", "safari", "disabled", "none", ""):
+        return "chrome"
+    return fp
+
+
+def _xray_outbound(srv: dict) -> Optional[dict]:
+    stype = srv.get("type", "")
+    host = srv.get("hostname", "")
+    port = int(srv.get("port", 0))
+
+    if stype == "vless":
+        net_type = srv.get("network", "tcp")
+        if net_type == "http":
+            log("[VLESS patch] Correcting network type 'http' to 'tcp' for Reality.")
+            net_type = "tcp"
+        security_str = srv.get("security", "none")
+        flow_str = srv.get("flow", "")
+        sni_str = srv.get("sni", "")
+        if not sni_str:
+            log("[SNI patch] Empty SNI, keeping hostname")
+            sni_str = srv.get("hostname", "")
+
+        pbk_str = srv.get("pbk", "")
+        fp_str = _normalize_fp(srv.get("fp", "chrome"))
+        spx_str = srv.get("spx", "")
+        sid_str = srv.get("sid", "")
+        path_str = srv.get("path", "/")
+        host_str = srv.get("hostname", "")
+
+        log(f"[VLESS outbound] uuid={srv.get('uuid','')} host={host_str} port={srv.get('port',0)} net={net_type} sec={security_str} flow={flow_str} sni={sni_str} pbk={pbk_str} fp={fp_str} sid={sid_str} spx={spx_str} path={path_str}")
+
+        user_spec = {"id": srv.get("uuid", ""), "encryption": "none"}
+        if security_str == "reality" and flow_str:
+            user_spec["flow"] = flow_str
+
+        ob: dict = {
+            "protocol": "vless",
+            "settings": {
+                "vnext": [{
+                    "address": host_str,
+                    "port": int(srv.get("port", 0)),
+                    "users": [user_spec],
+                }]
+            },
+            "streamSettings": {
+                "network": net_type if net_type else "tcp",
+                "security": "reality" if security_str == "reality" else "none",
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        }
+
+        if security_str == "reality":
+            ob["streamSettings"]["realitySettings"] = {
+                "show": False,
+                "fingerprint": fp_str if fp_str else "chrome",
+                "serverName": sni_str if sni_str else host_str,
+                "publicKey": pbk_str,
+                "shortId": sid_str if sid_str else "",
+                "spiderX": spx_str if spx_str else "",
+            }
+
+        if net_type == "xhttp":
+            xpadding = srv.get("x_padding_bytes", "") or "100-1000"
+            ob["streamSettings"]["xhttpSettings"] = {
+                "mode": "auto",
+                "path": path_str if path_str else "/",
+                "extra": {
+                    "mode": "auto",
+                    "xPaddingBytes": xpadding,
+                    "xmux": {
+                        "maxConnections": 1,
+                        "hMaxRequestTimes": "800-900",
+                        "hMaxReusableSecs": "1000-2000",
+                    },
+                },
+            }
+
+        ob["mux"] = {"enabled": False}
+        return ob
+
+    if stype == "vmess":
+        ob: dict = {
+            "protocol": "vmess",
+            "settings": {
+                "vnext": [{
+                    "address": host,
+                    "port": port,
+                    "users": [{"id": srv.get("uuid", ""), "security": "auto"}],
+                }]
+            },
+            "streamSettings": {
+                "network": srv.get("network", "tcp"),
+                "security": srv.get("security", "none"),
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        }
+        return ob
+
+    if stype == "trojan":
+        ob: dict = {
+            "protocol": "trojan",
+            "settings": {
+                "servers": [{"address": host, "port": port, "password": srv.get("password", "")}],
+            },
+            "streamSettings": {
+                "network": "tcp",
+                "security": srv.get("security", "tls"),
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        }
+        if srv.get("sni"):
+            ob["streamSettings"]["tlsSettings"] = {"serverName": srv["sni"]}
+        return ob
+
+    if stype == "ss":
+        return {
+            "protocol": "shadowsocks",
+            "settings": {
+                "servers": [{"address": host, "port": port, "method": srv.get("method", "chacha20-ietf-poly1305"), "password": srv.get("password", ""), "level": 0}],
+            },
+            "streamSettings": {
+                "network": "tcp",
+                "security": "none",
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        }
+
+    return None
+
+
+# --- Outbound apply helpers (anti-freeze + state persistence) ---
+
+def _xray_cfg_with_outbound(ob: dict) -> dict:
+    return {
+        "log": {"loglevel": "warning"},
+        "dns": {
+            "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
+            "queryStrategy": "UseIPv4",
+        },
+        "inbounds": [
+            {
+                "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
+                "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                "tag": "socks-in",
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+            {
+                "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        ],
+        "outbounds": [ob, {"protocol": "freedom", "tag": "direct"}],
+        "routing": {
+            "domainStrategy": "IPIfNonMatch",
+            "rules": [
+                {"type": "field", "port": 53, "network": "udp", "outboundTag": ob.get("tag", "proxy")},
+                {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": ob.get("tag", "proxy")},
+            ],
+        },
+    }
+
+
+def _singbox_cfg_with_outbound(ob: dict) -> dict:
+    return {
+        "dns": {
+            "servers": [
+                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "prefer_ipv4"},
+                {"tag": "block", "address": "rcode://success"},
+            ],
+            "final": "resolver",
+            "independent_cache": True,
+        },
+        "inbounds": [
+            {"type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357},
+            {"type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358},
+        ],
+        "outbounds": [ob, {"type": "direct", "tag": "direct"}],
+        "route": {"final": ob.get("tag", "proxy"), "auto_detect_interface": True},
+        "experimental": {"cache_file": {"enabled": True}},
+    }
+
+
+def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
+    if engine == "xray":
+        os.system("docker stop singbox-node 2>/dev/null")
+        cfg = _xray_cfg_with_outbound(ob)
+        with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
+        os.system("docker restart xray-node")
+    else:
+        os.system("docker stop xray-node 2>/dev/null")
+        cfg = _singbox_cfg_with_outbound(ob)
+        with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
+        _ensure_xray_running()
+        os.system("docker restart singbox-node")
+    return cfg
+
+
+def restore_active_vpn() -> None:
+    state = load_state()
+    engine = state.get("active_engine", "")
+    server_name = state.get("active_server", "")
+    url = state.get("active_url", "")
+    if not engine or not server_name:
+        log("No active VPN in state, keeping current config")
+        return
+    if not url:
+        for s in load_cache():
+            if s.get("name") == server_name or s.get("tag") == server_name or s.get("id") == server_name:
+                url = s.get("url", "")
+                break
+    if not url:
+        log(f"Active VPN '{server_name}' has no saved URL, cannot restore (select it again via Option 3)")
+        return
+    log(f"Restoring active VPN: {server_name} ({engine})")
+    outbound_engine, ob = parse_url_to_outbound(url, engine=engine)
+    if outbound_engine != engine:
+        log(f"URL protocol {outbound_engine} doesn't match saved engine {engine}, using URL parsing result anyway")
+        engine = outbound_engine
+    save_rollback(engine)
+    _apply_outbound_cfg(engine, ob)
+    log(f"VPN config restored: {server_name}")
+
+
+def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
+    cfg = {
+        "dns": {
+            "servers": [
+                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "prefer_ipv4"},
+                {"tag": "block", "address": "rcode://success"},
+            ],
+            "final": "resolver",
+            "independent_cache": True,
+        },
+        "inbounds": [
+            {"type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357},
+            {"type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358},
+        ],
+        "outbounds": [],
+    }
+    for i, srv in enumerate(servers):
+        ob = _singbox_outbound(srv)
+        if ob:
+            ob["tag"] = srv.get("tag", f"server-{i}")
+            cfg["outbounds"].append(ob)
+    tag = servers[active_idx].get("tag", f"server-{active_idx}") if servers else "direct"
+    cfg["route"] = {"final": tag, "auto_detect_interface": True}
+    cfg["experimental"] = {"cache_file": {"enabled": True}}
+    cfg["outbounds"].append({"type": "direct", "tag": "direct"})
+    return cfg
+
+
+def _singbox_outbound(srv: dict) -> Optional[dict]:
+    host = srv.get("hostname", "")
+    port = int(srv.get("port", 0) or 0)
+    if not host or port <= 0:
+        return None
+    proto = srv.get("protocol", srv.get("type", "")).lower()
+    if proto in ("hy2",):
+        proto = "hysteria2"
+
+    ob: dict = {
+        "type": proto,
+        "server": host,
+        "server_port": port,
+    }
+
+    if proto == "hysteria2":
+        ob["password"] = srv.get("password", "")
+        ob["domain_strategy"] = "ipv4_only"
+        ob["tls"] = {
+            "enabled": True,
+            "server_name": srv.get("sni", "") or host,
+            "insecure": bool(srv.get("insecure", False)),
+        }
+        obfs_type = srv.get("obfs", "")
+        obfs_pass = srv.get("obfs-password", "")
+        if obfs_type and obfs_pass:
+            ob["obfs"] = {"type": obfs_type, "password": obfs_pass}
+        return ob
+
+    if proto == "tuic":
+        ob["uuid"] = srv.get("uuid", "")
+        ob["password"] = srv.get("password", "")
+        ob["congestion_control"] = srv.get("congestion_control", "bbr")
+        ob["udp_relay_mode"] = srv.get("udp_relay_mode", "native")
+        ob["tls"] = {
+            "enabled": True,
+            "server_name": srv.get("sni", "") or host,
+            "insecure": bool(srv.get("insecure", False)),
+        }
+        alpn = srv.get("alpn", "")
+        if alpn:
+            ob["tls"]["alpn"] = [x.strip() for x in alpn.split(",") if x.strip()]
+        return ob
+
+    if proto == "wireguard":
+        ob["private_key"] = srv.get("private_key", "")
+        ob["server_port"] = port
+        local_addr = srv.get("allowed_ips", "") or "10.0.0.1/32"
+        ob["local_address"] = [x.strip() for x in local_addr.split(",") if x.strip()] or ["10.0.0.1/32"]
+        peer_pub = srv.get("public_key", "") or srv.get("peer_public_key", "")
+        if peer_pub:
+            ob["peer_public_key"] = peer_pub
+        reserved = srv.get("reserved")
+        if reserved:
+            ob["reserved"] = reserved
+        mtu = srv.get("mtu")
+        if mtu:
+            ob["mtu"] = mtu
+        return ob
+
+    if proto == "ss":
+        ob["method"] = srv.get("method", "chacha20-ietf-poly1305")
+        ob["password"] = srv.get("password", "")
+        ob["domain_strategy"] = "ipv4_only"
+        return ob
+
+    if proto not in ("vless", "vmess", "trojan"):
+        return None
+
+    net_type = srv.get("network", "tcp")
+    if net_type == "http":
+        net_type = "tcp"
+    if net_type == "xhttp":
+        log(f"[singbox] {host} uses xhttp transport - sing-box cannot handle, xray fallback required")
+        return None
+
+    ob["domain_strategy"] = "ipv4_only"
+
+    flow_val = srv.get("flow", "")
+    if proto == "vless":
+        ob["uuid"] = srv.get("uuid", "")
+        if flow_val:
+            ob["flow"] = flow_val
+    elif proto == "vmess":
+        ob["uuid"] = srv.get("uuid", "")
+    elif proto == "trojan":
+        ob["password"] = srv.get("password", "")
+
+    security_str = srv.get("security", "tls")
+    if security_str in ("reality", "tls") or srv.get("sni") or proto == "trojan":
+        tls_conf: dict = {
+            "enabled": True,
+            "server_name": srv.get("sni", "") or host,
+        }
+        if proto == "vless" and security_str == "reality":
+            tls_conf["utls"] = {
+                "enabled": True,
+                "fingerprint": _normalize_fp(srv.get("fp", "chrome")),
+            }
+            tls_conf["reality"] = {
+                "enabled": True,
+                "public_key": srv.get("pbk", ""),
+                "short_id": srv.get("sid", ""),
+            }
+        else:
+            tls_conf["insecure"] = bool(srv.get("insecure", False))
+        alpn = srv.get("alpn", "")
+        if alpn:
+            tls_conf["alpn"] = [x.strip() for x in alpn.split(",") if x.strip()]
+        ob["tls"] = tls_conf
+
+    if net_type == "ws":
+        ws: dict = {"type": "ws", "path": srv.get("path", "/")}
+        host_hdr = srv.get("host", "")
+        if host_hdr:
+            ws["headers"] = {"Host": host_hdr}
+        ob["transport"] = ws
+    elif net_type == "grpc":
+        grpc: dict = {"type": "grpc", "service_name": srv.get("path", "/") or "/"}
+        host_hdr = srv.get("host", "")
+        if host_hdr:
+            grpc["authority"] = host_hdr
+        ob["transport"] = grpc
+
+    ob["multiplex"] = {"enabled": False}
+    return ob
+
+
+# --- URL > Outbound (pure urllib.parse) ---
+
+def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict, tag: str) -> dict:
+    srv: dict = {
+        "type": scheme,
+        "protocol": scheme,
+        "hostname": host,
+        "port": port,
+        "tag": tag,
+        "full_link": "",
+    }
+    if scheme in ("vless", "vmess"):
+        srv["uuid"] = user_info
+        net_type = params.get("type", "tcp")
+        if net_type == "http":
+            net_type = "tcp"
+        srv["network"] = net_type
+        srv["security"] = params.get("security", "reality" if scheme == "vless" else "none")
+        srv["flow"] = params.get("flow", "")
+        srv["fp"] = params.get("fp", "chrome")
+        srv["pbk"] = params.get("pbk", "")
+        srv["sid"] = params.get("sid", "")
+        srv["sni"] = params.get("sni", "") or host
+        srv["spx"] = params.get("spx", "")
+        srv["path"] = params.get("path", "/")
+        srv["host"] = params.get("host", "")
+        srv["alpn"] = params.get("alpn", "")
+        srv["mode"] = params.get("mode", "auto")
+        srv["encryption"] = params.get("encryption", "none")
+        srv["insecure"] = params.get("insecure", "0") == "1"
+        srv["x_padding_bytes"] = params.get("x_padding_bytes", "")
+        srv["engine"] = "xray" if (scheme == "vless" and net_type == "xhttp") else "singbox"
+    elif scheme == "trojan":
+        srv["password"] = user_info
+        srv["sni"] = params.get("sni", params.get("peer", "")) or host
+        srv["security"] = params.get("security", "tls")
+        srv["network"] = params.get("type", "tcp")
+        srv["path"] = params.get("path", "/")
+        srv["host"] = params.get("host", "")
+        srv["alpn"] = params.get("alpn", "")
+        srv["insecure"] = params.get("insecure", "0") == "1"
+    elif scheme == "ss":
+        raw = user_info or ""
+        try:
+            decoded = base64.b64decode(raw + "=" * (-len(raw) % 4)).decode(errors="replace")
+            if ":" in decoded:
+                srv["method"], srv["password"] = decoded.split(":", 1)
+            else:
+                srv["password"] = raw
+                srv["method"] = "chacha20-ietf-poly1305"
+        except Exception:
+            srv["password"] = raw
+            srv["method"] = "chacha20-ietf-poly1305"
+        srv["plugin"] = params.get("plugin", "")
+        srv["network"] = params.get("type", "tcp")
+    elif scheme in ("hysteria2", "hy2"):
+        srv["password"] = user_info
+        srv["sni"] = params.get("sni", "") or host
+        srv["insecure"] = params.get("insecure", "1") == "1"
+        srv["obfs"] = params.get("obfs", "")
+        srv["obfs-password"] = params.get("obfs-password", "")
+        srv["protocol"] = "hysteria2"
+    elif scheme == "tuic":
+        srv["uuid"] = user_info
+        srv["password"] = params.get("password", "")
+        srv["sni"] = params.get("sni", "") or host
+        srv["congestion_control"] = params.get("congestion_control", "bbr")
+        srv["udp_relay_mode"] = params.get("udp_relay_mode", "native")
+        srv["alpn"] = params.get("alpn", "")
+        srv["insecure"] = params.get("insecure", "0") == "1"
+    elif scheme == "wireguard":
+        srv["private_key"] = params.get("private_key", "") or user_info
+        srv["public_key"] = params.get("public_key", "") or params.get("peer_public_key", "")
+        srv["endpoint"] = params.get("endpoint", "") or f"{host}:{port}"
+        srv["allowed_ips"] = params.get("allowed_ips", "")
+        try:
+            srv["mtu"] = int(params.get("mtu", ""))
+        except (ValueError, TypeError):
+            srv["mtu"] = 0
+        reserved_raw = params.get("reserved", "")
+        if reserved_raw:
+            try:
+                srv["reserved"] = [int(x) for x in reserved_raw.split(",")]
+            except Exception:
+                srv["reserved"] = []
+    return srv
+
+
+def parse_url_to_outbound(url_str: str, engine: str = "xray") -> Tuple[str, dict]:
+    if not url_str:
+        return "xray", {"protocol": "freedom", "tag": "direct"}
+    try:
+        parsed = urllib.parse.urlparse(url_str)
+    except Exception:
+        return "xray", {"protocol": "freedom", "tag": "direct"}
+    scheme = parsed.scheme
+    netloc = parsed.netloc
+    user_info = netloc.split('@')[0] if '@' in netloc else ""
+    host_port = netloc.split('@')[-1] if '@' in netloc else netloc
+    host = host_port.split(':')[0] if ':' in host_port else host_port
+    port = int(host_port.split(':')[1]) if ':' in host_port else 443
+    qs = urllib.parse.parse_qs(parsed.query)
+    params = {k: v[0] for k, v in qs.items()}
+    tag = urllib.parse.unquote(parsed.fragment) if parsed.fragment else "proxy"
+
+    if engine == "singbox":
+        srv = _url_to_srv(scheme, user_info, host, port, params, tag)
+        ob = _singbox_outbound(srv)
+        if ob is None:
+            log(f"[singbox] No sing-box outbound for {scheme}, falling back to xray")
+            return parse_url_to_outbound(url_str, engine="xray")
+        ob["tag"] = tag
+        return "singbox", ob
+
+    if scheme == "vless":
+        uuid_val = user_info
+        encryption = params.get("encryption", "none")
+        flow_val = params.get("flow", "")
+        net_type = params.get("type", "tcp")
+        if net_type == "http":
+            net_type = "tcp"
+        security = params.get("security", "none")
+        pbk = params.get("pbk", "")
+        sid = params.get("sid", "")
+        sni = params.get("sni", host)
+        if not sni:
+            log("[SNI patch] Empty SNI, keeping hostname")
+            sni = host
+        fp = params.get("fp", "chrome")
+        path = params.get("path", "/")
+
+        user_obj = {"id": uuid_val, "encryption": encryption}
+        if security == "reality" and flow_val:
+            user_obj["flow"] = flow_val
+
+        outbound: dict = {
+            "protocol": "vless",
+            "tag": tag,
+            "settings": {
+                "vnext": [{
+                    "address": host,
+                    "port": port,
+                    "users": [user_obj],
+                }]
+            },
+            "streamSettings": {
+                "network": net_type,
+                "security": security,
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            },
+        }
+
+        if security == "reality":
+            spx_str = urllib.parse.unquote(params.get("spx", ""))
+            outbound["streamSettings"]["realitySettings"] = {
+                "show": False,
+                "fingerprint": _normalize_fp(fp),
+                "serverName": sni,
+                "publicKey": pbk,
+                "shortId": sid,
+                "spiderX": spx_str,
+            }
+
+        if net_type == "xhttp":
+            xpadding = params.get("x_padding_bytes", "") or "100-1000"
+            outbound["streamSettings"]["xhttpSettings"] = {
+                "mode": params.get("mode", "auto"),
+                "path": path,
+                "extra": {
+                    "mode": params.get("mode", "auto"),
+                    "xPaddingBytes": xpadding,
+                    "xmux": {
+                        "maxConnections": 1,
+                        "hMaxRequestTimes": "800-900",
+                        "hMaxReusableSecs": "1000-2000",
+                    },
+                },
+            }
+
+        outbound["mux"] = {"enabled": False}
+
+        return "xray", outbound
+
+    elif scheme in ("hysteria2", "hy2"):
+        password = user_info
+        sni = params.get("sni", host)
+        obfs_type = params.get("obfs", "")
+        obfs_pass = params.get("obfs-password", "")
+        insecure_val = params.get("insecure", "1") == "1"
+
+        outbound: dict = {
+            "type": "hysteria2",
+            "tag": tag,
+            "server": host,
+            "server_port": port,
+            "password": password,
+            "domain_strategy": "ipv4_only",
+            "tls": {
+                "enabled": True,
+                "server_name": sni,
+                "insecure": insecure_val,
+            },
+        }
+        if obfs_type:
+            outbound["obfs"] = {"type": obfs_type, "password": obfs_pass}
+
+        return "singbox", outbound
+
+    return "xray", {"protocol": "freedom", "tag": "direct"}
+
+
+# --- Docker Control ---
+
+def is_container_running(engine: str) -> bool:
+    name = "singbox-node" if engine == "singbox" else "xray-node"
+    try:
+        cmd = f"docker inspect -f '{{{{.State.Running}}}}' {name} 2>/dev/null"
+        result = os.popen(cmd).read().strip()
+        return result == "true"
+    except Exception:
+        return False
+
+
+def docker_restart(container: str) -> None:
+    if container == "singbox-node":
+        _ensure_xray_running()
+    try:
+        r = subprocess.run(["docker", "restart", container], capture_output=True, timeout=30)
+        if r.returncode != 0:
+            err = r.stderr.decode(errors="replace").strip()
+            log(f"Restart {container} failed: {err}")
+            logs = subprocess.run(["docker", "logs", container, "--tail", "20"], capture_output=True, timeout=10)
+            decoded = logs.stdout.decode(errors="replace").strip()
+            log(f"{container} logs: {decoded}")
+        else:
+            log(f"Restarted {container}")
+    except Exception as e:
+        log(f"Restart {container} failed: {e}")
+        try:
+            logs = subprocess.run(["docker", "logs", container, "--tail", "20"], capture_output=True, timeout=10)
+            decoded = logs.stdout.decode(errors="replace").strip()
+            log(f"{container} logs: {decoded}")
+        except Exception:
+            pass
+
+
+# --- Singbox prerequisite helper ---
+
+def _ensure_xray_running() -> bool:
+    running = os.system("docker inspect -f '{{.State.Running}}' xray-node 2>/dev/null | grep -q true") == 0
+    if not running:
+        log("xray-node not running, starting with dummy config for singbox prerequisite")
+        dummy = {"log": {"loglevel": "warning"}, "inbounds": [{"port": 9999, "listen": "127.0.0.1", "protocol": "socks", "settings": {"auth": "noauth"}}], "outbounds": [{"protocol": "freedom", "tag": "direct"}]}
+        with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(dummy, f, indent=2)
+        os.system("docker stop singbox-node 2>/dev/null")
+        os.system("docker start xray-node 2>/dev/null || docker restart xray-node")
+        time.sleep(2)
+        log("xray-node started (dummy config)")
+        return False
+    return True
+
+
+# --- Health Check (Docker + TCP socket) ---
+
+def test_proxy() -> Tuple[bool, str]:
+    state = load_agent_state()
+    engine = state.get("active_engine", "xray") if state else "xray"
+    container = "singbox-node" if engine == "singbox" else "xray-node"
+    if os.system(f"docker inspect -f '{{{{.State.Running}}}}' {container} >/dev/null 2>&1") != 0:
+        return False, "Container dead"
+    try:
+        ip = socket.gethostbyname(container)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(3)
+        s.connect((ip, 6357))
+        s.close()
+        return True, "Healthy"
+    except Exception:
+        return False, "Socket dead"
+
+
+# --- Apply / Rollback ---
+
+def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
+    if not servers:
+        log(f"No servers for {engine}, keeping existing config")
+        return False
+    if engine == "xray":
+        os.system("docker stop singbox-node 2>/dev/null")
+        cfg = build_xray_config(servers, active_idx)
+        with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        log(f"Wrote xray config ({len(cfg['outbounds'])} outbounds)")
+        log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
+        os.system("docker restart xray-node")
+    else:
+        os.system("docker stop xray-node 2>/dev/null")
+        cfg = build_singbox_config(servers, active_idx)
+        with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        log(f"Wrote singbox config ({len(cfg['outbounds'])} outbounds)")
+        log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
+        _ensure_xray_running()
+        os.system("docker restart singbox-node")
+    time.sleep(5)
+    ok, status = test_proxy()
+    if not ok:
+        log(f"Proxy down after applying {engine}, rolling back...")
+        if restore_rollback(engine):
+            docker_restart(f"{engine}-node")
+            log("Rolled back to previous config")
+        else:
+            log("No rollback available")
+        return False
+    log(f"Proxy verified after apply, IP: {status}")
+    return True
+
+
+def rollback_engine(engine: str) -> bool:
+    if restore_rollback(engine):
+        docker_restart(f"{engine}-node")
+        return True
+    log(f"No rollback available for {engine}")
+    return False
+
+
+# --- Subscription Update ---
+
+def update_subscription() -> None:
+    state = load_state()
+    sub_url = state.get("sub_url", "")
+    if not sub_url:
+        log("No sub_url configured, skipping subscription fetch")
+        return
+
+    log(f"Fetching subscription from {sub_url}")
+    servers = parse_subscription(sub_url)
+    if not servers:
+        log("No servers found in subscription")
+        save_cache([])
+        return
+
+    save_cache(servers)
+
+    xray_servers = [s for s in servers if s.get("engine") == "xray"]
+    singbox_servers = [s for s in servers if s.get("engine") == "singbox"]
+
+    log(f"Successfully parsed {len(servers)} servers from subscription")
+
+    state = load_state()
+    current_engine = state.get("active_engine", "xray")
+    active_name = state.get("active_server", "")
+
+    def _resolve_idx(subset: list) -> int:
+        if not active_name:
+            return 0
+        for i, s in enumerate(subset):
+            if s.get("tag") == active_name or s.get("name") == active_name:
+                return i
+        return -1
+
+    def _apply_engine(engine: str, subset: list) -> bool:
+        idx = _resolve_idx(subset)
+        if idx < 0:
+            log(f"Active server '{active_name}' no longer in subscription, keeping current {engine} config")
+            return False
+        save_rollback(engine)
+        return apply_configs(engine, subset, active_idx=idx)
+
+    if current_engine == "xray" and xray_servers:
+        _apply_engine("xray", xray_servers)
+    elif current_engine == "singbox" and singbox_servers:
+        _apply_engine("singbox", singbox_servers)
+    elif xray_servers:
+        log("No xray servers found for current engine, switching to xray")
+        save_rollback("xray")
+        apply_configs("xray", xray_servers)
+        state["active_engine"] = "xray"
+    elif singbox_servers:
+        log("No singbox servers found for current engine, switching to singbox")
+        save_rollback("singbox")
+        apply_configs("singbox", singbox_servers)
+        state["active_engine"] = "singbox"
+
+    tags = [s.get("tag", "") for s in servers]
+    report(
+        external_ip=_lan_ip(),
+        engine="subscription",
+        protocol=",".join(set(s.get("engine", "") for s in servers)),
+        outbound_json=json.dumps({"server_count": len(servers), "servers": tags}),
+        status="Fetched",
+        message=f"Subscription parsed: {len(servers)} servers",
+    )
+
+    if servers:
+        if not state.get("active_server"):
+            state["active_server"] = servers[0].get("tag", "")
+        if not state.get("active_url"):
+            for s in servers:
+                if s.get("tag") == state.get("active_server"):
+                    state["active_url"] = s.get("full_link", "")
+                    break
+        state["active_proto"] = servers[0].get("type", "")
+        state["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        save_state(state)
+
+
+def fetch_subscription_now(url: Optional[str] = None) -> int:
+    if not url:
+        state = load_state()
+        url = state.get("sub_url")
+    if not url:
+        log("No sub_url configured, cannot fetch subscription")
+        return 0
+    state = load_state()
+    state["sub_url"] = url
+    save_state(state)
+    log(f"Fetching subscription from: {url}")
+    try:
+        resp = requests.get(url, headers={"User-Agent": SUB_USER_AGENT}, verify=False, timeout=15)
+        log(f"HTTP status: {resp.status_code}, len: {len(resp.text)}")
+        if resp.status_code != 200:
+            log(f"Subscription fetch returned {resp.status_code}")
+            return 0
+        raw = resp.text.strip()
+        padded = raw + "=" * (-len(raw) % 4)
+        try:
+            decoded = base64.b64decode(padded).decode("utf-8", errors="ignore")
+            lines = decoded.splitlines()
+        except Exception:
+            lines = raw.splitlines()
+        servers = []
+        for line in lines:
+            line = line.strip()
+            if "://" not in line:
+                continue
+            try:
+                srv = _parse_link(line)
+                if srv:
+                    servers.append(srv)
+            except Exception:
+                continue
+        log(f"Successfully parsed {len(servers)} servers from subscription")
+        save_cache(servers)
+        log("Subscription saved. Use Option 3 to select a server.")
+        return len(servers)
+    except Exception as e:
+        log(f"Error fetching subscription: {e}")
+        log(traceback.format_exc())
+        return 0
+
+
+def select_server(idx: int) -> int:
+    servers = load_cache()
+    if idx < 0 or idx >= len(servers):
+        log(f"Invalid server index {idx}, have {len(servers)} servers")
+        return 1
+    srv = servers[idx]
+    name = srv.get("name", f"Server {idx + 1}")
+    engine = srv.get("engine", "xray")
+    url = srv.get("url", "")
+    log(f"Selecting server {idx + 1}: {name} ({engine})")
+    if not url:
+        log(f"No URL for server {idx + 1}, cannot build config")
+        return 1
+
+    outbound_engine, ob = parse_url_to_outbound(url, engine=engine)
+    if outbound_engine != engine:
+        log(f"URL protocol {outbound_engine} doesn't match cached engine {engine}, using URL parsing result anyway")
+        engine = outbound_engine
+
+    save_rollback(engine)
+    cfg = _apply_outbound_cfg(engine, ob)
+
+    state = load_state()
+    state["active_server"] = name
+    state["active_engine"] = engine
+    state["active_proto"] = srv.get("proto", "")
+    state["active_url"] = url
+    state["active_mode"] = "manual"
+    state["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    save_state(state)
+
+    log(f"Switched to {name}")
+    log("Generated config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
+    return 0
+
+
+def benchmark_servers(probes: int = 4, timeout: float = 2.0) -> dict:
+    """TCP-probe every cached server and measure latency / jitter / loss.
+
+    For UDP-only protocols (hysteria2/tuic/wireguard) a TCP 'connection
+    refused' still proves the host is up and yields a valid RTT sample.
+    Returns {cache_idx: {"latency_ms","jitter_ms","loss_pct","ok"}}.
+    """
+    servers = load_cache()
+    results: dict = {}
+    for idx, srv in enumerate(servers):
+        host = srv.get("host", "")
+        port = int(srv.get("port", 0) or 0)
+        entry = {"latency_ms": None, "jitter_ms": None, "loss_pct": 100.0, "ok": False}
+        if not host or port <= 0:
+            results[idx] = entry
+            continue
+        try:
+            ip = socket.gethostbyname(host)
+        except Exception as e:
+            log(f"[bench] {host} resolve failed: {e}")
+            results[idx] = entry
+            continue
+
+        times_ms: list = []
+        for _ in range(max(probes, 1)):
+            t0 = time.monotonic()
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(timeout)
+                s.connect((ip, port))
+                s.close()
+                times_ms.append((time.monotonic() - t0) * 1000.0)
+            except socket.timeout:
+                pass
+            except ConnectionRefusedError:
+                times_ms.append((time.monotonic() - t0) * 1000.0)
+            except OSError as e:
+                if e.errno == errno.ECONNREFUSED:
+                    times_ms.append((time.monotonic() - t0) * 1000.0)
+            time.sleep(0.05)
+
+        if times_ms:
+            entry["latency_ms"] = round(sum(times_ms) / len(times_ms), 1)
+            entry["jitter_ms"] = round(max(times_ms) - min(times_ms), 1)
+            entry["loss_pct"] = round(100.0 * (1 - len(times_ms) / max(probes, 1)), 0)
+            entry["ok"] = True
+        results[idx] = entry
+    return results
+
+
+def print_benchmark(results: dict) -> None:
+    servers = load_cache()
+    print()
+    print("Server Benchmark (latency / jitter / loss):")
+    print("--------------------------------------------")
+    for idx in range(len(servers)):
+        name = servers[idx].get("name", f"Server {idx + 1}")
+        r = results.get(idx, {"latency_ms": None, "jitter_ms": None, "loss_pct": 100.0, "ok": False})
+        if r.get("ok"):
+            print(f" {idx + 1:2d}) {name:<35s} {r['latency_ms']:>7.1f} ms  jit {r['jitter_ms']:>6.1f} ms  loss {r['loss_pct']:.0f}%")
+        else:
+            print(f" {idx + 1:2d}) {name:<35s}   UNREACHABLE")
+    print("--------------------------------------------")
+
+
+def select_mode(mode: str) -> int:
+    """Auto-select the best server by mode: 'fastest' or 'balanced'."""
+    mode = (mode or "manual").strip().lower()
+    if mode not in ("fastest", "balanced"):
+        log(f"Unknown selection mode '{mode}'")
+        return 1
+    servers = load_cache()
+    if not servers:
+        log("No servers in cache, cannot auto-select")
+        return 1
+    log(f"Benchmarking {len(servers)} servers ({mode})...")
+    results = benchmark_servers()
+    print_benchmark(results)
+
+    reachable = {idx: r for idx, r in results.items() if r.get("ok")}
+    if not reachable:
+        log("No servers reachable, keeping current selection")
+        return 1
+
+    if mode == "fastest":
+        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
+        log(f"Fastest mode: server {best + 1} ({servers[best].get('name', '')}) at {reachable[best]['latency_ms']} ms")
+    else:
+        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
+        log(f"Balanced mode: server {best + 1} ({servers[best].get('name', '')}) loss={reachable[best]['loss_pct']:.0f}% jitter={reachable[best]['jitter_ms']} ms")
+
+    rc = select_server(best)
+    if rc == 0:
+        state = load_state()
+        state["active_mode"] = mode
+        save_state(state)
+        log(f"Active selection mode saved: {mode}")
+    return rc
+
+
+def print_server_list() -> None:
+    servers = load_cache()
+    if not servers:
+        print("No servers in cache. Use Option 1 to update subscription first.")
+        return
+    print()
+    print("Available VPN Servers:")
+    print()
+    for idx, srv in enumerate(servers):
+        name = srv.get("name", f"Server {idx + 1}")
+        proto = srv.get("proto", "unknown")
+        engine = srv.get("engine", "xray")
+        print(f" {idx + 1:2d}) {name:<35s} {proto:<10s} ({engine})")
+    print()
+    print(f"Total: {len(servers)} servers")
+    print()
+
+
+def health_loop() -> None:
+    fail_count = 0
+    while True:
+        time.sleep(HEALTH_INTERVAL)
+        try:
+            ok, status = test_proxy()
+            if ok:
+                if fail_count > 0:
+                    log(f"Container healthy again after {fail_count} failures")
+                fail_count = 0
+            else:
+                fail_count += 1
+                log(f"Health check failed ({fail_count}): {status}")
+        except Exception as e:
+            log(f"Health check error: {e}")
+
+
+# --- Command Execution ---
+
+def execute_command(cmd_data: Union[str, dict]) -> bool:
+    if isinstance(cmd_data, str):
+        try:
+            cmd_data = json.loads(cmd_data)
+        except json.JSONDecodeError:
+            log(f"Invalid command JSON: {cmd_data}")
+            return False
+    assert isinstance(cmd_data, dict), f"Command data is not a dict: {type(cmd_data)}"
+    action = cmd_data.get("action", "")
+    log(f"Executing action: {action}")
+
+    if action == "restart":
+        docker_restart("xray-node")
+        docker_restart("singbox-node")
+        report(engine="system", status="Engine Restarting", message="Containers restarted")
+        return True
+    elif action == "switch":
+        return _exec_switch(cmd_data)
+    elif action in ("install_xray", "install_singbox"):
+        target = action.replace("install_", "")
+        config_content = cmd_data.get("config", "")
+        if config_content:
+            path = XRAY_CONFIG if target == "xray" else SINGBOX_CONFIG
+            with open(path, "w") as f:
+                if isinstance(config_content, str):
+                    f.write(config_content)
+                else:
+                    json.dump(config_content, f, indent=2)
+            docker_restart(f"{target}-node")
+            report(engine=target, status="Fetched", message=f"{target} config applied")
+        return True
+    elif action == "apply_config":
+        tgt = cmd_data.get("target", "")
+        content = cmd_data.get("content", "")
+        if tgt and content:
+            path = os.path.join(CONFIG_DIR, tgt)
+            with open(path, "w") as f:
+                f.write(content)
+            log(f"Written {path}")
+        return True
+    elif action == "exec":
+        return _exec_shell(cmd_data)
+    else:
+        log(f"Unknown action: {action}")
+        return False
+
+
+def _exec_switch(cmd: dict) -> bool:
+    outbound = cmd.get("outbound", {})
+    engine = outbound.get("engine", cmd.get("engine", "xray"))
+    tag = outbound.get("tag", cmd.get("outbound_tag", "default"))
+    log(f"Switch to {engine}: {tag}")
+
+    servers = load_cache()
+    server = None
+    for s in servers:
+        if s.get("name") == tag or s.get("tag") == tag or s.get("id") == tag:
+            server = s
+            break
+    if not server:
+        log(f"Server {tag} not found in cache (checked name/tag/id)")
+        return False
+
+    url = server.get("url", "")
+    if not url:
+        log(f"No URL for server {tag}, cannot switch")
+        return False
+
+    outbound_engine, ob = parse_url_to_outbound(url, engine=engine)
+    if outbound_engine != engine:
+        log(f"URL protocol {outbound_engine} doesn't match cached engine {engine}, using URL parsing result anyway")
+        engine = outbound_engine
+
+    save_rollback(engine)
+    _apply_outbound_cfg(engine, ob)
+
+    state = load_state()
+    state["active_server"] = server.get("name", tag)
+    state["active_proto"] = outbound.get("pretty_proto", server.get("proto", tag))
+    state["active_engine"] = engine
+    state["active_url"] = url
+    state["active_mode"] = "manual"
+    state["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    save_state(state)
+
+    log(f"Switched to {tag}")
+    report(engine=engine, protocol=tag, status="Verified & Active", message=f"Switched to {tag}")
+    return True
+
+
+def _exec_shell(cmd: dict) -> bool:
+    shell_cmd = cmd.get("command", "")
+    if not shell_cmd:
+        return False
+    log(f"Exec: {shell_cmd}")
+    try:
+        r = subprocess.run(shell_cmd, shell=True, capture_output=True, timeout=60)
+        out = r.stdout.decode(errors="replace").strip()[:500]
+        err = r.stderr.decode(errors="replace").strip()[:500]
+        report(engine="exec", outbound_json=json.dumps({"stdout": out, "stderr": err, "rc": r.returncode}))
+        return r.returncode == 0
+    except Exception as e:
+        log(f"Exec failed: {e}")
+        return False
+
+
+# --- Poll Loop ---
+
+def poll_loop() -> None:
+    while True:
+        state = load_state()
+        auto_update = state.get("auto_update", "true")
+        if auto_update == "false":
+            time.sleep(POLL_INTERVAL)
+            continue
+        try:
+            cmd = poll()
+            if cmd:
+                execute_command(cmd.get("command", cmd))
+        except Exception as e:
+            log(f"Poll error: {e}")
+        time.sleep(POLL_INTERVAL)
+
+
+# --- Main ---
+
+def main() -> None:
+    log(f"Malaxis Fleet Node Agent starting (node_id={NODE_ID})")
+    log(f"Server: {SERVER_URL}")
+    if not SECRET_TOKEN:
+        log("WARNING: SECRET_TOKEN is empty - agent will not authenticate with server")
+
+    ensure_default_configs()
+    restore_active_vpn()
+
+    running = True
+    def handle_signal(signum, frame):
+        nonlocal running
+        log(f"Signal {signum}, shutting down...")
+        running = False
+
+    signal.signal(signal.SIGTERM, handle_signal)
+    signal.signal(signal.SIGINT, handle_signal)
+
+    update_subscription()
+
+    report(status="Registered", message="Agent starting")
+
+    import threading
+    t_health = threading.Thread(target=health_loop, daemon=True)
+    t_health.start()
+    t_poll = threading.Thread(target=poll_loop, daemon=True)
+    t_poll.start()
+
+    while running:
+        time.sleep(1)
+
+    log("Agent stopped.")
+    report(status="Stopped", message="Agent shutting down")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        log(f"Fatal: {e}")
+        sys.exit(1)
