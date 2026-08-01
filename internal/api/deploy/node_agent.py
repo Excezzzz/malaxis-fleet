@@ -265,6 +265,12 @@ def poll():
 def report(**kw) -> None:
     payload = {"id": NODE_ID}
     payload.update(kw)
+    try:
+        state = load_state()
+        payload.setdefault("active_server", state.get("active_server", ""))
+        payload.setdefault("sub_url", state.get("sub_url", ""))
+    except Exception:
+        pass
     code, _ = _request("POST", REPORT_URL, payload)
     if code != 200:
         log(f"Report returned {code}")
@@ -1505,6 +1511,7 @@ def select_server(idx: int, mode: str = "manual") -> int:
     save_state(state)
 
     log(f"Switched to {name}")
+    report(engine=engine, protocol=srv.get("proto", ""), status="Verified & Active", message=f"Switched to {name}")
     return 0
 
 
@@ -1707,6 +1714,12 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         enqueue("switch", name=cmd_data.get("outbound", {}).get("tag", cmd_data.get("outbound_tag", "")))
         return True
     elif action == "update_sub":
+        sub_url = cmd_data.get("sub_url", "")
+        if sub_url:
+            state = load_state()
+            state["sub_url"] = sub_url
+            save_state(state)
+            log(f"sub_url updated to {sub_url}")
         enqueue("update_sub")
         return True
     elif action in ("install_xray", "install_singbox"):

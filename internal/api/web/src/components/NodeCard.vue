@@ -14,7 +14,7 @@
       <div class="space-y-2 text-sm text-gray-300">
         <p><strong class="text-gray-500 font-medium">LAN IP:</strong> {{ node.ip_lan || 'N/A' }}</p>
         <p><strong class="text-gray-500 font-medium">Hostname:</strong> {{ node.hostname || 'N/A' }}</p>
-        <p><strong class="text-gray-500 font-medium">VPN Server:</strong> {{ node.active_server || 'None' }}</p>
+        <p><strong class="text-gray-500 font-medium">VPN Server:</strong> {{ node.active_server || 'None' }} <span v-if="node.active_engine" class="text-xs text-gray-500">({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></p>
         <p><strong class="text-gray-500 font-medium">Sub URL:</strong> <span class="text-xs text-gray-400 truncate max-w-[200px] inline-block align-bottom">{{ node.sub_url || 'Not set' }}</span></p>
         <p><strong class="text-gray-500 font-medium">Last Seen:</strong> {{ timeSince(node.last_seen) }}</p>
       </div>
@@ -162,7 +162,7 @@ export default {
         if (!response.ok) throw new Error('Failed to update subscription URL');
         showSubModal.value = false;
         newSubUrl.value = '';
-        alert('Subscription URL updated successfully!');
+        alert('Subscription URL updated! The node will fetch it on the next poll.');
         emit('node-updated');
       } catch (error) {
         console.error('Error updating subscription URL:', error);
