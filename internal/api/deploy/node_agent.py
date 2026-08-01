@@ -22,10 +22,19 @@ import urllib.parse
 import urllib.request
 from typing import Optional, Tuple, Union
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+import queue
+
 SERVER_URL = os.environ.get("SERVER_URL", "https://api-fleet.malaxis.ru")
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
+BENCH_TTL = int(os.environ.get("BENCH_TTL", "600"))
+BENCH_PROBES = int(os.environ.get("BENCH_PROBES", "2"))
+BENCH_TIMEOUT = float(os.environ.get("BENCH_TIMEOUT", "1.5"))
 
 CONFIG_DIR = "/app/configs"
 NODE_ID_FILE = os.path.join(CONFIG_DIR, "node_id.txt")
@@ -52,6 +61,8 @@ SINGBOX_CONFIG = os.path.join(CONFIG_DIR, "singbox_config.json")
 SUBCACHE = os.path.join(CONFIG_DIR, "subscription_cache.json")
 AGENT_STATE = "/app/configs/agent_state.json"
 ROLLBACK_DIR = os.path.join(CONFIG_DIR, ".rollback")
+BENCH_FILE = os.path.join(CONFIG_DIR, "benchmark_cache.json")
+APPLY_LOCK_FILE = os.path.join(CONFIG_DIR, "apply.lock")
 
 DEFAULT_XRAY_CONFIG = {
     "log": {"loglevel": "warning"},
@@ -727,22 +738,26 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
 
 
 def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
-    if engine == "xray":
-        os.system("docker stop singbox-node 2>/dev/null")
-        cfg = _xray_cfg_with_outbound(ob)
-        with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
-        os.system("docker restart xray-node")
-    else:
-        os.system("docker stop xray-node 2>/dev/null")
-        cfg = _singbox_cfg_with_outbound(ob)
-        with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
-        _ensure_xray_running()
-        os.system("docker restart singbox-node")
-    return cfg
+    acquire_apply_lock()
+    try:
+        if engine == "xray":
+            _docker(["stop", "singbox-node"])
+            cfg = _xray_cfg_with_outbound(ob)
+            with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+            _docker(["restart", "xray-node"])
+        else:
+            _docker(["stop", "xray-node"])
+            cfg = _singbox_cfg_with_outbound(ob)
+            with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+            _ensure_xray_running()
+            _docker(["restart", "singbox-node"])
+        return cfg
+    finally:
+        release_apply_lock()
 
 
 def restore_active_vpn() -> None:
@@ -1140,12 +1155,84 @@ def parse_url_to_outbound(url_str: str, engine: str = "xray") -> Tuple[str, dict
 
 # --- Docker Control ---
 
+def _docker(args: list, timeout: int = 30) -> int:
+    """Run a docker command with a hard timeout. Returns exit code (or -1)."""
+    try:
+        r = subprocess.run(["docker"] + args, capture_output=True, timeout=timeout)
+        if r.returncode != 0:
+            err = r.stderr.decode(errors="replace").strip()
+            if err:
+                log(f"docker {' '.join(args)}: {err[:300]}")
+        return r.returncode
+    except subprocess.TimeoutExpired:
+        log(f"docker {' '.join(args)}: timed out after {timeout}s")
+        return -1
+    except Exception as e:
+        log(f"docker {' '.join(args)}: {e}")
+        return -1
+
+
+def _docker_output(args: list, timeout: int = 30) -> str:
+    try:
+        r = subprocess.run(["docker"] + args, capture_output=True, timeout=timeout)
+        return r.stdout.decode(errors="replace").strip()
+    except Exception:
+        return ""
+
+
 def is_container_running(engine: str) -> bool:
     name = "singbox-node" if engine == "singbox" else "xray-node"
+    return _docker_output(["inspect", "-f", "{{.State.Running}}", name]) == "true"
+
+
+# --- Apply lock: serialize config writes + container restarts between the
+# --- daemon process and CLI invocations (docker exec) running in parallel.
+
+_APPLY_LOCK = None
+
+
+def acquire_apply_lock() -> bool:
+    global _APPLY_LOCK
+    if fcntl is None:
+        return True
     try:
-        cmd = f"docker inspect -f '{{{{.State.Running}}}}' {name} 2>/dev/null"
-        result = os.popen(cmd).read().strip()
-        return result == "true"
+        if _APPLY_LOCK is None:
+            _APPLY_LOCK = open(APPLY_LOCK_FILE, "w")
+        fcntl.flock(_APPLY_LOCK, fcntl.LOCK_EX)
+        return True
+    except Exception as e:
+        log(f"Could not acquire apply lock: {e}")
+        return False
+
+
+def release_apply_lock() -> None:
+    global _APPLY_LOCK
+    if fcntl is None or _APPLY_LOCK is None:
+        return
+    try:
+        fcntl.flock(_APPLY_LOCK, fcntl.LOCK_UN)
+        _APPLY_LOCK.close()
+    except Exception as e:
+        log(f"Could not release apply lock: {e}")
+    finally:
+        _APPLY_LOCK = None
+
+
+def _probe_host(host: str, port: int, timeout: float = 1.5) -> bool:
+    """One TCP connect probe. For UDP-only protocols a refused/connected
+    result still proves the host is up and yields a valid RTT sample."""
+    if not host or port <= 0:
+        return False
+    try:
+        ip = socket.gethostbyname(host)
+    except Exception:
+        return False
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect((ip, port))
+        s.close()
+        return True
     except Exception:
         return False
 
@@ -1153,41 +1240,29 @@ def is_container_running(engine: str) -> bool:
 def docker_restart(container: str) -> None:
     if container == "singbox-node":
         _ensure_xray_running()
-    try:
-        r = subprocess.run(["docker", "restart", container], capture_output=True, timeout=30)
-        if r.returncode != 0:
-            err = r.stderr.decode(errors="replace").strip()
-            log(f"Restart {container} failed: {err}")
-            logs = subprocess.run(["docker", "logs", container, "--tail", "20"], capture_output=True, timeout=10)
-            decoded = logs.stdout.decode(errors="replace").strip()
-            log(f"{container} logs: {decoded}")
-        else:
-            log(f"Restarted {container}")
-    except Exception as e:
-        log(f"Restart {container} failed: {e}")
-        try:
-            logs = subprocess.run(["docker", "logs", container, "--tail", "20"], capture_output=True, timeout=10)
-            decoded = logs.stdout.decode(errors="replace").strip()
-            log(f"{container} logs: {decoded}")
-        except Exception:
-            pass
+    rc = _docker(["restart", container])
+    if rc != 0:
+        logs = _docker_output(["logs", container, "--tail", "20"])
+        log(f"{container} logs: {logs}")
+    else:
+        log(f"Restarted {container}")
 
 
 # --- Singbox prerequisite helper ---
 
 def _ensure_xray_running() -> bool:
-    running = os.system("docker inspect -f '{{.State.Running}}' xray-node 2>/dev/null | grep -q true") == 0
-    if not running:
-        log("xray-node not running, starting with dummy config for singbox prerequisite")
-        dummy = {"log": {"loglevel": "warning"}, "inbounds": [{"port": 9999, "listen": "127.0.0.1", "protocol": "socks", "settings": {"auth": "noauth"}}], "outbounds": [{"protocol": "freedom", "tag": "direct"}]}
-        with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
-            json.dump(dummy, f, indent=2)
-        os.system("docker stop singbox-node 2>/dev/null")
-        os.system("docker start xray-node 2>/dev/null || docker restart xray-node")
-        time.sleep(2)
-        log("xray-node started (dummy config)")
-        return False
-    return True
+    if _docker_output(["inspect", "-f", "{{.State.Running}}", "xray-node"]) == "true":
+        return True
+    log("xray-node not running, starting with dummy config for singbox prerequisite")
+    dummy = {"log": {"loglevel": "warning"}, "inbounds": [{"port": 9999, "listen": "127.0.0.1", "protocol": "socks", "settings": {"auth": "noauth"}}], "outbounds": [{"protocol": "freedom", "tag": "direct"}]}
+    with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+        json.dump(dummy, f, indent=2)
+    _docker(["stop", "singbox-node"])
+    if _docker(["start", "xray-node"]) != 0:
+        _docker(["restart", "xray-node"])
+    time.sleep(2)
+    log("xray-node started (dummy config)")
+    return False
 
 
 # --- Health Check (Docker + TCP socket) ---
@@ -1196,10 +1271,12 @@ def test_proxy() -> Tuple[bool, str]:
     state = load_agent_state()
     engine = state.get("active_engine", "xray") if state else "xray"
     container = "singbox-node" if engine == "singbox" else "xray-node"
-    if os.system(f"docker inspect -f '{{{{.State.Running}}}}' {container} >/dev/null 2>&1") != 0:
-        return False, "Container dead"
+    if _docker_output(["inspect", "-f", "{{.State.Running}}", container]) != "true":
+        return False, "Container not running"
     try:
-        ip = socket.gethostbyname(container)
+        # singbox-node shares xray-node's network namespace and has no own
+        # DNS entry, so probe the shared netns (xray-node) for port 6357.
+        ip = socket.gethostbyname("xray-node")
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.settimeout(3)
         s.connect((ip, 6357))
@@ -1215,24 +1292,28 @@ def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
     if not servers:
         log(f"No servers for {engine}, keeping existing config")
         return False
-    if engine == "xray":
-        os.system("docker stop singbox-node 2>/dev/null")
-        cfg = build_xray_config(servers, active_idx)
-        with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        log(f"Wrote xray config ({len(cfg['outbounds'])} outbounds)")
-        log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
-        os.system("docker restart xray-node")
-    else:
-        os.system("docker stop xray-node 2>/dev/null")
-        cfg = build_singbox_config(servers, active_idx)
-        with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
-        log(f"Wrote singbox config ({len(cfg['outbounds'])} outbounds)")
-        log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
-        _ensure_xray_running()
-        os.system("docker restart singbox-node")
-    time.sleep(5)
+    acquire_apply_lock()
+    try:
+        if engine == "xray":
+            _docker(["stop", "singbox-node"])
+            cfg = build_xray_config(servers, active_idx)
+            with open(XRAY_CONFIG, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            log(f"Wrote xray config ({len(cfg['outbounds'])} outbounds)")
+            log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+            _docker(["restart", "xray-node"])
+        else:
+            _docker(["stop", "xray-node"])
+            cfg = build_singbox_config(servers, active_idx)
+            with open(SINGBOX_CONFIG, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2, ensure_ascii=False)
+            log(f"Wrote singbox config ({len(cfg['outbounds'])} outbounds)")
+            log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+            _ensure_xray_running()
+            _docker(["restart", "singbox-node"])
+    finally:
+        release_apply_lock()
+    time.sleep(3)
     ok, status = test_proxy()
     if not ok:
         log(f"Proxy down after applying {engine}, rolling back...")
@@ -1256,19 +1337,20 @@ def rollback_engine(engine: str) -> bool:
 
 # --- Subscription Update ---
 
-def update_subscription() -> None:
+def update_subscription() -> bool:
+    """Fetch + apply the subscription. Returns True if a config was applied."""
     state = load_state()
     sub_url = state.get("sub_url", "")
     if not sub_url:
         log("No sub_url configured, skipping subscription fetch")
-        return
+        return False
 
     log(f"Fetching subscription from {sub_url}")
     servers = parse_subscription(sub_url)
     if not servers:
         log("No servers found in subscription")
         save_cache([])
-        return
+        return False
 
     save_cache(servers)
 
@@ -1297,20 +1379,23 @@ def update_subscription() -> None:
         save_rollback(engine)
         return apply_configs(engine, subset, active_idx=idx)
 
+    applied = False
     if current_engine == "xray" and xray_servers:
-        _apply_engine("xray", xray_servers)
+        applied = _apply_engine("xray", xray_servers)
     elif current_engine == "singbox" and singbox_servers:
-        _apply_engine("singbox", singbox_servers)
+        applied = _apply_engine("singbox", singbox_servers)
     elif xray_servers:
         log("No xray servers found for current engine, switching to xray")
         save_rollback("xray")
         apply_configs("xray", xray_servers)
         state["active_engine"] = "xray"
+        applied = True
     elif singbox_servers:
         log("No singbox servers found for current engine, switching to singbox")
         save_rollback("singbox")
         apply_configs("singbox", singbox_servers)
         state["active_engine"] = "singbox"
+        applied = True
 
     tags = [s.get("tag", "") for s in servers]
     report(
@@ -1333,6 +1418,7 @@ def update_subscription() -> None:
         state["active_proto"] = servers[0].get("type", "")
         state["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
         save_state(state)
+    return applied
 
 
 def fetch_subscription_now(url: Optional[str] = None) -> int:
@@ -1380,7 +1466,7 @@ def fetch_subscription_now(url: Optional[str] = None) -> int:
         return 0
 
 
-def select_server(idx: int) -> int:
+def select_server(idx: int, mode: str = "manual") -> int:
     servers = load_cache()
     if idx < 0 or idx >= len(servers):
         log(f"Invalid server index {idx}, have {len(servers)} servers")
@@ -1392,6 +1478,13 @@ def select_server(idx: int) -> int:
     log(f"Selecting server {idx + 1}: {name} ({engine})")
     if not url:
         log(f"No URL for server {idx + 1}, cannot build config")
+        return 1
+
+    host = srv.get("host", "")
+    port = int(srv.get("port", 0) or 0)
+    if host and port > 0 and not _probe_host(host, port):
+        log(f"Server {name} ({host}:{port}) unreachable, keeping current selection")
+        report(engine="system", status="Switch failed", message=f"{name} unreachable, kept current server")
         return 1
 
     outbound_engine, ob = parse_url_to_outbound(url, engine=engine)
@@ -1407,21 +1500,21 @@ def select_server(idx: int) -> int:
     state["active_engine"] = engine
     state["active_proto"] = srv.get("proto", "")
     state["active_url"] = url
-    state["active_mode"] = "manual"
+    state["active_mode"] = mode
     state["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
     save_state(state)
 
     log(f"Switched to {name}")
-    log("Generated config: " + json.dumps(cfg, indent=2, ensure_ascii=False))
     return 0
 
 
-def benchmark_servers(probes: int = 4, timeout: float = 2.0) -> dict:
+def benchmark_servers(probes: int = BENCH_PROBES, timeout: float = BENCH_TIMEOUT, progress: Optional[callable] = None) -> dict:
     """TCP-probe every cached server and measure latency / jitter / loss.
 
     For UDP-only protocols (hysteria2/tuic/wireguard) a TCP 'connection
     refused' still proves the host is up and yields a valid RTT sample.
     Returns {cache_idx: {"latency_ms","jitter_ms","loss_pct","ok"}}.
+    `progress(idx, name, line)` is called as each server finishes.
     """
     servers = load_cache()
     results: dict = {}
@@ -1462,8 +1555,44 @@ def benchmark_servers(probes: int = 4, timeout: float = 2.0) -> dict:
             entry["jitter_ms"] = round(max(times_ms) - min(times_ms), 1)
             entry["loss_pct"] = round(100.0 * (1 - len(times_ms) / max(probes, 1)), 0)
             entry["ok"] = True
-        results[idx] = entry
+        results[str(idx)] = entry
+        if progress is not None:
+            if entry.get("ok"):
+                line = f"{entry['latency_ms']:.1f} ms  jit {entry['jitter_ms']:.1f} ms  loss {entry['loss_pct']:.0f}%"
+            else:
+                line = "UNREACHABLE"
+            progress(idx, srv.get("name", f"Server {idx + 1}"), line)
     return results
+
+
+def _bench_progress(idx: int, name: str, line: str) -> None:
+    print(f"  {idx + 1:2d}) {name:<35s} {line}", flush=True)
+
+
+def load_benchmark_cache() -> dict:
+    try:
+        with open(BENCH_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_benchmark(results: dict, mode: str) -> None:
+    try:
+        with open(BENCH_FILE, "w", encoding="utf-8") as f:
+            json.dump({"ts": time.time(), "mode": mode, "results": results}, f, indent=2)
+        log(f"Benchmark cached for {mode} mode")
+    except Exception as e:
+        log(f"Failed to cache benchmark: {e}")
+
+
+def get_benchmark(max_age: int = BENCH_TTL) -> Tuple[dict, float, bool]:
+    """Return (results, ts, fresh). Fresh = cached within max_age seconds."""
+    data = load_benchmark_cache()
+    ts = float(data.get("ts", 0))
+    if ts and time.time() - ts <= max_age:
+        return data.get("results", {}), ts, True
+    return {}, ts, False
 
 
 def print_benchmark(results: dict) -> None:
@@ -1473,7 +1602,7 @@ def print_benchmark(results: dict) -> None:
     print("--------------------------------------------")
     for idx in range(len(servers)):
         name = servers[idx].get("name", f"Server {idx + 1}")
-        r = results.get(idx, {"latency_ms": None, "jitter_ms": None, "loss_pct": 100.0, "ok": False})
+        r = results.get(str(idx), {"latency_ms": None, "jitter_ms": None, "loss_pct": 100.0, "ok": False})
         if r.get("ok"):
             print(f" {idx + 1:2d}) {name:<35s} {r['latency_ms']:>7.1f} ms  jit {r['jitter_ms']:>6.1f} ms  loss {r['loss_pct']:.0f}%")
         else:
@@ -1482,7 +1611,11 @@ def print_benchmark(results: dict) -> None:
 
 
 def select_mode(mode: str) -> int:
-    """Auto-select the best server by mode: 'fastest' or 'balanced'."""
+    """Auto-select the best server by mode: 'fastest' or 'balanced'.
+
+    Uses the cached benchmark when fresh (no ping spam); otherwise probes
+    with live progress output so the CLI never appears frozen.
+    """
     mode = (mode or "manual").strip().lower()
     if mode not in ("fastest", "balanced"):
         log(f"Unknown selection mode '{mode}'")
@@ -1491,11 +1624,17 @@ def select_mode(mode: str) -> int:
     if not servers:
         log("No servers in cache, cannot auto-select")
         return 1
-    log(f"Benchmarking {len(servers)} servers ({mode})...")
-    results = benchmark_servers()
+
+    results, ts, fresh = get_benchmark()
+    if fresh:
+        log(f"Using cached benchmark ({int(time.time() - ts)}s old)")
+    else:
+        log(f"Benchmarking {len(servers)} servers ({mode})...")
+        results = benchmark_servers(progress=_bench_progress)
+        save_benchmark(results, mode)
     print_benchmark(results)
 
-    reachable = {idx: r for idx, r in results.items() if r.get("ok")}
+    reachable = {int(idx): r for idx, r in results.items() if r.get("ok")}
     if not reachable:
         log("No servers reachable, keeping current selection")
         return 1
@@ -1507,11 +1646,8 @@ def select_mode(mode: str) -> int:
         best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
         log(f"Balanced mode: server {best + 1} ({servers[best].get('name', '')}) loss={reachable[best]['loss_pct']:.0f}% jitter={reachable[best]['jitter_ms']} ms")
 
-    rc = select_server(best)
+    rc = select_server(best, mode=mode)
     if rc == 0:
-        state = load_state()
-        state["active_mode"] = mode
-        save_state(state)
         log(f"Active selection mode saved: {mode}")
     return rc
 
@@ -1565,12 +1701,14 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
     log(f"Executing action: {action}")
 
     if action == "restart":
-        docker_restart("xray-node")
-        docker_restart("singbox-node")
-        report(engine="system", status="Engine Restarting", message="Containers restarted")
+        enqueue("restart")
         return True
     elif action == "switch":
-        return _exec_switch(cmd_data)
+        enqueue("switch", name=cmd_data.get("outbound", {}).get("tag", cmd_data.get("outbound_tag", "")))
+        return True
+    elif action == "update_sub":
+        enqueue("update_sub")
+        return True
     elif action in ("install_xray", "install_singbox"):
         target = action.replace("install_", "")
         config_content = cmd_data.get("config", "")
@@ -1600,49 +1738,6 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         return False
 
 
-def _exec_switch(cmd: dict) -> bool:
-    outbound = cmd.get("outbound", {})
-    engine = outbound.get("engine", cmd.get("engine", "xray"))
-    tag = outbound.get("tag", cmd.get("outbound_tag", "default"))
-    log(f"Switch to {engine}: {tag}")
-
-    servers = load_cache()
-    server = None
-    for s in servers:
-        if s.get("name") == tag or s.get("tag") == tag or s.get("id") == tag:
-            server = s
-            break
-    if not server:
-        log(f"Server {tag} not found in cache (checked name/tag/id)")
-        return False
-
-    url = server.get("url", "")
-    if not url:
-        log(f"No URL for server {tag}, cannot switch")
-        return False
-
-    outbound_engine, ob = parse_url_to_outbound(url, engine=engine)
-    if outbound_engine != engine:
-        log(f"URL protocol {outbound_engine} doesn't match cached engine {engine}, using URL parsing result anyway")
-        engine = outbound_engine
-
-    save_rollback(engine)
-    _apply_outbound_cfg(engine, ob)
-
-    state = load_state()
-    state["active_server"] = server.get("name", tag)
-    state["active_proto"] = outbound.get("pretty_proto", server.get("proto", tag))
-    state["active_engine"] = engine
-    state["active_url"] = url
-    state["active_mode"] = "manual"
-    state["last_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    save_state(state)
-
-    log(f"Switched to {tag}")
-    report(engine=engine, protocol=tag, status="Verified & Active", message=f"Switched to {tag}")
-    return True
-
-
 def _exec_shell(cmd: dict) -> bool:
     shell_cmd = cmd.get("command", "")
     if not shell_cmd:
@@ -1657,6 +1752,94 @@ def _exec_shell(cmd: dict) -> bool:
     except Exception as e:
         log(f"Exec failed: {e}")
         return False
+
+
+# --- Non-blocking Action Worker ---
+# Long-running operations (switches, subscription updates, restarts) are
+# queued here so the poll/health loops never block on them.
+
+_ACTION_QUEUE = queue.Queue()
+
+
+def enqueue(typ: str, **kw) -> None:
+    _ACTION_QUEUE.put({"type": typ, **kw})
+
+
+def _do_switch(action: dict) -> None:
+    idx = action.get("idx")
+    if idx is None:
+        name = action.get("name", "")
+        servers = load_cache()
+        for i, s in enumerate(servers):
+            if name and (s.get("tag") == name or s.get("name") == name or s.get("id") == name):
+                idx = i
+                break
+    if idx is None:
+        report(engine="system", status="Error", message="Switch failed: server not found in cache")
+        return
+    report(engine="system", status="Switching", message=f"Switching to server {int(idx) + 1}...")
+    rc = select_server(int(idx))
+    if rc == 0:
+        report(engine="system", status="Verified & Active", message=f"Switched to server {int(idx) + 1}")
+    else:
+        report(engine="system", status="Switch failed", message=f"Switch to server {int(idx) + 1} failed")
+
+
+def _reselect_after_update() -> None:
+    state = load_state()
+    mode = state.get("active_mode", "manual")
+    if mode not in ("fastest", "balanced"):
+        return
+    servers = load_cache()
+    if not servers:
+        return
+    log(f"[auto] re-selecting server in {mode} mode after subscription update")
+    results, _, fresh = get_benchmark()
+    if not fresh:
+        results = benchmark_servers()
+        save_benchmark(results, mode)
+    reachable = {int(i): r for i, r in results.items() if r.get("ok")}
+    if not reachable:
+        log("[auto] no reachable servers, keeping current selection")
+        return
+    if mode == "fastest":
+        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
+    else:
+        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
+    if servers[best].get("tag", "") == state.get("active_server"):
+        log("[auto] best server already active, nothing to do")
+        return
+    log(f"[auto] switching to server {best + 1} ({servers[best].get('name', '')})")
+    select_server(best, mode=mode)
+
+
+def _worker_loop() -> None:
+    while True:
+        action = _ACTION_QUEUE.get()
+        typ = action.get("type", "")
+        log(f"[worker] processing: {typ}")
+        try:
+            if typ == "switch":
+                _do_switch(action)
+            elif typ == "boot":
+                applied = update_subscription()
+                _reselect_after_update()
+                if not applied:
+                    restore_active_vpn()
+            elif typ == "update_sub":
+                update_subscription()
+                _reselect_after_update()
+            elif typ == "restore_vpn":
+                restore_active_vpn()
+            elif typ == "restart":
+                docker_restart("xray-node")
+                docker_restart("singbox-node")
+                report(engine="system", status="Engine Restarting", message="Containers restarted")
+            else:
+                log(f"[worker] unknown action type: {typ}")
+        except Exception as e:
+            log(f"[worker] error in {typ}: {e}")
+            log(traceback.format_exc())
 
 
 # --- Poll Loop ---
@@ -1686,7 +1869,6 @@ def main() -> None:
         log("WARNING: SECRET_TOKEN is empty - agent will not authenticate with server")
 
     ensure_default_configs()
-    restore_active_vpn()
 
     running = True
     def handle_signal(signum, frame):
@@ -1697,15 +1879,16 @@ def main() -> None:
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT, handle_signal)
 
-    update_subscription()
-
-    report(status="Registered", message="Agent starting")
-
     import threading
+    t_worker = threading.Thread(target=_worker_loop, daemon=True)
+    t_worker.start()
     t_health = threading.Thread(target=health_loop, daemon=True)
     t_health.start()
     t_poll = threading.Thread(target=poll_loop, daemon=True)
     t_poll.start()
+
+    report(status="Registered", message="Agent starting")
+    enqueue("boot")
 
     while running:
         time.sleep(1)
