@@ -45,6 +45,7 @@ type ReportRequest struct {
 	OutboundJSON string `json:"outbound_json"`
 	Status       string `json:"status,omitempty"`
 	Message      string `json:"message,omitempty"`
+	ActiveServer string `json:"active_server,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -255,7 +256,7 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON)
+	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer)
 	if err != nil {
 		log.Printf("ERROR: Failed to update node report for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -519,11 +520,21 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Queue an update_sub command so the node fetches the new subscription.
+	command := map[string]string{"action": "update_sub", "sub_url": req.SubURL}
+	cmdJSON, _ := json.Marshal(command)
+	messageID := time.Now().Unix()
+	if err := a.repo.SetPendingCommand(nodeID, string(cmdJSON), messageID); err != nil {
+		log.Printf("ERROR: Failed to queue update_sub command for node %s: %v", nodeID, err)
+	} else {
+		a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub")
+	}
+
 	log.Printf("Updated sub_url for node %s: %s", nodeID, req.SubURL)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
-		"message": "Subscription URL updated successfully",
+		"message": "Subscription URL updated, node will refresh on next poll",
 	})
 }
 
@@ -559,10 +570,10 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	messageID := time.Now().Unix()
-	command := `{"action":"restart"}`
+	command, _ := json.Marshal(map[string]string{"action": "update_sub", "sub_url": req.SubURL})
 	queuedCount := 0
 	for _, node := range nodes {
-		if err := a.repo.SetPendingCommand(node.ID, command, messageID); err != nil {
+		if err := a.repo.SetPendingCommand(node.ID, string(command), messageID); err != nil {
 			log.Printf("ERROR: Failed to queue command for node %s: %v", node.ID, err)
 		} else {
 			queuedCount++

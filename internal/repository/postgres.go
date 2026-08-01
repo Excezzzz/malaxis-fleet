@@ -243,9 +243,9 @@ func (r *postgresRepository) UpdateNodeStatus(id, ipLan string) error {
 	return err
 }
 
-func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON string) error {
-	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4 WHERE id = $5`
-	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, id)
+func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer string) error {
+	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5 WHERE id = $6`
+	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, id)
 	return err
 }
 
