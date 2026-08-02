@@ -106,6 +106,38 @@ type UpdateNodeRequest struct {
 
 // --- Auth Handlers ---
 
+// permissionsForUser resolves the permission list for a user. Owner and admin
+// bypass checks (implicitly granted all permissions); custom roles read their
+// permissions_json, supporting both array and map storage formats.
+func (a *API) permissionsForUser(user *domain.User) []string {
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
+		return []string{
+			"can_view_nodes", "can_switch_vpn", "can_edit_sub",
+			"can_manage_users", "can_view_audit", "can_export_backups",
+		}
+	}
+
+	var permissions []string
+	role, err := a.repo.GetRoleByName(user.Role)
+	if err != nil || role.PermissionsJSON == "" {
+		return []string{}
+	}
+	if err := json.Unmarshal([]byte(role.PermissionsJSON), &permissions); err != nil {
+		var permMap map[string]bool
+		if err2 := json.Unmarshal([]byte(role.PermissionsJSON), &permMap); err2 == nil {
+			for p, v := range permMap {
+				if v {
+					permissions = append(permissions, p)
+				}
+			}
+		}
+	}
+	if permissions == nil {
+		permissions = []string{}
+	}
+	return permissions
+}
+
 func (a *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -141,8 +173,9 @@ func (a *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	a.auditLogger.LogFromRequest(r, user.Username, audit.ActionLoginSuccess, user.Username, "User logged in successfully")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "ok",
-		"role":   user.Role,
+		"status":      "ok",
+		"role":        user.Role,
+		"permissions": a.permissionsForUser(user),
 		"user": map[string]interface{}{
 			"id":       user.ID,
 			"username": user.Username,
@@ -184,24 +217,7 @@ func (a *API) MeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch permissions for the user's role
-	var permissions []string
-	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
-		// Admin/Owner have all permissions
-		permissions = []string{
-			"can_view_nodes", "can_switch_vpn", "can_edit_sub",
-			"can_manage_users", "can_view_audit", "can_export_backups",
-		}
-	} else {
-		role, err := a.repo.GetRoleByName(user.Role)
-		if err == nil && role.PermissionsJSON != "" {
-			json.Unmarshal([]byte(role.PermissionsJSON), &permissions)
-		}
-	}
-
-	if permissions == nil {
-		permissions = []string{}
-	}
+	permissions := a.permissionsForUser(user)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

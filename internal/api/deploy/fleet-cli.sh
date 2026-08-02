@@ -15,6 +15,7 @@ YELLOW=$'\033[1;33m'
 BLUE=$'\033[0;34m'
 CYAN=$'\033[0;36m'
 NC=$'\033[0m'
+BOLD=$'\033[1m'
 
 get_state() {
     local key="$1"
@@ -80,13 +81,13 @@ cache_get() {
 
 show_menu() {
     clear
-    echo "=========================================="
-    echo "     Malaxis Fleet Agent CLI"
-    echo "=========================================="
+    echo "${CYAN}==========================================${NC}"
+    echo "${CYAN}${BOLD}     Malaxis Fleet Agent CLI${NC}"
+    echo "${CYAN}==========================================${NC}"
     echo ""
 
     if ! docker ps &>/dev/null; then
-        echo "Docker is not running!"
+        echo "${RED}Docker is not running!${NC}"
         echo ""
         echo "1) Start Docker & Agent"
         echo "2) Exit"
@@ -139,18 +140,31 @@ show_menu() {
         active_server="Not selected (Use Option 3)"
     fi
 
+    local node_disp="${RED}Not running${NC}"
+    if echo "$node_status" | grep -q "Up"; then
+        node_disp="${GREEN}${node_status}${NC}"
+    fi
+    local xray_disp="${RED}Not running${NC}"
+    if echo "$xray_status" | grep -q "Up"; then
+        xray_disp="${GREEN}${xray_status}${NC}"
+    fi
+    local singbox_disp="${RED}Not running${NC}"
+    if echo "$singbox_status" | grep -q "Up"; then
+        singbox_disp="${GREEN}${singbox_status}${NC}"
+    fi
+
     echo "------------------------------------------"
-    echo " ${node_icon} node-agent     ${node_status:-Not running}"
-    echo " ${xray_icon} xray-node      ${xray_status:-Not running}"
-    echo " ${singbox_icon} singbox-node   ${singbox_status:-Not running}"
+    echo " ${node_icon} node-agent     ${node_disp}"
+    echo " ${xray_icon} xray-node      ${xray_disp}"
+    echo " ${singbox_icon} singbox-node   ${singbox_disp}"
     echo "------------------------------------------"
     echo ""
-    echo " Active Server:    ${active_server}"
-    echo " Active Protocol:  ${active_proto}"
-    echo " Selection Mode:   ${active_mode}"
-    echo " SOCKS5 Proxy:     127.0.0.1:6357"
-    echo " HTTP Proxy:       127.0.0.1:6358"
-    echo " Last Update:      ${last_seen}"
+    echo " ${CYAN}Active Server:${NC}    ${active_server}"
+    echo " ${CYAN}Active Protocol:${NC}  ${active_proto}"
+    echo " ${CYAN}Selection Mode:${NC}   ${active_mode}"
+    echo " ${CYAN}SOCKS5 Proxy:${NC}     127.0.0.1:6357"
+    echo " ${CYAN}HTTP Proxy:${NC}       127.0.0.1:6358"
+    echo " ${CYAN}Last Update:${NC}      ${last_seen}"
     if [ "$server_count" -gt 0 ]; then
         echo " Cached Servers:  ${server_count} available"
     fi
@@ -183,7 +197,7 @@ show_menu() {
 
 update_subscription() {
     echo ""
-    echo "--- Update Subscription ---"
+    echo "${CYAN}--- Update Subscription ---${NC}"
 
     local current_url
     current_url=$(get_state "sub_url" "")
@@ -200,26 +214,26 @@ update_subscription() {
     fi
 
     if [ -z "$sub_url" ]; then
-        echo "No URL entered. Cancelled."
+        echo "${YELLOW}No URL entered. Cancelled.${NC}"
         sleep 2
         show_menu
         return
     fi
 
     set_state "sub_url" "$sub_url"
-    echo "Subscription URL saved. Fetching subscription now..."
+    echo "${GREEN}Subscription URL saved.${NC} Fetching subscription now..."
     docker exec node-agent python3 -c "import node_agent; exit(node_agent.fetch_subscription_now('$sub_url'))" 2>/dev/null || true
     docker exec node-agent python3 -c "import node_agent; node_agent.report()" 2>/dev/null || true
-    echo "Subscription URL synced to the web dashboard."
+    echo "${GREEN}Subscription URL synced to the web dashboard.${NC}"
     sleep 2
 
     local count
     count=$(cache_count)
     if [ "$count" -gt 0 ]; then
-        echo "Found ${count} servers in subscription!"
+        echo "${GREEN}Found ${count} servers in subscription!${NC}"
         echo "Use Option 3 to select a server."
     else
-        echo "No servers found yet. The agent will fetch in background."
+        echo "${YELLOW}No servers found yet. The agent will fetch in background.${NC}"
     fi
 
     sleep 2
@@ -228,7 +242,7 @@ update_subscription() {
 
 update_client_files() {
     echo ""
-    echo "--- Updating Client Files ---"
+    echo "${CYAN}--- Updating Client Files ---${NC}"
 
     if [ -f "$STATE_FILE" ]; then
         cp "$STATE_FILE" /tmp/agent_state_backup.json 2>/dev/null || true
@@ -242,14 +256,14 @@ update_client_files() {
 
     cd "$AGENT_DIR" && docker compose up -d --force-recreate node-agent 2>/dev/null || docker-compose up -d --force-recreate node-agent 2>/dev/null || true
 
-    echo "Client files updated!"
+    echo "${GREEN}Client files updated!${NC}"
     sleep 2
     show_menu
 }
 
 rename_node() {
     echo ""
-    echo "--- Rename Node ---"
+    echo "${CYAN}--- Rename Node ---${NC}"
 
     local current_name
     current_name=$(get_state "node_name" "$(hostname 2>/dev/null || echo 'this node')")
@@ -257,7 +271,7 @@ rename_node() {
     read -p "Enter new name for this node: " new_name
     new_name=$(echo "$new_name" | tr -d '[:space:]')
     if [ -z "$new_name" ]; then
-        echo "No name entered. Cancelled."
+        echo "${YELLOW}No name entered. Cancelled.${NC}"
         sleep 2
         show_menu
         return
@@ -265,39 +279,39 @@ rename_node() {
 
     set_state "node_name" "$new_name"
     docker exec node-agent python3 -c "import node_agent; node_agent.report(status='Renamed', message='Node renamed via CLI')" 2>/dev/null || true
-    echo "Node renamed to '$new_name'. The dashboard will pick it up shortly."
+    echo "${GREEN}Node renamed to '$new_name'.${NC} The dashboard will pick it up shortly."
     sleep 2
     show_menu
 }
 
 terminate_node() {
     echo ""
-    echo "--- Terminate & Self-Destruct ---"
+    echo "${RED}--- Terminate & Self-Destruct ---${NC}"
     echo "${RED}WARNING:${NC} This will tear down the VPN containers, wipe this node's local"
     echo "configuration, and remove the agent. This cannot be undone."
     echo ""
     read -p "Type TERMINATE to confirm, or anything else to cancel: " confirm_word
     if [ "$confirm_word" != "TERMINATE" ]; then
-        echo "Cancelled."
+        echo "${YELLOW}Cancelled.${NC}"
         sleep 2
         show_menu
         return
     fi
-    echo "Terminating..."
+    echo "${RED}Terminating...${NC}"
     docker exec node-agent python3 -c "import node_agent; node_agent.enqueue('terminate')" 2>/dev/null || true
-    echo "Self-destruct initiated. Goodbye."
+    echo "${RED}Self-destruct initiated. Goodbye.${NC}"
     exit 0
 }
 
 switch_server() {
     echo ""
-    echo "--- Server Switcher ---"
+    echo "${CYAN}--- Server Switcher ---${NC}"
 
     echo ""
     echo "Available VPN Servers:"
     echo ""
     docker exec node-agent python3 -c "import node_agent; node_agent.print_server_list()" 2>/dev/null || {
-        echo "Failed to get server list from agent."
+        echo "${YELLOW}Failed to get server list from agent.${NC}"
         echo "Make sure node-agent is running and subscription is configured (Option 1)."
         sleep 2
         show_menu
@@ -313,7 +327,7 @@ print(len(servers))
 " 2>/dev/null || echo "0")
 
     if [ "$server_count" -eq 0 ]; then
-        echo "No servers in cache."
+        echo "${YELLOW}No servers in cache.${NC}"
         sleep 2
         show_menu
         return
@@ -333,7 +347,7 @@ print(len(servers))
     if [ "$choice" = "F" ] 2>/dev/null || [ "$choice" = "f" ] 2>/dev/null; then
         echo ""
         echo "Running benchmark and selecting fastest server..."
-        docker exec node-agent python3 -c "import node_agent; exit(node_agent.select_mode('fastest'))" 2>/dev/null || echo "Failed to auto-select fastest server"
+        docker exec node-agent python3 -c "import node_agent; exit(node_agent.select_mode('fastest'))" 2>/dev/null || echo "${YELLOW}Failed to auto-select fastest server${NC}"
         sleep 2
         show_menu
         return
@@ -342,14 +356,14 @@ print(len(servers))
     if [ "$choice" = "B" ] 2>/dev/null || [ "$choice" = "b" ] 2>/dev/null; then
         echo ""
         echo "Running benchmark and selecting most stable server..."
-        docker exec node-agent python3 -c "import node_agent; exit(node_agent.select_mode('balanced'))" 2>/dev/null || echo "Failed to auto-select balanced server"
+        docker exec node-agent python3 -c "import node_agent; exit(node_agent.select_mode('balanced'))" 2>/dev/null || echo "${YELLOW}Failed to auto-select balanced server${NC}"
         sleep 2
         show_menu
         return
     fi
 
     if ! echo "$choice" | grep -q '^[0-9][0-9]*$' || [ "$choice" -lt 1 ] || [ "$choice" -gt "$server_count" ]; then
-        echo "Invalid selection."
+        echo "${YELLOW}Invalid selection.${NC}"
         sleep 2
         switch_server
         return
@@ -359,7 +373,7 @@ print(len(servers))
 
     echo ""
     echo "Switching to server $choice..."
-    docker exec node-agent python3 -c "import node_agent; exit(node_agent.select_server($idx))" 2>/dev/null || echo "Failed to switch server"
+    docker exec node-agent python3 -c "import node_agent; exit(node_agent.select_server($idx))" 2>/dev/null || echo "${YELLOW}Failed to switch server${NC}"
 
     sleep 2
     show_menu
@@ -370,10 +384,10 @@ toggle_auto_update() {
     current=$(get_state "auto_update" "true")
     if [ "$current" = "true" ]; then
         set_state "auto_update" "false"
-        echo "Auto-update disabled. You take full responsibility for non-working proxy configurations."
+        echo "${YELLOW}Auto-update disabled. You take full responsibility for non-working proxy configurations.${NC}"
     else
         set_state "auto_update" "true"
-        echo "Auto-update enabled."
+        echo "${GREEN}Auto-update enabled.${NC}"
     fi
     sleep 3
     show_menu
@@ -381,17 +395,17 @@ toggle_auto_update() {
 
 view_logs() {
     echo ""
-    echo "--- Last 30 lines of node-agent logs ---"
+    echo "${CYAN}--- Last 30 lines of node-agent logs ---${NC}"
     echo "(Press Ctrl+C to return to menu)"
     echo ""
-    docker logs node-agent --tail 30 2>/dev/null || echo "No logs available."
+    docker logs node-agent --tail 30 2>/dev/null || echo "${YELLOW}No logs available.${NC}"
     echo ""
     read -p "Press Enter to return to menu..."
     show_menu
 }
 
 if [ ! -d "$AGENT_DIR" ]; then
-    echo "Fleet Agent not found at $AGENT_DIR"
+    echo "${RED}Fleet Agent not found at $AGENT_DIR${NC}"
     echo "Please run the installation script first:"
     echo "  curl -sSL https://__JOIN_DOMAIN__ | bash"
     exit 1
