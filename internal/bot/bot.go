@@ -28,6 +28,7 @@ type userState struct {
 
 type Bot struct {
 	api          *tgbotapi.BotAPI
+	apiStopped   bool
 	repo         repository.Repository
 	cfg          *config.Config
 	autoSync     *service.AutoSyncService
@@ -123,6 +124,7 @@ func (b *Bot) Start() error {
 
 	b.mu.Lock()
 	b.api = api
+	b.apiStopped = false
 	b.chatID = chatID
 	b.running = true
 	b.mu.Unlock()
@@ -136,10 +138,17 @@ func (b *Bot) Start() error {
 
 	log.Println("Telegram bot started")
 
+	go b.pollUpdates(updates)
+	return nil
+}
+
+// pollUpdates consumes Telegram updates until the updates channel is closed
+// (Stop) or the bot is flagged as not running.
+func (b *Bot) pollUpdates(updates tgbotapi.UpdatesChannel) {
 	for update := range updates {
 		select {
 		case <-b.stop:
-			return nil
+			return
 		default:
 		}
 
@@ -149,7 +158,7 @@ func (b *Bot) Start() error {
 		b.mu.Unlock()
 
 		if !running {
-			return nil
+			return
 		}
 
 		if update.Message != nil {
@@ -172,7 +181,6 @@ func (b *Bot) Start() error {
 			b.handleCallbackQuery(update.CallbackQuery)
 		}
 	}
-	return nil
 }
 
 func (b *Bot) Stop() {
@@ -190,11 +198,11 @@ func (b *Bot) Stop() {
 	}
 	// tgbotapi's StopReceivingUpdates closes the updates channel but does NOT
 	// nil it out, so calling it twice (e.g. Reboot after a settings save when
-	// the bot is disabled) would panic with "close of closed channel". Drop the
-	// reference so a second Stop is a no-op. Start() always builds a fresh API.
-	if b.api != nil {
+	// the bot is disabled) would panic with "close of closed channel". Guard
+	// with a per-api flag so a second Stop is a no-op.
+	if b.api != nil && !b.apiStopped {
+		b.apiStopped = true
 		b.api.StopReceivingUpdates()
-		b.api = nil
 	}
 }
 
