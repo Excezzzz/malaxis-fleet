@@ -85,7 +85,9 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	authRoutes := webAPIRouter.PathPrefix("/auth").Subrouter()
 	authRoutes.Handle("/login", api.RateLimit(float64(cfg.LoginRateLimit)/60.0, cfg.LoginRateLimit, http.HandlerFunc(api.LoginHandler))).Methods("POST")
 	authRoutes.HandleFunc("/logout", api.LogoutHandler).Methods("POST")
-	authRoutes.HandleFunc("/me", api.MeHandler).Methods("GET")
+	// /me MUST run inside auth.Middleware so the user context (and thus the
+	// role/permissions in the response) is populated for the Vue dashboard.
+	authRoutes.Handle("/me", auth.Middleware(cfg)(http.HandlerFunc(api.MeHandler))).Methods("GET")
 
 	// Web UI routes - Vue 3 frontend compatible endpoints
 	// All /api/web/* routes are authenticated + RBAC enforced
