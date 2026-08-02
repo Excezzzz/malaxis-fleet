@@ -32,7 +32,7 @@
         <component :is="currentViewComponent" />
       </main>
 
-      <nav class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+      <nav v-if="navItems.length > 0" class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
         <div class="flex items-center gap-1 rounded-2xl bg-zinc-900 border border-white/10 shadow-2xl shadow-black/40 p-1.5">
           <a v-for="item in navItems" :key="item.view" @click.prevent="currentView = item.view" href="#"
              :title="item.label"
@@ -130,9 +130,15 @@ export default {
     const login = () => {
         isAuthenticated.value = true;
         fetch('/api/auth/me')
-            .then(r => r.json())
+            .then(r => {
+                if (!r.ok) throw new Error('Session not established');
+                return r.json();
+            })
             .then(user => applyUser(user))
-            .catch(e => console.error('Failed to fetch current user:', e));
+            .catch(e => {
+                console.error('Failed to fetch current user:', e);
+                isAuthenticated.value = false;
+            });
     };
 
     const checkAuth = () => {
