@@ -29,7 +29,7 @@ except ImportError:  # Windows: module does not exist
 import queue
 
 SERVER_URL = os.environ.get("SERVER_URL", "https://api-fleet.malaxis.ru")
-SECRET_TOKEN = os.environ.get("SECRET_TOKEN", ""__FLEET_SECRET__"")
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
 BENCH_TTL = int(os.environ.get("BENCH_TTL", "600"))
