@@ -160,7 +160,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_export_backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
 
 	// POST /api/web/devices/{id}/command - send a command to a specific node (permission can_switch_vpn)
-	webAPIRouter.Handle("/web/devices/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
+	webAPIRouter.Handle("/web/devices/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_audit")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
 
 	// Admin/Owner routes (alternative paths)
 	adminAPIRoutes := webAPIRouter.PathPrefix("/admin").Subrouter()

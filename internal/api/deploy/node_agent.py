@@ -2007,7 +2007,10 @@ def update_client_files(urls: dict) -> bool:
         tmp = dest + ".tmp"
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "malaxis-fleet-agent"})
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            # Create an unverified SSL context to handle potential self-signed certs
+            import ssl
+            ctx = ssl._create_unverified_context()
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
                 data = resp.read()
             with open(tmp, "wb") as f:
                 f.write(data)

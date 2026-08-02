@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div>
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-4xl font-bold tracking-tight">Custom Roles & Permissions</h1>
@@ -78,36 +78,11 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
-              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4">
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" value="can_view_nodes"
+              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label v-for="perm in Object.keys(PERMISSION_LABELS)" :key="perm" class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="newRole.permissions" :value="perm"
                          class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">View Nodes</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" value="can_switch_vpn"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Switch VPN</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" value="can_edit_sub"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Edit Subscription URL</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" value="can_manage_users"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Manage Users</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" value="can_view_audit"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">View Audit Logs</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" value="can_export_backups"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Export Backups</span>
+                  <span class="text-sm text-zinc-300">{{ PERMISSION_LABELS[perm] }}</span>
                 </label>
               </div>
             </div>
@@ -145,36 +120,11 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
-              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4">
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" value="can_view_nodes"
+              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label v-for="perm in Object.keys(PERMISSION_LABELS)" :key="perm" class="flex items-center space-x-3">
+                  <input type="checkbox" v-model="editForm.permissions" :value="perm"
                          class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">View Nodes</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" value="can_switch_vpn"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Switch VPN</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" value="can_edit_sub"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Edit Subscription URL</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" value="can_manage_users"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Manage Users</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" value="can_view_audit"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">View Audit Logs</span>
-                </label>
-                <label class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" value="can_export_backups"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">Export Backups</span>
+                  <span class="text-sm text-zinc-300">{{ PERMISSION_LABELS[perm] }}</span>
                 </label>
               </div>
             </div>
@@ -199,12 +149,17 @@ const PERMISSION_LABELS = {
   can_view_nodes: 'View Nodes',
   can_switch_vpn: 'Switch VPN',
   can_edit_sub: 'Edit Subscription URL',
+  can_rename_node: 'Rename Nodes',
+  can_terminate_node: 'Terminate Nodes',
+  can_update_client: 'Update Client Files (OTA)',
+  can_purge_nodes: 'Purge Offline Nodes',
   can_manage_users: 'Manage Users',
+  can_manage_roles: 'Manage Roles',
   can_view_audit: 'View Audit Logs',
   can_export_backups: 'Export Backups',
 };
 
-const ALL_PERMS = ['can_view_nodes', 'can_switch_vpn', 'can_edit_sub', 'can_manage_users', 'can_view_audit', 'can_export_backups'];
+const ALL_PERMS = Object.keys(PERMISSION_LABELS);
 
 export default {
   name: 'RoleManager',
@@ -243,10 +198,11 @@ export default {
 
     const handleCreateRole = async () => {
       try {
+        const permsObj = newRole.value.permissions.reduce((acc, p) => ({ ...acc, [p]: true }), {});
         const roleData = {
           name: newRole.value.name,
           color_hex: newRole.value.color_hex,
-          permissions_json: JSON.stringify(newRole.value.permissions),
+          permissions_json: JSON.stringify(permsObj),
         };
         const response = await fetch('/api/web/roles', {
           method: 'POST',
@@ -268,6 +224,7 @@ export default {
     const openEditModal = (role) => {
       editingRole.value = role;
       editForm.value = {
+        id: role.id,
         name: role.name,
         color_hex: role.color_hex,
         permissions: [...parsePermissions(role.permissions_json)],
@@ -277,12 +234,13 @@ export default {
     const handleEditRole = async () => {
       if (!editingRole.value) return;
       try {
+        const permsObj = editForm.value.permissions.reduce((acc, p) => ({ ...acc, [p]: true }), {});
         const roleData = {
           name: editForm.value.name,
           color_hex: editForm.value.color_hex,
-          permissions_json: JSON.stringify(editForm.value.permissions),
+          permissions_json: JSON.stringify(permsObj),
         };
-        const response = await fetch(`/api/web/roles/${editingRole.value.id}`, {
+        const response = await fetch(`/api/web/roles/${editForm.value.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(roleData),
@@ -327,6 +285,7 @@ export default {
       editForm,
       parsePermissions,
       permLabel,
+      PERMISSION_LABELS,
       handleCreateRole,
       openEditModal,
       handleEditRole,
@@ -335,4 +294,3 @@ export default {
   },
 };
 </script>
-

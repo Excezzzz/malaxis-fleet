@@ -1820,26 +1820,18 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
-	var req struct {
-		Action       string `json:"action"`
-		OutboundTag  string `json:"outbound_tag"`
-	}
+	var req map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	if req.Action == "" {
+	if _, ok := req["action"]; !ok {
 		http.Error(w, "Bad Request: action is required", http.StatusBadRequest)
 		return
 	}
 
-	cmd := map[string]string{"action": req.Action}
-	if req.OutboundTag != "" {
-		cmd["outbound_tag"] = req.OutboundTag
-	}
-
-	cmdJSON, err := json.Marshal(cmd)
+	cmdJSON, err := json.Marshal(req)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -1852,7 +1844,8 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", req.Action)
+	action, _ := req["action"].(string)
+	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", action)
 
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	actorUser, _ := a.repo.GetUserByID(actorID)

@@ -160,7 +160,7 @@ func seedDefaultRoles(repo repository.Repository) error {
 		Name:            "admin",
 		ColorHex:        "#EF4444",
 		OwnerID:         "system",
-		PermissionsJSON: `{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_manage_users":true,"can_view_audit":true,"can_export_backups":true}`,
+		PermissionsJSON: `{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_manage_users":true,"can_manage_roles":true,"can_view_audit":true,"can_export_backups":true}`,
 		CreatedAt:       now,
 	}
 	if _, err := repo.AddCustomRole(adminRole); err != nil {

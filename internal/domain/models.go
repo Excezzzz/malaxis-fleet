@@ -14,7 +14,12 @@ const (
 	PermViewNodes     = "can_view_nodes"
 	PermSwitchVPN     = "can_switch_vpn"
 	PermEditSub       = "can_edit_sub"
+	PermRenameNode    = "can_rename_node"
+	PermTerminateNode = "can_terminate_node"
+	PermUpdateClient  = "can_update_client"
+	PermPurgeNodes    = "can_purge_nodes"
 	PermManageUsers   = "can_manage_users"
+	PermManageRoles   = "can_manage_roles"
 	PermViewAudit     = "can_view_audit"
 	PermExportBackups = "can_export_backups"
 )
