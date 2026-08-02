@@ -2,8 +2,8 @@ package main
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -128,54 +128,16 @@ func createInitialAdmin(repo repository.Repository, username, password string) e
 		return err
 	}
 
-	isEmpty, err := repo.IsUsersEmpty()
-	if err != nil {
-		return err
+	// Unconditional upsert: creates the admin user if missing and ALWAYS
+	// overwrites the existing password_hash with a fresh bcrypt hash of the
+	// configured default. Because the admin row already exists from previous
+	// sessions, a naive "IF NOT EXISTS" seed would skip the update and keep
+	// the stale hash -> 401. This path cannot skip: the hash is rewritten on
+	// every single startup.
+	if err := repo.UpsertAdminUser(username, string(hashedPassword)); err != nil {
+		return fmt.Errorf("failed to seed admin user: %w", err)
 	}
-
-	if isEmpty {
-		log.Printf("No users found. Creating initial admin user '%s'...", username)
-		user := &domain.User{
-			Username:     username,
-			PasswordHash: string(hashedPassword),
-			Role:         domain.RoleOwner,
-			CreatedAt:    time.Now(),
-			ColorHex:     "#FF5733",
-		}
-
-		if _, err := repo.AddUser(user); err != nil {
-			return err
-		}
-		log.Println("Initial admin user created successfully.")
-		return nil
-	}
-
-	// Guarantee the default admin credential works 100%: on every startup,
-	// sync the admin user's password to the configured default so a stale or
-	// corrupted hash can never lock the dashboard out.
-	admin, err := repo.GetUserByUsername(username)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			log.Printf("Admin user '%s' missing, recreating...", username)
-			user := &domain.User{
-				Username:     username,
-				PasswordHash: string(hashedPassword),
-				Role:         domain.RoleOwner,
-				CreatedAt:    time.Now(),
-				ColorHex:     "#FF5733",
-			}
-			_, err = repo.AddUser(user)
-			return err
-		}
-		return err
-	}
-
-	if admin.PasswordHash != string(hashedPassword) {
-		if err := repo.UpdateUserPassword(admin.ID, string(hashedPassword)); err != nil {
-			return err
-		}
-		log.Printf("Admin password synced to configured default")
-	}
+	log.Printf("Admin user '%s' upserted (password hash force-synced)", username)
 	return nil
 }
 
