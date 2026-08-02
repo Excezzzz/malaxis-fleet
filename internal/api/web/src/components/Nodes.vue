@@ -21,6 +21,10 @@
       </div>
     </div>
 
+    <div v-if="toast" :class="['fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
+      {{ toast }}
+    </div>
+
     <div v-if="error" class="bg-red-900/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl mb-6" role="alert">
       <strong class="font-bold">Error:</strong>
       <span class="block sm:inline">{{ error }}</span>
@@ -78,7 +82,17 @@ export default {
     const error = ref(null);
     const showMassUpdateModal = ref(false);
     const massUpdateDomain = ref('');
+    const toast = ref('');
+    const toastType = ref('success');
     let pollInterval;
+    let toastTimer;
+
+    const showToast = (msg, type = 'success', duration = 4000) => {
+      toast.value = msg;
+      toastType.value = type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.value = ''; }, duration);
+    };
 
     const fetchNodes = async () => {
       try {
@@ -94,14 +108,14 @@ export default {
     const handleUpdateAll = async () => {
       if (!confirm('Queue client-file update for ALL nodes? Offline nodes will apply it automatically when they reconnect.')) return;
       try {
-        const response = await axios.post('/api/web/nodes/mass-update-client');
+        // Send an empty object for the body
+        const response = await axios.post('/api/web/nodes/mass-update-client', {});
         if (response.data.status !== 'ok') throw new Error('Mass update failed');
-        alert(`Queued update for ${response.data.nodes_updated} nodes (${response.data.commands_queued} commands written).`);
+        showToast(`Queued update for ${response.data.nodes_updated} nodes.`);
         fetchNodes();
       } catch (e) {
         console.error("Failed to update all devices:", e);
-        error.value = e.message;
-        alert('Could not update all devices.');
+        showToast('Could not update all devices.', 'error');
       }
     };
 
@@ -159,6 +173,8 @@ export default {
       canEditSub,
       showMassUpdateModal,
       massUpdateDomain,
+      toast,
+      toastType,
       fetchNodes,
       handleUpdateAll,
       handleMassUpdateDomain,

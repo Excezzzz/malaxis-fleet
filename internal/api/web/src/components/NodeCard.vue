@@ -50,38 +50,41 @@
             <span class="text-white font-medium">{{ timeSince(node.last_seen) }}</span>
         </div>
       </div>
-      <div v-if="node.pipeline_status" class="mt-3 text-sm">
-        <p class="flex items-center space-x-2">
-            <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-4 h-4 text-emerald-400" />
-            <span class="text-zinc-500 text-xs uppercase tracking-wider">Status</span>
-            <span class="text-white font-medium">{{ node.pipeline_status }}</span>
-        </p>
-        <p v-if="node.status_message" class="text-xs text-zinc-400 pl-6">{{ node.status_message }}</p>
-      </div>
     </div>
-    <div class="mt-5 space-y-2">
-      <div v-if="isReadOnly" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
-        <EyeOff class="w-4 h-4" />
-        <span>Read-only view</span>
+    <div class="mt-auto pt-4">
+      <div v-if="node.pipeline_status || (node.available_servers && node.available_servers.length)" class="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-zinc-400">
+        <div class="flex items-center space-x-2">
+          <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-4 h-4 text-emerald-400" />
+          <span>Status: <strong class="text-emerald-400 font-medium">{{ node.pipeline_status || 'Idle' }}</strong></span>
+        </div>
+        <span v-if="node.available_servers && node.available_servers.length" class="text-zinc-500">{{ node.available_servers.length }} servers</span>
       </div>
-      <template v-else>
-        <button v-if="canEditSub" @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
-          <Link class="w-4 h-4" />
-          <span>Manage Subscription URL</span>
-        </button>
-        <button v-if="canSwitchVpn" @click="switchVpnProfile" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
-          <Shield class="w-4 h-4" />
-          <span>Switch VPN Configuration</span>
-        </button>
-        <button v-if="canEditSub" @click="confirmDeleteNode" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
-          <Trash2 class="w-4 h-4" />
-          <span>Delete Node</span>
-        </button>
-        <button v-if="canEditSub && !isTerminated" @click="confirmTerminate" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
-          <Power class="w-4 h-4" />
-          <span>Terminate &amp; Self-Destruct</span>
-        </button>
-      </template>
+      <p v-if="node.pipeline_status && node.status_message" class="text-xs text-zinc-400 mt-1 pl-6">{{ node.status_message }}</p>
+
+      <div class="mt-3 space-y-2">
+        <div v-if="isReadOnly" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
+            <EyeOff class="w-4 h-4" />
+            <span>Read-only view</span>
+        </div>
+        <template v-else>
+            <button v-if="canEditSub" @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+              <Link class="w-4 h-4" />
+              <span>Manage Subscription URL</span>
+            </button>
+            <button v-if="canSwitchVpn" @click="switchVpnProfile" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+              <Shield class="w-4 h-4" />
+              <span>Switch VPN Configuration</span>
+            </button>
+            <button v-if="canEditSub" @click="confirmDeleteNode" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+              <Trash2 class="w-4 h-4" />
+              <span>Delete Node</span>
+            </button>
+            <button v-if="canEditSub && !isTerminated" @click="confirmTerminate" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+              <Power class="w-4 h-4" />
+              <span>Terminate &amp; Self-Destruct</span>
+            </button>
+        </template>
+      </div>
     </div>
 
     <!-- Rename Modal -->

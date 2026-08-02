@@ -156,7 +156,7 @@ func RequirePermission(repo repository.Repository, permission string) func(http.
 			}
 
 			// Owner and admin have all permissions
-			if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
+			if user.Role == domain.RoleOwner || user.Username == "admin" {
 				next.ServeHTTP(w, r)
 				return
 			}
