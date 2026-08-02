@@ -1,4 +1,4 @@
-package bot
+﻿package bot
 
 import (
 	"fmt"
@@ -218,7 +218,7 @@ func (b *Bot) SendAdminMessage(text string) {
 }
 
 func (b *Bot) SendCriticalErrorAlert(errorMessage string) {
-	text := "<b>🚨 [CRITICAL ERROR] Master Server Failure</b>\n\n<pre>" + errorMessage + "</pre>"
+	text := "<b>рџљЁ [CRITICAL ERROR] Master Server Failure</b>\n\n<pre>" + errorMessage + "</pre>"
 	b.SendAdminMessage(text)
 }
 
@@ -277,7 +277,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	nodes, _ := b.repo.GetAllNodes()
 	onlineCount := 0
 	for _, n := range nodes {
-		if time.Since(n.LastSeen).Seconds() < 10 {
+		if time.Since(n.LastSeen).Seconds() < 90 {
 			onlineCount++
 		}
 	}
@@ -286,11 +286,11 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎛 Nodes", "nodes_list"),
-			tgbotapi.NewInlineKeyboardButtonData("⚙️ Settings", "settings"),
+			tgbotapi.NewInlineKeyboardButtonData("рџЋ› Nodes", "nodes_list"),
+			tgbotapi.NewInlineKeyboardButtonData("вљ™пёЏ Settings", "settings"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh Status", "start"),
+			tgbotapi.NewInlineKeyboardButtonData("рџ”„ Refresh Status", "start"),
 		),
 	)
 	return text, markup
@@ -320,10 +320,10 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 
 	for _, n := range nodes {
 		var statusIcon string
-		if time.Since(n.LastSeen).Seconds() < 10 {
-			statusIcon = "🟢"
+		if time.Since(n.LastSeen).Seconds() < 90 {
+			statusIcon = "рџџў"
 		} else {
-			statusIcon = "🔴"
+			statusIcon = "рџ”ґ"
 		}
 		text.WriteString(fmt.Sprintf("%s <b>%s</b>\n", statusIcon, n.Name))
 		text.WriteString(fmt.Sprintf("    <pre>IP: %s</pre>\n", n.IPLan))
@@ -332,14 +332,14 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 		if n.PipelineStatus != "" {
 			text.WriteString(fmt.Sprintf("    <i>Status: %s %s</i>\n", b.getPipelineStatusIcon(n.PipelineStatus), n.PipelineStatus))
 			if n.StatusMessage != "" {
-				text.WriteString(fmt.Sprintf("    <pre>  ↳ %s</pre>\n", n.StatusMessage))
+				text.WriteString(fmt.Sprintf("    <pre>  в†і %s</pre>\n", n.StatusMessage))
 			}
 		}
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Main Menu", "start"),
+			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Main Menu", "start"),
 		),
 	)
 
@@ -352,17 +352,17 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 func (b *Bot) getPipelineStatusIcon(status string) string {
 	switch status {
 	case "Queued":
-		return "⏳"
+		return "вЏі"
 	case "Fetched":
-		return "📡"
+		return "рџ“Ў"
 	case "Engine Restarting":
-		return "⚙️"
+		return "вљ™пёЏ"
 	case "Verified & Active":
-		return "✅"
+		return "вњ…"
 	case "Rollback Executed":
-		return "❌"
+		return "вќЊ"
 	default:
-		return "❔"
+		return "вќ”"
 	}
 }
 
@@ -370,11 +370,11 @@ func (b *Bot) handleSettings(chatID int64, messageID int) {
 	botEnabledStr, _ := b.repo.GetSetting("tg_bot_enabled")
 	botEnabled := botEnabledStr == "true"
 
-	text := "<b>⚙️ Settings</b>\n\nSelect a category to manage."
+	text := "<b>вљ™пёЏ Settings</b>\n\nSelect a category to manage."
 	if botEnabled {
-		text += "\n\nBot Status: <b>🟢 Enabled</b>"
+		text += "\n\nBot Status: <b>рџџў Enabled</b>"
 	} else {
-		text += "\n\nBot Status: <b>🔴 Disabled</b>"
+		text += "\n\nBot Status: <b>рџ”ґ Disabled</b>"
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
@@ -382,13 +382,13 @@ func (b *Bot) handleSettings(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("Auto-Sync", "settings_autosync"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📩 Backup", "settings_backup"),
+			tgbotapi.NewInlineKeyboardButtonData("рџ“© Backup", "settings_backup"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Admin Users", "settings_admins"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Main Menu", "start"),
+			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Main Menu", "start"),
 		),
 	)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
@@ -415,7 +415,7 @@ func (b *Bot) handleAutoSyncSettings(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("24h", "set_autosync_1440"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Settings", "settings"),
+			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Settings", "settings"),
 		),
 	)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
@@ -465,7 +465,7 @@ func (b *Bot) handleAdminManagement(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("Add Admin (WIP)", "admins_add"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Settings", "settings"),
+			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Settings", "settings"),
 		),
 	)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
@@ -481,7 +481,7 @@ func (b *Bot) handleAdminList(chatID int64, messageID int) {
 
 	var rows [][]tgbotapi.InlineKeyboardButton
 	for _, u := range users {
-		text.WriteString(fmt.Sprintf("• <b>%s</b> (Role: %s)\n", u.Username, u.Role))
+		text.WriteString(fmt.Sprintf("вЂў <b>%s</b> (Role: %s)\n", u.Username, u.Role))
 		if len(users) > 1 {
 			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("Delete %s", u.Username), "admin_delete_"+strconv.FormatInt(u.ID, 10)),
@@ -489,7 +489,7 @@ func (b *Bot) handleAdminList(chatID int64, messageID int) {
 		}
 	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Admin Management", "settings_admins"),
+		tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Admin Management", "settings_admins"),
 	))
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text.String())

@@ -227,6 +227,13 @@ func (r *postgresRepository) AddNode(node *domain.Node) error {
 }
 
 func (r *postgresRepository) UpsertNode(node *domain.Node) error {
+	// Dedup ghost nodes: if another node with the same hostname exists under a
+	// different id (reinstall creates a fresh node_id), remove the stale one —
+	// but only if it has been offline for a while, so a live duplicate is kept.
+	if node.Hostname != "" {
+		_, _ = r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID)
+	}
+
 	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, last_seen)
 		VALUES ($1, $2, $3, $4, $5, NOW())
 		ON CONFLICT (id) DO UPDATE SET
@@ -250,15 +257,23 @@ func (r *postgresRepository) DeleteNode(id string) error {
 	return err
 }
 
+func (r *postgresRepository) DeleteOfflineNodes(thresholdDays int) (int64, error) {
+	res, err := r.db.Exec(`DELETE FROM nodes WHERE last_seen < NOW() - ($1::int * interval '1 day')`, thresholdDays)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func (r *postgresRepository) UpdateNodeStatus(id, ipLan string) error {
 	query := `UPDATE nodes SET ip_lan = $1, last_seen = $2 WHERE id = $3`
 	_, err := r.db.Exec(query, ipLan, time.Now(), id)
 	return err
 }
 
-func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers string) error {
-	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5, available_servers = $6 WHERE id = $7`
-	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, availableServers, id)
+func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers, subURL string) error {
+	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5, available_servers = $6, sub_url = COALESCE($8, sub_url) WHERE id = $7`
+	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, availableServers, id, subURL)
 	return err
 }
 

@@ -20,16 +20,16 @@ import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 try:
-    import fcntl
-except ImportError:
-    fcntl = None
+    import fcntl  # type: ignore[import-not-found]
+except ImportError:  # Windows: module does not exist
+    fcntl = None  # type: ignore[assignment]
 import queue
 
 SERVER_URL = os.environ.get("SERVER_URL", "https://api-fleet.malaxis.ru")
-SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
+SECRET_TOKEN = os.environ.get("SECRET_TOKEN", ""__FLEET_SECRET__"")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
 BENCH_TTL = int(os.environ.get("BENCH_TTL", "600"))
@@ -262,8 +262,8 @@ def poll():
     return None
 
 
-def report(**kw) -> None:
-    payload = {"id": NODE_ID}
+def report(**kw: Any) -> None:
+    payload: dict[str, Any] = {"id": NODE_ID}
     payload.update(kw)
     try:
         state = load_state()
@@ -1198,17 +1198,17 @@ def is_container_running(engine: str) -> bool:
 # --- Apply lock: serialize config writes + container restarts between the
 # --- daemon process and CLI invocations (docker exec) running in parallel.
 
-_APPLY_LOCK = None
+_APPLY_LOCK: Any = None
 
 
 def acquire_apply_lock() -> bool:
     global _APPLY_LOCK
-    if fcntl is None:
+    if fcntl is None:  # type: ignore[union-attr]
         return True
     try:
         if _APPLY_LOCK is None:
             _APPLY_LOCK = open(APPLY_LOCK_FILE, "w")
-        fcntl.flock(_APPLY_LOCK, fcntl.LOCK_EX)
+        fcntl.flock(_APPLY_LOCK, fcntl.LOCK_EX)  # type: ignore[union-attr]
         return True
     except Exception as e:
         log(f"Could not acquire apply lock: {e}")
@@ -1217,11 +1217,11 @@ def acquire_apply_lock() -> bool:
 
 def release_apply_lock() -> None:
     global _APPLY_LOCK
-    if fcntl is None or _APPLY_LOCK is None:
+    if fcntl is None or _APPLY_LOCK is None:  # type: ignore[union-attr]
         return
     try:
-        fcntl.flock(_APPLY_LOCK, fcntl.LOCK_UN)
-        _APPLY_LOCK.close()
+        fcntl.flock(_APPLY_LOCK, fcntl.LOCK_UN)  # type: ignore[union-attr]
+        _APPLY_LOCK.close()  # type: ignore[union-attr]
     except Exception as e:
         log(f"Could not release apply lock: {e}")
     finally:
@@ -1517,7 +1517,7 @@ def select_server(idx: int, mode: str = "manual") -> int:
     return 0
 
 
-def benchmark_servers(probes: int = BENCH_PROBES, timeout: float = BENCH_TIMEOUT, progress: Optional[callable] = None) -> dict:
+def benchmark_servers(probes: int = BENCH_PROBES, timeout: float = BENCH_TIMEOUT, progress: Optional[Callable[[int, str, str], None]] = None) -> dict:
     """TCP-probe every cached server and measure latency / jitter / loss.
 
     For UDP-only protocols (hysteria2/tuic/wireguard) a TCP 'connection
@@ -1698,7 +1698,18 @@ def health_loop() -> None:
 
 # --- Command Execution ---
 
+_last_command: Optional[str] = None
+
 def execute_command(cmd_data: Union[str, dict]) -> bool:
+    global _last_command
+    if isinstance(cmd_data, str):
+        key = cmd_data
+    else:
+        key = json.dumps(cmd_data, sort_keys=True)
+    if key == _last_command:
+        log("Command already processed, skipping duplicate delivery")
+        return True
+    _last_command = key
     if isinstance(cmd_data, str):
         raw = cmd_data.strip()
         if raw.startswith("switch:"):
@@ -1757,6 +1768,15 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
             with open(path, "w") as f:
                 f.write(content)
             log(f"Written {path}")
+        return True
+    elif action == "update_client_files":
+        urls = {
+            "node_agent.py": cmd_data.get("agent_url", ""),
+            "fleet-cli.sh": cmd_data.get("cli_url", ""),
+            "requirements.txt": cmd_data.get("req_url", ""),
+            "entrypoint.sh": cmd_data.get("entrypoint_url", ""),
+        }
+        enqueue("update_client_files", urls=urls)
         return True
     elif action == "exec":
         return _exec_shell(cmd_data)
@@ -1874,6 +1894,36 @@ def _reselect_after_update() -> None:
     select_server(best, mode=mode)
 
 
+def update_client_files(urls: dict) -> bool:
+    """Download latest client files from the fleet server and replace local copies."""
+    ok = True
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    for fname in ("node_agent.py", "fleet-cli.sh", "requirements.txt", "entrypoint.sh"):
+        url = urls.get(fname, "")
+        if not url:
+            log(f"Skipping {fname}: no download URL provided")
+            continue
+        dest = os.path.join(app_dir, fname)
+        tmp = dest + ".tmp"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "malaxis-fleet-agent"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, dest)
+            log(f"[update_client_files] updated {fname} ({len(data)} bytes)")
+        except Exception as e:
+            ok = False
+            log(f"[update_client_files] failed to download {fname}: {e}")
+            if os.path.exists(tmp):
+                try:
+                    os.remove(tmp)
+                except OSError:
+                    pass
+    return ok
+
+
 def _worker_loop() -> None:
     while True:
         action = _ACTION_QUEUE.get()
@@ -1889,20 +1939,32 @@ def _worker_loop() -> None:
                 _reselect_after_update()
                 if not applied:
                     restore_active_vpn()
+                report()
             elif typ == "update_sub":
                 update_subscription()
                 _reselect_after_update()
+                report()
             elif typ == "restore_vpn":
                 restore_active_vpn()
+                report()
             elif typ == "restart":
                 docker_restart("xray-node")
                 docker_restart("singbox-node")
                 report(status="Engine Restarting", message="Containers restarted")
+            elif typ == "update_client_files":
+                ok = update_client_files(action.get("urls", {}))
+                report(status="Updated" if ok else "Update failed",
+                       message="Client files updated, restarting agent" if ok else "Client file update failed")
+                if ok:
+                    log("[update_client_files] restarting agent with new code...")
+                    time.sleep(2)
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
             else:
                 log(f"[worker] unknown action type: {typ}")
         except Exception as e:
             log(f"[worker] error in {typ}: {e}")
             log(traceback.format_exc())
+            report(status="Error", message=f"Worker error in {typ}")
 
 
 # --- Poll Loop ---
