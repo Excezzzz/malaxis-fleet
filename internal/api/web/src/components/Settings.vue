@@ -1,41 +1,41 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold">Settings</h1>
+      <h1 class="text-4xl font-bold tracking-tight">Settings</h1>
     </div>
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6 mb-6">
-      <h2 class="text-2xl font-bold mb-6">Telegram Bot Settings</h2>
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
+      <h2 class="text-2xl font-bold tracking-tight mb-6">Telegram Bot Settings</h2>
 
       <div class="space-y-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm font-medium text-gray-300">Telegram Bot</p>
-            <p class="text-xs text-gray-500">{{ botEnabled ? 'Bot is active' : 'Bot is disabled' }}</p>
+            <p class="text-sm font-medium text-zinc-300">Telegram Bot</p>
+            <p class="text-xs text-zinc-500">{{ botEnabled ? 'Bot is active' : 'Bot is disabled' }}</p>
           </div>
-          <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-600' : 'bg-gray-600'">
+          <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-500' : 'bg-zinc-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="botEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-400 mb-1">Bot Token</label>
+          <label class="block text-sm font-medium text-zinc-400 mb-1">Bot Token</label>
           <input v-model="botToken" type="password" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
-                 class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm">
+                 class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 font-mono text-sm">
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-gray-400 mb-1">Admin Chat ID</label>
+          <label class="block text-sm font-medium text-zinc-400 mb-1">Admin Chat ID</label>
           <input v-model="adminChatId" type="number" placeholder="987654321"
-                 class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                 class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
         </div>
 
         <div class="flex space-x-4">
-          <button @click="saveBotSettings" :disabled="saving" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors disabled:opacity-50">
+          <button @click="saveBotSettings" :disabled="saving" class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
             <span v-if="saving">Saving...</span>
             <span v-else>Save Bot Settings</span>
           </button>
-          <button @click="testConnection" :disabled="testing" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-lg transition-colors disabled:opacity-50">
+          <button @click="testConnection" :disabled="testing" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-200 rounded-xl transition-colors disabled:opacity-50">
             <span v-if="testing">Testing...</span>
             <span v-else>Test Connection</span>
           </button>
@@ -52,10 +52,10 @@
       </div>
     </div>
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg p-6">
-      <h2 class="text-2xl font-bold mb-6">Database Backup</h2>
-      <p class="text-gray-400 mb-4">Download a complete database backup as a zip archive.</p>
-      <button @click="downloadBackup" class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors">
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6">
+      <h2 class="text-2xl font-bold tracking-tight mb-6">Database Backup</h2>
+      <p class="text-zinc-400 mb-4">Download a complete database backup as a zip archive.</p>
+      <button @click="downloadBackup" class="px-4 py-2 bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-100 rounded-xl transition-colors">
         Download Backup
       </button>
     </div>

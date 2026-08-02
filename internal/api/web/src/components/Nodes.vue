@@ -92,13 +92,11 @@ export default {
     };
 
     const handleUpdateAll = async () => {
+      if (!confirm('Queue client-file update for ALL nodes? Offline nodes will apply it automatically when they reconnect.')) return;
       try {
-        const subUrl = prompt('Enter subscription URL for all nodes:');
-        if (!subUrl) return;
-        if (!confirm(`Update ALL nodes with subscription URL?\n${subUrl}`)) return;
-        const response = await axios.post('/api/web/devices/mass-update-sub', { sub_url: subUrl });
+        const response = await axios.post('/api/web/nodes/mass-update-client');
         if (response.data.status !== 'ok') throw new Error('Mass update failed');
-        alert(`Updated ${response.data.nodes_updated} nodes, ${response.data.commands_queued} commands queued.`);
+        alert(`Queued update for ${response.data.nodes_updated} nodes (${response.data.commands_queued} commands written).`);
         fetchNodes();
       } catch (e) {
         console.error("Failed to update all devices:", e);

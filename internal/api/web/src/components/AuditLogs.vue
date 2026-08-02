@@ -1,31 +1,31 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold">Audit Logs</h1>
-      <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
+      <h1 class="text-4xl font-bold tracking-tight">Audit Logs</h1>
+      <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
         <Download class="w-5 h-5" />
         <span>Export Logs</span>
       </button>
     </div>
 
-    <div class="bg-gray-800 border border-gray-700 rounded-lg shadow">
-      <table class="min-w-full divide-y divide-gray-700">
-        <thead class="bg-gray-850">
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden">
+      <table class="min-w-full divide-y divide-white/5">
+        <thead class="bg-white/[0.03]">
           <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Timestamp</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actor</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Action</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Target</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Details</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Timestamp</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Actor</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Action</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Target</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Details</th>
           </tr>
         </thead>
-        <tbody class="bg-gray-800 divide-y divide-gray-700">
-          <tr v-for="log in logs" :key="log.id">
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ new Date(log.timestamp).toLocaleString() }}</td>
+        <tbody class="divide-y divide-white/5">
+          <tr v-for="log in logs" :key="log.id" class="hover:bg-white/[0.03] transition-colors">
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ new Date(log.timestamp).toLocaleString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{{ log.actor }}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{{ log.action }}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{{ log.target || 'N/A' }}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ log.details }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-300">{{ log.action }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ log.target || 'N/A' }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">{{ log.details }}</td>
           </tr>
         </tbody>
       </table>
@@ -94,8 +94,3 @@ export default {
   },
 };
 </script>
-<style>
-.bg-gray-850 {
-    background-color: #1f2937;
-}
-</style>

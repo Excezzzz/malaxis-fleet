@@ -875,6 +875,15 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		req.Role = domain.RoleClient
 	}
 
+	// The owner role is reserved for the original seeded admin user. Nobody
+	// (not even the owner) may create additional owner accounts.
+	if req.Role == domain.RoleOwner {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(ErrResponse{Error: "The owner role is reserved for the original admin account"})
+		return
+	}
+
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("[CreateUser] bcrypt error: %v", err)
@@ -983,6 +992,22 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	if req.ColorHex != "" {
 		user.ColorHex = req.ColorHex
 	}
+
+	// Owner role protection: the original admin account (seeded by
+	// UpsertAdminUser) is the sole owner and cannot be demoted; no other user
+	// may ever be assigned the owner role.
+	if user.Username == "admin" || user.ID == 1 {
+		if user.Role != domain.RoleOwner {
+			log.Printf("[UpdateUser] blocked demotion of original admin %q (role %q)", user.Username, user.Role)
+			user.Role = domain.RoleOwner
+		}
+	} else if user.Role == domain.RoleOwner {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(ErrResponse{Error: "The owner role is reserved for the original admin account"})
+		return
+	}
+
 	if req.Password != "" {
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 		if err != nil {

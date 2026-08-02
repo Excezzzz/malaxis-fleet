@@ -1,8 +1,8 @@
-<template>
+﻿<template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold">🎭 Custom Roles & Permissions</h1>
-      <button @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">
+      <h1 class="text-4xl font-bold tracking-tight">Custom Roles & Permissions</h1>
+      <button @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
         <Plus class="w-5 h-5" />
         <span>Create New Role</span>
       </button>
@@ -10,7 +10,7 @@
 
     <!-- Existing Roles -->
     <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      <div v-for="role in customRoles" :key="role.id" class="bg-gray-800 border border-gray-700 rounded-lg p-6 shadow">
+      <div v-for="role in customRoles" :key="role.id" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-lg shadow-black/10 hover:border-indigo-500/20 transition-colors">
           <div class="flex items-center justify-between mb-4">
             <div class="flex items-center space-x-3">
               <span class="w-5 h-5 rounded-full" :style="{ backgroundColor: role.color_hex }"></span>
@@ -34,89 +34,89 @@
         </div>
 
         <div class="space-y-2">
-          <p class="text-sm font-medium text-gray-400">Permissions:</p>
+          <p class="text-xs uppercase tracking-wider font-medium text-zinc-500">Permissions:</p>
           <div v-if="parsePermissions(role.permissions_json).length > 0" class="flex flex-wrap gap-2">
-            <span v-for="perm in parsePermissions(role.permissions_json)" :key="perm" class="px-2 py-1 bg-gray-700 text-xs text-gray-300 rounded">
+            <span v-for="perm in parsePermissions(role.permissions_json)" :key="perm" class="px-2 py-1 bg-white/5 border border-white/10 text-xs text-zinc-300 rounded">
               {{ permLabel(perm) }}
             </span>
           </div>
-          <p v-else class="text-sm text-gray-500">No permissions assigned</p>
+          <p v-else class="text-sm text-zinc-500">No permissions assigned</p>
         </div>
 
-        <div class="mt-4 text-xs text-gray-500">
+        <div class="mt-4 text-xs text-zinc-500">
           Created: {{ new Date(role.created_at).toLocaleDateString() }}
         </div>
       </div>
     </div>
 
     <div v-else class="text-center py-16">
-      <Shield class="w-16 h-16 text-gray-600 mx-auto mb-4" />
-      <p class="text-gray-500 text-lg">No custom roles created yet.</p>
-      <p class="text-gray-600 text-sm mt-2">Create a custom role to assign granular permissions to users.</p>
+      <Shield class="w-16 h-16 text-zinc-600 mx-auto mb-4" />
+      <p class="text-zinc-500 text-lg">No custom roles created yet.</p>
+      <p class="text-zinc-600 text-sm mt-2">Create a custom role to assign granular permissions to users.</p>
     </div>
 
     <!-- Create Role Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-gray-800 rounded-lg p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6">Create New Custom Role</h2>
+    <div v-if="showCreateModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-2xl font-bold mb-6 tracking-tight">Create New Custom Role</h2>
 
         <form @submit.prevent="handleCreateRole">
           <div class="space-y-6">
             <div>
-              <label for="role_name" class="block text-sm font-medium text-gray-400 mb-1">Role Name</label>
+              <label for="role_name" class="block text-sm font-medium text-zinc-400 mb-1">Role Name</label>
               <input v-model="newRole.name" type="text" id="role_name" placeholder="e.g. Co-Creator, Moderator"
-                     class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500" required>
+                     class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50" required>
             </div>
             <div>
-              <label for="role_color" class="block text-sm font-medium text-gray-400 mb-1">Role Color</label>
+              <label for="role_color" class="block text-sm font-medium text-zinc-400 mb-1">Role Color</label>
               <div class="flex items-center space-x-3 mt-1">
                 <input v-model="newRole.color_hex" type="color" id="role_color_picker"
-                       class="h-10 w-16 rounded cursor-pointer bg-gray-700 border-gray-600">
+                       class="h-10 w-16 rounded cursor-pointer bg-zinc-800 border-white/10">
                 <input v-model="newRole.color_hex" type="text" id="role_color_hex" placeholder="#FF5733"
-                       class="flex-1 bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                       class="flex-1 bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50">
               </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-400 mb-2">Permissions</label>
-              <div class="space-y-3 bg-gray-700 rounded-lg p-4">
+              <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
+              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4">
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="newRole.permissions" value="can_view_nodes"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">View Nodes</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">View Nodes</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="newRole.permissions" value="can_switch_vpn"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Switch VPN</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Switch VPN</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="newRole.permissions" value="can_edit_sub"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Edit Subscription URL</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Edit Subscription URL</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="newRole.permissions" value="can_manage_users"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Manage Users</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Manage Users</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="newRole.permissions" value="can_view_audit"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">View Audit Logs</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">View Audit Logs</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="newRole.permissions" value="can_export_backups"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Export Backups</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Export Backups</span>
                 </label>
               </div>
             </div>
           </div>
           <div class="mt-8 flex justify-end space-x-4">
             <button type="button" @click="showCreateModal = false"
-                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+                    class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
             <button type="submit"
-                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">Create Role</button>
+                    class="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">Create Role</button>
           </div>
         </form>
       </div>
@@ -124,66 +124,66 @@
 
     <!-- Edit Role Modal -->
     <div v-if="editingRole" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div class="bg-gray-800 rounded-lg p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6">Edit Role: {{ editingRole.name }}</h2>
 
         <form @submit.prevent="handleEditRole">
           <div class="space-y-6">
             <div>
-              <label for="edit_role_name" class="block text-sm font-medium text-gray-400 mb-1">Role Name</label>
+              <label for="edit_role_name" class="block text-sm font-medium text-zinc-400 mb-1">Role Name</label>
               <input v-model="editForm.name" type="text" id="edit_role_name"
-                     class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500" required>
+                     class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50" required>
             </div>
             <div>
-              <label for="edit_role_color" class="block text-sm font-medium text-gray-400 mb-1">Role Color</label>
+              <label for="edit_role_color" class="block text-sm font-medium text-zinc-400 mb-1">Role Color</label>
               <div class="flex items-center space-x-3 mt-1">
                 <input v-model="editForm.color_hex" type="color" id="edit_role_color_picker"
-                       class="h-10 w-16 rounded cursor-pointer bg-gray-700 border-gray-600">
+                       class="h-10 w-16 rounded cursor-pointer bg-zinc-800 border-white/10">
                 <input v-model="editForm.color_hex" type="text" id="edit_role_color_hex" placeholder="#FF5733"
-                       class="flex-1 bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500">
+                       class="flex-1 bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50">
               </div>
             </div>
             <div>
-              <label class="block text-sm font-medium text-gray-400 mb-2">Permissions</label>
-              <div class="space-y-3 bg-gray-700 rounded-lg p-4">
+              <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
+              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4">
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="editForm.permissions" value="can_view_nodes"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">View Nodes</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">View Nodes</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="editForm.permissions" value="can_switch_vpn"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Switch VPN</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Switch VPN</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="editForm.permissions" value="can_edit_sub"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Edit Subscription URL</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Edit Subscription URL</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="editForm.permissions" value="can_manage_users"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Manage Users</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Manage Users</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="editForm.permissions" value="can_view_audit"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">View Audit Logs</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">View Audit Logs</span>
                 </label>
                 <label class="flex items-center space-x-3">
                   <input type="checkbox" v-model="editForm.permissions" value="can_export_backups"
-                         class="rounded bg-gray-600 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-gray-300">Export Backups</span>
+                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                  <span class="text-sm text-zinc-300">Export Backups</span>
                 </label>
               </div>
             </div>
           </div>
           <div class="mt-8 flex justify-end space-x-4">
             <button type="button" @click="editingRole = null"
-                    class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
+                    class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
             <button type="submit"
-                    class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">Save Changes</button>
+                    class="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">Save Changes</button>
           </div>
         </form>
       </div>
@@ -336,8 +336,3 @@ export default {
 };
 </script>
 
-<style>
-.bg-gray-850 {
-  background-color: #1f2937;
-}
-</style>
