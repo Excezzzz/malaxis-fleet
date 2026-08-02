@@ -178,7 +178,12 @@ export default {
         fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     };
 
-    provide('authCtx', { canEditSub, canSwitchVpn, canViewNodes, isReadOnly });
+        const user = computed(() => ({
+      username: username.value,
+      role: role.value,
+    }));
+
+    provide('authCtx', { user, hasPermission, canEditSub, canSwitchVpn, canViewNodes, isReadOnly });
 
     return {
       isAuthenticated,
