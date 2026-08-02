@@ -86,8 +86,25 @@ func (b *Bot) loadSettingsFromDB() {
 	}
 }
 
+// enabledFromDB reports whether the bot should run according to the database
+// setting tg_bot_enabled. Only an explicit "false" or "0" disables the bot;
+// any other value (including an unset key) keeps the legacy behaviour of
+// starting when a token is configured.
+func (b *Bot) enabledFromDB() bool {
+	enabled, _ := b.repo.GetSetting("tg_bot_enabled")
+	if enabled == "" {
+		enabled, _ = b.repo.GetSetting("bot_enabled")
+	}
+	return enabled != "false" && enabled != "0"
+}
+
 func (b *Bot) Start() error {
 	b.loadSettingsFromDB()
+
+	if !b.enabledFromDB() {
+		log.Println("Telegram bot disabled in settings (tg_bot_enabled != true), polling loop NOT started")
+		return nil
+	}
 
 	b.mu.Lock()
 	if b.token == "" || b.chatID == 0 {

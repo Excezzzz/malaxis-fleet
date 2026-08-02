@@ -1320,6 +1320,17 @@ func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	token, _ := a.repo.GetSetting("tg_bot_token")
 	chatIDStr, _ := a.repo.GetSetting("tg_admin_chat_id")
 
+	// Fall back to the env-configured values when the DB keys are empty, so the
+	// dashboard always reflects the token/chat_id the bot actually runs with.
+	if token == "" {
+		token = a.config.BotToken
+	}
+	if chatIDStr == "" {
+		if a.config.AdminChatID != 0 {
+			chatIDStr = strconv.FormatInt(a.config.AdminChatID, 10)
+		}
+	}
+
 	chatID, _ := strconv.ParseInt(chatIDStr, 10, 64)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1396,6 +1407,17 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	botToken, _ := a.repo.GetSetting("tg_bot_token")
 	botChatIDStr, _ := a.repo.GetSetting("tg_admin_chat_id")
 	lowRAMMode := a.config.LowRAMMode
+
+	// Fall back to env-configured values so the settings page always reflects
+	// the token/chat_id the bot actually runs with.
+	if botToken == "" {
+		botToken = a.config.BotToken
+	}
+	if botChatIDStr == "" {
+		if a.config.AdminChatID != 0 {
+			botChatIDStr = strconv.FormatInt(a.config.AdminChatID, 10)
+		}
+	}
 
 	botChatID, _ := strconv.ParseInt(botChatIDStr, 10, 64)
 
