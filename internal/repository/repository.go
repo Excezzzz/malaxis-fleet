@@ -37,6 +37,7 @@ type Repository interface {
 	GetUserByID(id int64) (*domain.User, error)
 	GetAllUsers() ([]domain.User, error)
 	AddUser(user *domain.User) (int64, error)
+	UpsertAdminUser(username, passwordHash string) error
 	UpdateUser(user *domain.User) error
 	UpdateUserPassword(id int64, passwordHash string) error
 	DeleteUser(id int64) error

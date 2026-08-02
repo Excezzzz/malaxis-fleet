@@ -413,10 +413,24 @@ func (r *postgresRepository) GetAllUsers() ([]domain.User, error) {
 }
 
 func (r *postgresRepository) AddUser(user *domain.User) (int64, error) {
+	query := `INSERT INTO users (username, password_hash, role, created_at, color_hex) VALUES ($1, $2, $3, $4, $5) RETURNING id`
 	var id int64
-	query := "INSERT INTO users (username, password_hash, role, created_at, color_hex) VALUES ($1, $2, $3, $4, $5) RETURNING id"
 	err := r.db.QueryRow(query, user.Username, user.PasswordHash, user.Role, user.CreatedAt, user.ColorHex).Scan(&id)
 	return id, err
+}
+
+// UpsertAdminUser creates the admin user if missing and ALWAYS overwrites its
+// password hash (and owner role) on every startup. There is no "IF NOT EXISTS"
+// skip path: an existing stale hash can never lock the dashboard out.
+func (r *postgresRepository) UpsertAdminUser(username, passwordHash string) error {
+	query := `INSERT INTO users (username, password_hash, role, created_at, color_hex)
+		VALUES ($1, $2, 'owner', NOW(), '#FF5733')
+		ON CONFLICT (username) DO UPDATE SET
+			password_hash = EXCLUDED.password_hash,
+			role = 'owner',
+			color_hex = COALESCE(users.color_hex, '#FF5733')`
+	_, err := r.db.Exec(query, username, passwordHash)
+	return err
 }
 
 func (r *postgresRepository) UpdateUser(user *domain.User) error {
