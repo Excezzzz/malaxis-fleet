@@ -1,5 +1,5 @@
 <template>
-  <div :class="['bg-zinc-900/40 backdrop-blur-md border rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 hover:border-indigo-500/30 hover:bg-zinc-900/60 shadow-lg shadow-black/20', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/5']">
+  <div :class="['bg-zinc-900 border rounded-2xl p-5 flex flex-col justify-between transition-colors duration-300 hover:border-indigo-500/30 hover:bg-zinc-800/80', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/10']">
     <div>
       <div class="flex justify-between items-start mb-4">
         <div class="flex items-center space-x-3">
@@ -8,15 +8,15 @@
           </div>
           <div class="flex items-center space-x-2">
             <h2 class="text-xl font-bold tracking-tight">{{ node.name }}</h2>
-            <button @click="showRenameModal = true" title="Rename node"
-              class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-all duration-300">
+            <button v-if="canEditSub" @click="showRenameModal = true" title="Rename node"
+              class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
               <Pencil class="w-3.5 h-3.5" />
             </button>
             <span v-if="isTerminated" class="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300">Terminated</span>
           </div>
         </div>
         <div class="flex items-center space-x-2">
-            <div :class="['w-3 h-3 rounded-full', isOnline ? 'bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)]']" :title="isOnline ? 'Online' : 'Offline'"></div>
+            <div :class="['w-3 h-3 rounded-full', isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500']" :title="isOnline ? 'Online' : 'Offline'"></div>
         </div>
       </div>
       <div class="space-y-2 text-sm text-zinc-300">
@@ -27,7 +27,7 @@
           <template v-if="node.sub_url">
             <span class="text-xs text-zinc-400 truncate max-w-[200px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
             <button @click="copySubUrl" title="Copy subscription URL"
-              class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-all duration-300 shrink-0">
+              class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors shrink-0">
               <Copy class="w-3 h-3" />
             </button>
           </template>
@@ -45,32 +45,38 @@
       </div>
     </div>
     <div class="mt-5 space-y-2">
-      <button @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-all duration-300">
-        <Link class="w-4 h-4" />
-        <span>Manage Subscription URL</span>
-      </button>
-      <button @click="switchVpnProfile" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-all duration-300">
-        <Shield class="w-4 h-4" />
-        <span>Switch VPN Configuration</span>
-      </button>
-      <button @click="confirmDeleteNode" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-all duration-300">
-        <Trash2 class="w-4 h-4" />
-        <span>Delete Node</span>
-      </button>
-      <button v-if="!isTerminated" @click="confirmTerminate" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-all duration-300">
-        <Power class="w-4 h-4" />
-        <span>Terminate &amp; Self-Destruct</span>
-      </button>
+      <div v-if="isReadOnly" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
+        <EyeOff class="w-4 h-4" />
+        <span>Read-only view</span>
+      </div>
+      <template v-else>
+        <button v-if="canEditSub" @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+          <Link class="w-4 h-4" />
+          <span>Manage Subscription URL</span>
+        </button>
+        <button v-if="canSwitchVpn" @click="switchVpnProfile" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+          <Shield class="w-4 h-4" />
+          <span>Switch VPN Configuration</span>
+        </button>
+        <button v-if="canEditSub" @click="confirmDeleteNode" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+          <Trash2 class="w-4 h-4" />
+          <span>Delete Node</span>
+        </button>
+        <button v-if="canEditSub && !isTerminated" @click="confirmTerminate" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+          <Power class="w-4 h-4" />
+          <span>Terminate &amp; Self-Destruct</span>
+        </button>
+      </template>
     </div>
 
     <!-- Rename Modal -->
-    <div v-if="showRenameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div v-if="showRenameModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Rename Node</h2>
         <div class="space-y-4">
           <div>
             <label for="new_node_name" class="block text-sm font-medium text-zinc-400">New Name</label>
-            <input v-model="newNodeName" type="text" id="new_node_name" placeholder="My Device" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+            <input v-model="newNodeName" type="text" id="new_node_name" placeholder="My Device" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
           </div>
         </div>
         <div class="mt-8 flex justify-end space-x-4">
@@ -81,12 +87,12 @@
     </div>
 
     <!-- Terminate Confirm Modal -->
-    <div v-if="showTerminateModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div v-if="showTerminateModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300">Terminate Node</h2>
         <p class="text-zinc-400 mb-5">This will make the node <strong class="text-red-300">self-destruct</strong>: it tears down its VPN containers, wipes its local config and goes offline permanently. It cannot be undone.</p>
         <p class="text-sm text-zinc-500 mb-2">Type <span class="font-mono text-red-300 font-bold">TERMINATE</span> to confirm:</p>
-        <input v-model="terminateConfirm" type="text" placeholder="TERMINATE" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-red-500 focus:border-red-500/50">
+        <input v-model="terminateConfirm" type="text" placeholder="TERMINATE" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-red-500 focus:border-red-500/50">
         <div class="mt-8 flex justify-end space-x-4">
           <button type="button" @click="showTerminateModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
           <button type="button" @click="terminateNode" :disabled="terminateConfirm !== 'TERMINATE'" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
@@ -97,8 +103,8 @@
     </div>
 
     <!-- Subscription URL Modal -->
-    <div v-if="showSubModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div v-if="showSubModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Manage Subscription URL</h2>
         <div class="space-y-4">
           <div>
@@ -107,7 +113,7 @@
           </div>
           <div>
             <label for="sub_url" class="block text-sm font-medium text-zinc-400">New Subscription URL</label>
-            <input v-model="newSubUrl" type="text" id="sub_url" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+            <input v-model="newSubUrl" type="text" id="sub_url" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
           </div>
         </div>
         <div class="mt-8 flex justify-end space-x-4">
@@ -118,8 +124,8 @@
     </div>
 
     <!-- Switch VPN Modal -->
-    <div v-if="showSwitchModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div v-if="showSwitchModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 tracking-tight">Switch VPN Configuration</h2>
         <p class="text-zinc-400 mb-5">Currently active server: <strong>{{ node.active_server || 'None' }}</strong></p>
         <div class="grid grid-cols-2 gap-3 mb-4">
@@ -147,14 +153,14 @@
 </template>
 
 <script>
-import { ref, computed } from 'vue';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy } from 'lucide-vue-next';
+import { ref, computed, inject } from 'vue';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff },
   props: {
     node: {
       type: Object,
@@ -163,6 +169,11 @@ export default {
   },
   emits: ['node-updated', 'node-deleted'],
   setup(props, { emit }) {
+    const authCtx = inject('authCtx', {});
+    const canEditSub = computed(() => authCtx.canEditSub?.value ?? false);
+    const canSwitchVpn = computed(() => authCtx.canSwitchVpn?.value ?? false);
+    const isReadOnly = computed(() => authCtx.isReadOnly?.value ?? false);
+
     const showSubModal = ref(false);
     const newSubUrl = ref('');
     const showRenameModal = ref(false);

@@ -1,4 +1,4 @@
-﻿package bot
+package bot
 
 import (
 	"fmt"
@@ -196,7 +196,7 @@ func (b *Bot) runBackupScheduler() {
 		select {
 		case <-ticker.C:
 			log.Println("Running scheduled backup...")
-			b.handleBackup(b.chatID)
+			b.handleBackup(b.chatID, 0)
 		case <-stopCh:
 			return
 		}
@@ -218,7 +218,7 @@ func (b *Bot) SendAdminMessage(text string) {
 }
 
 func (b *Bot) SendCriticalErrorAlert(errorMessage string) {
-	text := "<b>рџљЁ [CRITICAL ERROR] Master Server Failure</b>\n\n<pre>" + errorMessage + "</pre>"
+	text := "<b>🚨 [CRITICAL ERROR] Master Server Failure</b>\n\n<pre>" + errorMessage + "</pre>"
 	b.SendAdminMessage(text)
 }
 
@@ -231,7 +231,7 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 
 	switch {
 	case q.Data == "start":
-		b.sendMainMenu(chatID)
+		b.updateMainMenu(chatID, messageID)
 	case q.Data == "nodes_list":
 		b.handleNodeList(chatID, messageID)
 	case q.Data == "settings":
@@ -241,16 +241,25 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	case strings.HasPrefix(q.Data, "set_autosync_"):
 		b.handleSetAutoSync(q)
 	case q.Data == "settings_backup":
-		b.handleBackup(chatID)
+		b.handleBackup(chatID, messageID)
 	case q.Data == "settings_admins":
 		b.handleAdminManagement(chatID, messageID)
 	case q.Data == "admins_list":
 		b.handleAdminList(chatID, messageID)
 	case q.Data == "admins_add":
-		b.SendAdminMessage("Adding users via bot is not implemented in this UI style yet.")
+		b.handleAdminAddWIP(chatID, messageID)
 	case strings.HasPrefix(q.Data, "admin_delete_"):
 		b.handleDeleteAdmin(q)
 	}
+}
+
+// editMessage updates the text (and optionally the inline keyboard) of an
+// existing message, keeping the entire bot interaction inside a single message.
+func (b *Bot) editMessage(chatID int64, messageID int, text string, markup *tgbotapi.InlineKeyboardMarkup) {
+	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+	msg.ReplyMarkup = markup
+	b.api.Send(msg)
 }
 
 func (b *Bot) sendMainMenu(chatID int64) {
@@ -286,11 +295,11 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("рџЋ› Nodes", "nodes_list"),
-			tgbotapi.NewInlineKeyboardButtonData("вљ™пёЏ Settings", "settings"),
+			tgbotapi.NewInlineKeyboardButtonData("🎛 Nodes", "nodes_list"),
+			tgbotapi.NewInlineKeyboardButtonData("⚙️ Settings", "settings"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("рџ”„ Refresh Status", "start"),
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh Status", "start"),
 		),
 	)
 	return text, markup
@@ -321,9 +330,9 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 	for _, n := range nodes {
 		var statusIcon string
 		if time.Since(n.LastSeen).Seconds() < 90 {
-			statusIcon = "рџџў"
+			statusIcon = "🟢"
 		} else {
-			statusIcon = "рџ”ґ"
+			statusIcon = "🔴"
 		}
 		text.WriteString(fmt.Sprintf("%s <b>%s</b>\n", statusIcon, n.Name))
 		text.WriteString(fmt.Sprintf("    <pre>IP: %s</pre>\n", n.IPLan))
@@ -332,14 +341,14 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 		if n.PipelineStatus != "" {
 			text.WriteString(fmt.Sprintf("    <i>Status: %s %s</i>\n", b.getPipelineStatusIcon(n.PipelineStatus), n.PipelineStatus))
 			if n.StatusMessage != "" {
-				text.WriteString(fmt.Sprintf("    <pre>  в†і %s</pre>\n", n.StatusMessage))
+				text.WriteString(fmt.Sprintf("    <pre>  ↳ %s</pre>\n", n.StatusMessage))
 			}
 		}
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Main Menu", "start"),
+			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Main Menu", "start"),
 		),
 	)
 
@@ -352,17 +361,17 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 func (b *Bot) getPipelineStatusIcon(status string) string {
 	switch status {
 	case "Queued":
-		return "вЏі"
+		return "⏳"
 	case "Fetched":
-		return "рџ“Ў"
+		return "📡"
 	case "Engine Restarting":
-		return "вљ™пёЏ"
+		return "⚙️"
 	case "Verified & Active":
-		return "вњ…"
+		return "✅"
 	case "Rollback Executed":
-		return "вќЊ"
+		return "❌"
 	default:
-		return "вќ”"
+		return "❔"
 	}
 }
 
@@ -370,11 +379,11 @@ func (b *Bot) handleSettings(chatID int64, messageID int) {
 	botEnabledStr, _ := b.repo.GetSetting("tg_bot_enabled")
 	botEnabled := botEnabledStr == "true"
 
-	text := "<b>вљ™пёЏ Settings</b>\n\nSelect a category to manage."
+	text := "<b>⚙️ Settings</b>\n\nSelect a category to manage."
 	if botEnabled {
-		text += "\n\nBot Status: <b>рџџў Enabled</b>"
+		text += "\n\nBot Status: <b>🟢 Enabled</b>"
 	} else {
-		text += "\n\nBot Status: <b>рџ”ґ Disabled</b>"
+		text += "\n\nBot Status: <b>🔴 Disabled</b>"
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
@@ -382,13 +391,13 @@ func (b *Bot) handleSettings(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("Auto-Sync", "settings_autosync"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("рџ“© Backup", "settings_backup"),
+			tgbotapi.NewInlineKeyboardButtonData("📩 Backup", "settings_backup"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("Admin Users", "settings_admins"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Main Menu", "start"),
+			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Main Menu", "start"),
 		),
 	)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
@@ -415,7 +424,7 @@ func (b *Bot) handleAutoSyncSettings(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("24h", "set_autosync_1440"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Settings", "settings"),
+			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Settings", "settings"),
 		),
 	)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
@@ -435,19 +444,45 @@ func (b *Bot) handleSetAutoSync(q *tgbotapi.CallbackQuery) {
 	b.handleAutoSyncSettings(q.Message.Chat.ID, q.Message.MessageID)
 }
 
-func (b *Bot) handleBackup(chatID int64) {
-	b.SendAdminMessage("Creating database backup...")
+func (b *Bot) handleAdminAddWIP(chatID int64, messageID int) {
+	text := "<b>Add Admin User</b>\n\nAdding users from the bot is not supported yet.\nUse the web dashboard (Fleet Users tab) instead."
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("List Admins", "admins_list"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Back to Admin Management", "settings_admins"),
+		),
+	)
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+func (b *Bot) handleBackup(chatID int64, messageID int) {
+	if messageID > 0 {
+		b.editMessage(chatID, messageID, "<b>Creating database backup...</b>", nil)
+	} else {
+		b.SendAdminMessage("<b>Creating database backup...</b>")
+	}
+
 	backupPath, err := b.backupEngine.CreateBackup()
 	if err != nil {
 		log.Printf("Error creating backup via bot: %v", err)
-		b.SendAdminMessage("Failed to create backup.")
+		if messageID > 0 {
+			b.editMessage(chatID, messageID, "<b>Failed to create backup.</b>\n\nUse the Settings menu to try again.", nil)
+		} else {
+			b.SendAdminMessage("<b>Failed to create backup.</b>")
+		}
 		return
 	}
 
 	fileBytes, err := os.ReadFile(backupPath)
 	if err != nil {
 		log.Printf("Error reading backup file for bot: %v", err)
-		b.SendAdminMessage("Failed to read backup file.")
+		if messageID > 0 {
+			b.editMessage(chatID, messageID, "<b>Failed to read backup file.</b>", nil)
+		} else {
+			b.SendAdminMessage("<b>Failed to read backup file.</b>")
+		}
 		return
 	}
 
@@ -455,6 +490,11 @@ func (b *Bot) handleBackup(chatID int64) {
 	doc := tgbotapi.NewDocument(chatID, file)
 	doc.Caption = "Database backup complete."
 	b.api.Send(doc)
+
+	if messageID > 0 {
+		b.editMessage(chatID, messageID, "<b>Database backup complete.</b>", nil)
+		b.handleSettings(chatID, messageID)
+	}
 }
 
 func (b *Bot) handleAdminManagement(chatID int64, messageID int) {
@@ -465,7 +505,7 @@ func (b *Bot) handleAdminManagement(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("Add Admin (WIP)", "admins_add"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Settings", "settings"),
+			tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Settings", "settings"),
 		),
 	)
 	msg := tgbotapi.NewEditMessageText(chatID, messageID, text)
@@ -474,28 +514,32 @@ func (b *Bot) handleAdminManagement(chatID int64, messageID int) {
 	b.api.Send(msg)
 }
 
-func (b *Bot) handleAdminList(chatID int64, messageID int) {
+func (b *Bot) handleAdminListWithNote(chatID int64, messageID int, note string) {
 	users, _ := b.repo.GetAllUsers()
 	var text strings.Builder
 	text.WriteString("<b>Admin Users</b>\n\n")
 
 	var rows [][]tgbotapi.InlineKeyboardButton
 	for _, u := range users {
-		text.WriteString(fmt.Sprintf("вЂў <b>%s</b> (Role: %s)\n", u.Username, u.Role))
+		text.WriteString(fmt.Sprintf("• <b>%s</b> (Role: %s)\n", u.Username, u.Role))
 		if len(users) > 1 {
 			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("Delete %s", u.Username), "admin_delete_"+strconv.FormatInt(u.ID, 10)),
 			))
 		}
 	}
+	if note != "" {
+		text.WriteString("\n<i>" + note + "</i>")
+	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("в¬…пёЏ Back to Admin Management", "settings_admins"),
+		tgbotapi.NewInlineKeyboardButtonData("⬅️ Back to Admin Management", "settings_admins"),
 	))
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	msg := tgbotapi.NewEditMessageText(chatID, messageID, text.String())
-	msg.ParseMode = tgbotapi.ModeHTML
-	msg.ReplyMarkup = &markup
-	b.api.Send(msg)
+	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+func (b *Bot) handleAdminList(chatID int64, messageID int) {
+	b.handleAdminListWithNote(chatID, messageID, "")
 }
 
 func (b *Bot) handleDeleteAdmin(q *tgbotapi.CallbackQuery) {
@@ -504,14 +548,16 @@ func (b *Bot) handleDeleteAdmin(q *tgbotapi.CallbackQuery) {
 
 	users, _ := b.repo.GetAllUsers()
 	if len(users) <= 1 {
-		b.SendAdminMessage("Cannot delete the last admin user.")
+		b.handleAdminListWithNote(q.Message.Chat.ID, q.Message.MessageID, "Cannot delete the last admin user.")
 		return
 	}
 
 	err := b.repo.DeleteUser(adminID)
 	if err != nil {
 		log.Printf("Error deleting admin: %v", err)
+		b.handleAdminListWithNote(q.Message.Chat.ID, q.Message.MessageID, "Failed to delete user.")
+		return
 	}
 
-	b.handleAdminList(q.Message.Chat.ID, q.Message.MessageID)
+	b.handleAdminListWithNote(q.Message.Chat.ID, q.Message.MessageID, "User deleted.")
 }
