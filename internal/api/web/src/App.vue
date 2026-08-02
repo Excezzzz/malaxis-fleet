@@ -90,7 +90,7 @@ export default {
     const permissions = ref([]);
 
     const hasPermission = (perm) => {
-      if (role.value === 'owner' || role.value === 'admin') return true;
+      if (role.value === 'owner' || username.value === 'admin') return true;
       return permissions.value.includes(perm);
     };
 
@@ -99,7 +99,7 @@ export default {
     const canSwitchVpn = computed(() => hasPermission('can_switch_vpn'));
     const canManageUsers = computed(() => hasPermission('can_manage_users'));
     const canViewAudit = computed(() => hasPermission('can_view_audit'));
-    const isOwner = computed(() => role.value === 'owner');
+    const isOwner = computed(() => role.value === 'owner' || username.value === 'admin');
     const isReadOnly = computed(() => !canEditSub.value && !canSwitchVpn.value);
 
     const navItems = computed(() => {
