@@ -1990,7 +1990,12 @@ def _reselect_after_update() -> None:
 
 
 def update_client_files(urls: dict) -> bool:
-    """Download latest client files from the fleet server and replace local copies."""
+    """Download latest client files from the fleet server and replace local copies.
+
+    Each download lands in a .tmp file, is integrity-checked (py_compile for the
+    agent, bash -n for the CLI), and only then atomically replaces the live file.
+    A syntax error in a new agent must never brick a running node.
+    """
     ok = True
     app_dir = os.path.dirname(os.path.abspath(__file__))
     for fname in ("node_agent.py", "fleet-cli.sh", "requirements.txt", "entrypoint.sh"):
@@ -2006,17 +2011,42 @@ def update_client_files(urls: dict) -> bool:
                 data = resp.read()
             with open(tmp, "wb") as f:
                 f.write(data)
+            # Integrity check before replacing the live file.
+            if fname == "node_agent.py":
+                try:
+                    import py_compile
+                    py_compile.compile(tmp, doraise=True)
+                except Exception as e:
+                    ok = False
+                    log(f"[update_client_files] SYNTAX CHECK FAILED for node_agent.py: {e}")
+                    _safe_remove(tmp)
+                    continue
+            elif fname == "fleet-cli.sh":
+                rc = 1
+                try:
+                    rc = subprocess.run(["bash", "-n", tmp], capture_output=True, timeout=15).returncode
+                except Exception:
+                    pass
+                if rc != 0:
+                    ok = False
+                    log("[update_client_files] SYNTAX CHECK FAILED for fleet-cli.sh")
+                    _safe_remove(tmp)
+                    continue
             os.replace(tmp, dest)
             log(f"[update_client_files] updated {fname} ({len(data)} bytes)")
         except Exception as e:
             ok = False
             log(f"[update_client_files] failed to download {fname}: {e}")
-            if os.path.exists(tmp):
-                try:
-                    os.remove(tmp)
-                except OSError:
-                    pass
+            _safe_remove(tmp)
     return ok
+
+
+def _safe_remove(path: str) -> None:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError:
+        pass
 
 
 def _terminate() -> None:

@@ -19,11 +19,21 @@
             <div :class="['w-3 h-3 rounded-full', isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500']" :title="isOnline ? 'Online' : 'Offline'"></div>
         </div>
       </div>
-      <div class="space-y-2 text-sm text-zinc-300">
-        <p><strong class="text-zinc-500 font-medium">LAN IP:</strong> {{ node.ip_lan || 'N/A' }}</p>
-        <p><strong class="text-zinc-500 font-medium">Hostname:</strong> {{ node.hostname || 'N/A' }}</p>
-        <p><strong class="text-zinc-500 font-medium">VPN Server:</strong> {{ node.active_server || 'None' }} <span v-if="node.active_engine" class="text-xs text-zinc-500">({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></p>
-        <p class="flex items-center space-x-2"><strong class="text-zinc-500 font-medium">Sub URL:</strong>
+      <div class="space-y-2.5 text-sm">
+        <p class="flex items-baseline justify-between gap-2">
+          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">LAN IP</span>
+          <span class="text-white font-medium truncate">{{ node.ip_lan || 'N/A' }}</span>
+        </p>
+        <p class="flex items-baseline justify-between gap-2">
+          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Hostname</span>
+          <span class="text-white font-medium truncate">{{ node.hostname || 'N/A' }}</span>
+        </p>
+        <p class="flex items-baseline justify-between gap-2">
+          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">VPN Server</span>
+          <span class="text-white font-medium truncate">{{ node.active_server || 'None' }}<span v-if="node.active_engine" class="text-xs text-zinc-500"> ({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></span>
+        </p>
+        <p class="flex items-center justify-between gap-2">
+          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Sub URL</span>
           <template v-if="node.sub_url">
             <span class="text-xs text-zinc-400 truncate max-w-[200px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
             <button @click="copySubUrl" title="Copy subscription URL"
@@ -33,13 +43,16 @@
           </template>
           <span v-else class="text-xs text-zinc-500">Not set</span>
         </p>
-        <p><strong class="text-zinc-500 font-medium">Last Seen:</strong> {{ timeSince(node.last_seen) }}</p>
+        <p :class="['flex items-baseline justify-between gap-2', isOnline ? 'invisible' : 'visible']">
+          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Last Seen</span>
+          <span class="text-white font-medium truncate">{{ timeSince(node.last_seen) }}</span>
+        </p>
       </div>
       <div v-if="node.pipeline_status" class="mt-3 text-sm">
         <p class="flex items-center space-x-2">
             <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-4 h-4 text-emerald-400" />
-            <strong class="text-zinc-500 font-medium">Status:</strong>
-            <span>{{ node.pipeline_status }}</span>
+            <span class="text-zinc-500 text-xs uppercase tracking-wider">Status</span>
+            <span class="text-white font-medium">{{ node.pipeline_status }}</span>
         </p>
         <p v-if="node.status_message" class="text-xs text-zinc-400 pl-6">{{ node.status_message }}</p>
       </div>

@@ -26,7 +26,10 @@
         </div>
 
         <div class="flex items-center space-x-3 shrink-0">
-          <span v-if="roleName" class="hidden sm:inline text-xs text-zinc-400">{{ username }} · {{ roleName }}</span>
+          <div v-if="username" class="hidden sm:flex flex-col items-end mr-1">
+            <span class="text-sm font-bold text-white leading-tight">{{ username }}</span>
+            <span v-if="roleName" class="text-[10px] uppercase tracking-wider text-indigo-400 leading-tight">{{ roleName }}</span>
+          </div>
           <button @click="logout" class="flex items-center space-x-2 px-3 py-2 rounded-full text-sm text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors">
             <LogOut class="w-4 h-4" />
             <span>Logout</span>
