@@ -1447,6 +1447,7 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 	content := string(fileBytes)
 	content = strings.ReplaceAll(content, "${FLEET_SECRET:-malaxis_printer_secret_2026}", secret)
 	content = strings.ReplaceAll(content, "FLEET_SECRET", "FLEET_SECRET") // keep env var name
+	content = a.applyDomainPlaceholders(content)
 
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Write([]byte(content))
@@ -1502,6 +1503,7 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	content = strings.ReplaceAll(content, "__FLEET_SECRET__", secret)
+	content = a.applyDomainPlaceholders(content)
 
 	w.Header().Set("Content-Type", "text/x-python")
 	w.Write([]byte(content))
@@ -1584,7 +1586,7 @@ func (a *API) serveTemplateFile(name, contentType string) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Write([]byte(content))
+		w.Write([]byte(a.applyDomainPlaceholders(content)))
 	}
 }
 

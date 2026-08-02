@@ -83,7 +83,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// Auth routes (login is the only heavily rate-limited route)
 	authRoutes := webAPIRouter.PathPrefix("/auth").Subrouter()
-	authRoutes.Handle("/login", api.RateLimit(5.0/60.0, 1, http.HandlerFunc(api.LoginHandler))).Methods("POST")
+	authRoutes.Handle("/login", api.RateLimit(float64(cfg.LoginRateLimit)/60.0, 1, http.HandlerFunc(api.LoginHandler))).Methods("POST")
 	authRoutes.HandleFunc("/logout", api.LogoutHandler).Methods("POST")
 	authRoutes.HandleFunc("/me", api.MeHandler).Methods("GET")
 
@@ -227,6 +227,20 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	subRouter.HandleFunc("/configs/singbox_config.json", api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json")).Methods("GET")
 }
 
+// applyDomainPlaceholders substitutes the client-facing domain placeholders
+// (used in deploy templates) with the configured domains from .env.
+func (a *API) applyDomainPlaceholders(content string) string {
+	content = strings.ReplaceAll(content, "https://__API_DOMAIN__", "https://"+a.config.ApiDomain)
+	content = strings.ReplaceAll(content, "https://__SUB_DOMAIN__", "https://"+a.config.SubDomain)
+	content = strings.ReplaceAll(content, "https://__JOIN_DOMAIN__", "https://"+a.config.JoinDomain)
+	content = strings.ReplaceAll(content, "https://__DASH_DOMAIN__", "https://"+a.config.DashboardDomain)
+	content = strings.ReplaceAll(content, "__API_DOMAIN__", a.config.ApiDomain)
+	content = strings.ReplaceAll(content, "__SUB_DOMAIN__", a.config.SubDomain)
+	content = strings.ReplaceAll(content, "__JOIN_DOMAIN__", a.config.JoinDomain)
+	content = strings.ReplaceAll(content, "__DASH_DOMAIN__", a.config.DashboardDomain)
+	return content
+}
+
 // serveFile is a helper to serve an embedded file.
 func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +251,7 @@ func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc
 			return
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Write(fileBytes)
+		w.Write([]byte(a.applyDomainPlaceholders(string(fileBytes))))
 	}
 }
 

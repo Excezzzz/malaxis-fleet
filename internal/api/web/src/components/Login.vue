@@ -56,7 +56,17 @@ export default {
           throw new Error(response.data.message || 'Login failed');
         }
       } catch (e) {
-        error.value = e.response?.data?.message || e.message || 'An unknown error occurred.';
+        if (e.response?.status === 401) {
+          error.value = 'Invalid username or password';
+        } else if (e.response?.status === 429) {
+          error.value = 'Too many attempts, please try again in a minute.';
+        } else if (e.response?.status === 403) {
+          error.value = 'Access denied.';
+        } else {
+          const detail = e.response?.data;
+          const message = typeof detail === 'string' ? detail : detail?.message;
+          error.value = message || e.message || 'An unknown error occurred.';
+        }
       }
     };
 

@@ -28,7 +28,7 @@ except ImportError:  # Windows: module does not exist
     fcntl = None  # type: ignore[assignment]
 import queue
 
-SERVER_URL = os.environ.get("SERVER_URL", "https://api-fleet.malaxis.ru")
+SERVER_URL = os.environ.get("SERVER_URL", "https://__API_DOMAIN__")
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
