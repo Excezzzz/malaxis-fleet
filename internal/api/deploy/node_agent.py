@@ -336,6 +336,8 @@ def poll():
         state = load_state()
         if state.get("node_name"):
             payload["name"] = state["node_name"]
+        if state.get("sub_url"):
+            payload["sub_url"] = state["sub_url"]
     except Exception:
         pass
     status, data = _request("POST", POLL_URL, payload)

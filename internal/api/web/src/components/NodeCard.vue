@@ -23,7 +23,16 @@
         <p><strong class="text-zinc-500 font-medium">LAN IP:</strong> {{ node.ip_lan || 'N/A' }}</p>
         <p><strong class="text-zinc-500 font-medium">Hostname:</strong> {{ node.hostname || 'N/A' }}</p>
         <p><strong class="text-zinc-500 font-medium">VPN Server:</strong> {{ node.active_server || 'None' }} <span v-if="node.active_engine" class="text-xs text-zinc-500">({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></p>
-        <p><strong class="text-zinc-500 font-medium">Sub URL:</strong> <span class="text-xs text-zinc-400 truncate max-w-[200px] inline-block align-bottom">{{ node.sub_url || 'Not set' }}</span></p>
+        <p class="flex items-center space-x-2"><strong class="text-zinc-500 font-medium">Sub URL:</strong>
+          <template v-if="node.sub_url">
+            <span class="text-xs text-zinc-400 truncate max-w-[200px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
+            <button @click="copySubUrl" title="Copy subscription URL"
+              class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-all duration-300 shrink-0">
+              <Copy class="w-3 h-3" />
+            </button>
+          </template>
+          <span v-else class="text-xs text-zinc-500">Not set</span>
+        </p>
         <p><strong class="text-zinc-500 font-medium">Last Seen:</strong> {{ timeSince(node.last_seen) }}</p>
       </div>
       <div v-if="node.pipeline_status" class="mt-3 text-sm">
@@ -139,13 +148,13 @@
 
 <script>
 import { ref, computed } from 'vue';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy },
   props: {
     node: {
       type: Object,
@@ -272,6 +281,17 @@ export default {
       }
     };
 
+    const copySubUrl = async () => {
+      if (!props.node.sub_url) return;
+      try {
+        await navigator.clipboard.writeText(props.node.sub_url);
+        alert('Subscription URL copied to clipboard.');
+      } catch (error) {
+        console.error('Copy failed:', error);
+        alert('Could not copy to clipboard.');
+      }
+    };
+
     const confirmTerminate = () => {
       if (confirm(`Terminate node "${props.node.name}"?\n\nThe node will self-destruct: engines torn down, local config wiped, agent exits permanently.`)) {
         showTerminateModal.value = true;
@@ -328,6 +348,7 @@ export default {
       showSubModal,
       newSubUrl,
       updateSubUrl,
+      copySubUrl,
       confirmDeleteNode,
       deleteNode,
       switchVpnProfile,

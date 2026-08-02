@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -109,7 +110,10 @@ func getStringDefault(key string, defaultValue string) string {
 	if !ok {
 		return defaultValue
 	}
-	return value
+	// Trim surrounding quotes and whitespace: .env files commonly contain
+	// values like ADMIN_PASS="admin" whose literal quotes would corrupt
+	// credentials (e.g. hashing `"admin"` instead of `admin` -> login 401).
+	return strings.Trim(strings.TrimSpace(value), "\"'")
 }
 
 func getInt(key string) int {
