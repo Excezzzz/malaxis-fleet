@@ -19,35 +19,36 @@
             <div :class="['w-3 h-3 rounded-full', isOnline ? 'bg-green-500 animate-pulse' : 'bg-red-500']" :title="isOnline ? 'Online' : 'Offline'"></div>
         </div>
       </div>
-      <div class="space-y-2.5 text-sm">
-        <p class="flex items-baseline justify-between gap-2">
-          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">LAN IP</span>
-          <span class="text-white font-medium truncate">{{ node.ip_lan || 'N/A' }}</span>
-        </p>
-        <p class="flex items-baseline justify-between gap-2">
-          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Hostname</span>
-          <span class="text-white font-medium truncate">{{ node.hostname || 'N/A' }}</span>
-        </p>
-        <p class="flex items-baseline justify-between gap-2">
-          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">VPN Server</span>
-          <span class="text-white font-medium truncate">{{ node.active_server || 'None' }}<span v-if="node.active_engine" class="text-xs text-zinc-500"> ({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></span>
-        </p>
-        <p class="flex items-center justify-between gap-2">
-          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Sub URL</span>
-          <template v-if="node.sub_url">
-            <span class="text-xs text-zinc-400 truncate max-w-[200px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
-            <button @click="copySubUrl" title="Copy subscription URL"
-              class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors shrink-0">
-              <Copy class="w-3 h-3" />
-            </button>
-          </template>
-          <span v-else class="text-xs text-zinc-500">Not set</span>
-        </p>
-        <p class="flex items-baseline justify-between gap-2">
-          <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Last Seen</span>
-          <span class="text-white font-medium truncate" v-show="!isOnline">{{ timeSince(node.last_seen) }}</span>
-          <span class="text-white font-medium truncate invisible" v-show="isOnline">{{ timeSince(node.last_seen) }}</span>
-        </p>
+      <div class="space-y-2 text-sm">
+        <div class="flex justify-between items-baseline gap-2">
+            <span class="text-zinc-500 text-xs uppercase">LAN IP</span>
+            <span class="text-white font-medium truncate">{{ node.ip_lan || 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between items-baseline gap-2">
+            <span class="text-zinc-500 text-xs uppercase">Hostname</span>
+            <span class="text-white font-medium truncate">{{ node.hostname || 'N/A' }}</span>
+        </div>
+        <div class="flex justify-between items-baseline gap-2">
+            <span class="text-zinc-500 text-xs uppercase">VPN Server</span>
+            <span class="text-white font-medium truncate text-right">{{ node.active_server || 'None' }}<span v-if="node.active_engine" class="text-xs text-zinc-500"> ({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></span>
+        </div>
+        <div class="flex justify-between items-center gap-2">
+            <span class="text-zinc-500 text-xs uppercase">Sub URL</span>
+            <template v-if="node.sub_url">
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-zinc-400 truncate max-w-[180px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
+                <button @click="copySubUrl" title="Copy subscription URL"
+                  class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors shrink-0">
+                  <Copy class="w-3 h-3" />
+                </button>
+              </div>
+            </template>
+            <span v-else class="text-xs text-zinc-500">Not set</span>
+        </div>
+        <div class="flex justify-between items-baseline" :class="{ 'invisible': isOnline }">
+            <span class="text-zinc-500 text-xs uppercase">Last Seen</span>
+            <span class="text-white font-medium">{{ timeSince(node.last_seen) }}</span>
+        </div>
       </div>
       <div v-if="node.pipeline_status" class="mt-3 text-sm">
         <p class="flex items-center space-x-2">
