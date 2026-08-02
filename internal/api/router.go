@@ -83,7 +83,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// Auth routes (login is the only heavily rate-limited route)
 	authRoutes := webAPIRouter.PathPrefix("/auth").Subrouter()
-	authRoutes.Handle("/login", api.RateLimit(float64(cfg.LoginRateLimit)/60.0, 1, http.HandlerFunc(api.LoginHandler))).Methods("POST")
+	authRoutes.Handle("/login", api.RateLimit(float64(cfg.LoginRateLimit)/60.0, cfg.LoginRateLimit, http.HandlerFunc(api.LoginHandler))).Methods("POST")
 	authRoutes.HandleFunc("/logout", api.LogoutHandler).Methods("POST")
 	authRoutes.HandleFunc("/me", api.MeHandler).Methods("GET")
 
