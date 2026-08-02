@@ -43,9 +43,10 @@
           </template>
           <span v-else class="text-xs text-zinc-500">Not set</span>
         </p>
-        <p :class="['flex items-baseline justify-between gap-2', isOnline ? 'invisible' : 'visible']">
+        <p class="flex items-baseline justify-between gap-2">
           <span class="text-zinc-500 text-xs uppercase tracking-wider shrink-0">Last Seen</span>
-          <span class="text-white font-medium truncate">{{ timeSince(node.last_seen) }}</span>
+          <span class="text-white font-medium truncate" v-show="!isOnline">{{ timeSince(node.last_seen) }}</span>
+          <span class="text-white font-medium truncate invisible" v-show="isOnline">{{ timeSince(node.last_seen) }}</span>
         </p>
       </div>
       <div v-if="node.pipeline_status" class="mt-3 text-sm">
