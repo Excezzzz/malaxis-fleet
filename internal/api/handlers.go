@@ -38,14 +38,15 @@ type PollRequest struct {
 }
 
 type ReportRequest struct {
-	ID           string `json:"id"`
-	ExternalIP   string `json:"external_ip"`
-	Engine       string `json:"engine"`
-	Protocol     string `json:"protocol"`
-	OutboundJSON string `json:"outbound_json"`
-	Status       string `json:"status,omitempty"`
-	Message      string `json:"message,omitempty"`
-	ActiveServer string `json:"active_server,omitempty"`
+	ID               string   `json:"id"`
+	ExternalIP       string   `json:"external_ip"`
+	Engine           string   `json:"engine"`
+	Protocol         string   `json:"protocol"`
+	OutboundJSON     string   `json:"outbound_json"`
+	Status           string   `json:"status,omitempty"`
+	Message          string   `json:"message,omitempty"`
+	ActiveServer     string   `json:"active_server,omitempty"`
+	AvailableServers []string `json:"available_servers,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -256,7 +257,14 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer)
+	availJSON := "[]"
+	if len(req.AvailableServers) > 0 {
+		if b, err := json.Marshal(req.AvailableServers); err == nil {
+			availJSON = string(b)
+		}
+	}
+
+	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON)
 	if err != nil {
 		log.Printf("ERROR: Failed to update node report for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
