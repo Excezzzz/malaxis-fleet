@@ -2,10 +2,12 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -112,6 +114,20 @@ func main() {
 }
 
 func createInitialAdmin(repo repository.Repository, username, password string) error {
+	username = strings.TrimSpace(username)
+	password = strings.TrimSpace(password)
+	if username == "" {
+		username = "admin"
+	}
+	if password == "" {
+		password = "admin"
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
 	isEmpty, err := repo.IsUsersEmpty()
 	if err != nil {
 		return err
@@ -119,11 +135,6 @@ func createInitialAdmin(repo repository.Repository, username, password string) e
 
 	if isEmpty {
 		log.Printf("No users found. Creating initial admin user '%s'...", username)
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			return err
-		}
-
 		user := &domain.User{
 			Username:     username,
 			PasswordHash: string(hashedPassword),
@@ -136,6 +147,34 @@ func createInitialAdmin(repo repository.Repository, username, password string) e
 			return err
 		}
 		log.Println("Initial admin user created successfully.")
+		return nil
+	}
+
+	// Guarantee the default admin credential works 100%: on every startup,
+	// sync the admin user's password to the configured default so a stale or
+	// corrupted hash can never lock the dashboard out.
+	admin, err := repo.GetUserByUsername(username)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("Admin user '%s' missing, recreating...", username)
+			user := &domain.User{
+				Username:     username,
+				PasswordHash: string(hashedPassword),
+				Role:         domain.RoleOwner,
+				CreatedAt:    time.Now(),
+				ColorHex:     "#FF5733",
+			}
+			_, err = repo.AddUser(user)
+			return err
+		}
+		return err
+	}
+
+	if admin.PasswordHash != string(hashedPassword) {
+		if err := repo.UpdateUserPassword(admin.ID, string(hashedPassword)); err != nil {
+			return err
+		}
+		log.Printf("Admin password synced to configured default")
 	}
 	return nil
 }

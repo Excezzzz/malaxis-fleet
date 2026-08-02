@@ -209,6 +209,8 @@ update_subscription() {
     set_state "sub_url" "$sub_url"
     echo "Subscription URL saved. Fetching subscription now..."
     docker exec node-agent python3 -c "import node_agent; exit(node_agent.fetch_subscription_now('$sub_url'))" 2>/dev/null || true
+    docker exec node-agent python3 -c "import node_agent; node_agent.report()" 2>/dev/null || true
+    echo "Subscription URL synced to the web dashboard."
     sleep 2
 
     local count

@@ -37,6 +37,7 @@ type PollRequest struct {
 	Hostname     string `json:"hostname"`
 	IPLan        string `json:"ip_lan"`
 	HardwareHash string `json:"hardware_hash"`
+	SubURL       string `json:"sub_url"`
 }
 
 type ReportRequest struct {
@@ -1857,6 +1858,7 @@ func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 		Hostname:     req.Hostname,
 		IPLan:        req.IPLan,
 		HardwareHash: req.HardwareHash,
+		SubURL:       req.SubURL,
 	}
 	return a.repo.UpsertNode(node)
 }
