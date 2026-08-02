@@ -102,6 +102,15 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// DELETE /api/web/devices/{id} - delete a node (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.DeleteNodeHandler)))).Methods("DELETE")
 
+	// POST /api/web/nodes/purge-offline - delete ghost nodes offline for N days (permission can_edit_sub)
+	webAPIRouter.Handle("/web/nodes/purge-offline", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.PurgeOfflineNodesHandler)))).Methods("POST")
+
+	// GET /api/web/templates - list client deployment template files (permission can_edit_sub)
+	webAPIRouter.Handle("/web/templates", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.GetTemplatesHandler)))).Methods("GET")
+
+	// POST /api/web/nodes/update-client-files - queue update_client_files for all/one node (permission can_edit_sub)
+	webAPIRouter.Handle("/web/nodes/update-client-files", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
+
 	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_url (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/mass-update-domain", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateDomainHandler)))).Methods("POST")
 
@@ -203,6 +212,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	subRouter.HandleFunc("/requirements.txt", api.serveFile(deployFS, "deploy/requirements.txt", "text/plain")).Methods("GET")
 	subRouter.HandleFunc("/entrypoint.sh", api.serveFile(deployFS, "deploy/entrypoint.sh", "application/x-shellscript")).Methods("GET")
 	subRouter.HandleFunc("/node_agent.py", api.serveNodeAgent).Methods("GET")
+subRouter.HandleFunc("/fleet-cli.sh", api.serveFile(deployFS, "deploy/fleet-cli.sh", "application/x-shellscript")).Methods("GET")
 	subRouter.HandleFunc("/configs/xray_config.json", api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json")).Methods("GET")
 	subRouter.HandleFunc("/configs/singbox_config.json", api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json")).Methods("GET")
 }

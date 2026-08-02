@@ -47,6 +47,7 @@ type ReportRequest struct {
 	Message          string   `json:"message,omitempty"`
 	ActiveServer     string   `json:"active_server,omitempty"`
 	AvailableServers []string `json:"available_servers,omitempty"`
+	SubURL           string   `json:"sub_url,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -241,9 +242,10 @@ func (a *API) PollHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("ERROR: Failed to update pipeline status to Fetched for %s: %v", req.ID, err)
 		}
 
-		if err := a.repo.ClearPendingCommand(req.ID); err != nil {
-			log.Printf("ERROR: Failed to clear pending command for %s: %v", req.ID, err)
-		}
+		// NOTE: pending_command is NOT cleared here. It stays queued in
+		// PostgreSQL until the agent finishes executing and reports back
+		// (ReportHandler clears it). This keeps the command resilient if the
+		// agent goes offline or crashes mid-execution.
 	} else {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -264,7 +266,7 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON)
+	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON, req.SubURL)
 	if err != nil {
 		log.Printf("ERROR: Failed to update node report for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -695,6 +697,27 @@ func (a *API) DeleteNodeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// PurgeOfflineNodesHandler deletes nodes that have been offline for more than
+// the given number of days (default 7). Used to clean up ghost rows from
+// reinstalled/removed machines.
+func (a *API) PurgeOfflineNodesHandler(w http.ResponseWriter, r *http.Request) {
+	days := 7
+	if q := r.URL.Query().Get("days"); q != "" {
+		if v, err := strconv.Atoi(q); err == nil && v > 0 {
+			days = v
+		}
+	}
+
+	deleted, err := a.repo.DeleteOfflineNodes(days)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "deleted": deleted})
 }
 
 func (a *API) AssignNodeToUserHandler(w http.ResponseWriter, r *http.Request) {
@@ -1423,6 +1446,92 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/x-python")
 	w.Write([]byte(content))
+}
+
+// GetTemplatesHandler returns the client deployment template files stored on
+// the server (node_agent.py, fleet-cli.sh, requirements.txt, Dockerfile.client,
+// entrypoint.sh) with their names and raw contents.
+func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
+	names := []string{"node_agent.py", "fleet-cli.sh", "requirements.txt", "Dockerfile.client", "entrypoint.sh"}
+	result := make([]map[string]string, 0, len(names))
+	for _, name := range names {
+		fileBytes, err := deployFS.ReadFile("deploy/" + name)
+		if err != nil {
+			log.Printf("Error reading template %s: %v", name, err)
+			continue
+		}
+		result = append(result, map[string]string{"name": name, "content": string(fileBytes)})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "ok",
+		"files":  result,
+	})
+}
+
+// UpdateClientFilesHandler queues an "update_client_files" command for all
+// nodes (or a single node when node_id is provided). The agent downloads the
+// latest client files from the sub-domain and performs a graceful restart.
+func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		NodeID string `json:"node_id,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	baseURL := "https://" + a.config.SubDomain
+	command, _ := json.Marshal(map[string]string{
+		"action":        "update_client_files",
+		"agent_url":     baseURL + "/node_agent.py",
+		"cli_url":       baseURL + "/fleet-cli.sh",
+		"req_url":       baseURL + "/requirements.txt",
+		"entrypoint_url": baseURL + "/entrypoint.sh",
+	})
+
+	var nodes []domain.Node
+	var err error
+	if req.NodeID != "" {
+		node, nerr := a.repo.GetNodeByID(req.NodeID)
+		if nerr != nil {
+			http.Error(w, "Node not found", http.StatusNotFound)
+			return
+		}
+		nodes = []domain.Node{*node}
+	} else {
+		nodes, err = a.repo.GetAllNodes()
+		if err != nil {
+			log.Printf("ERROR: Failed to get nodes: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	messageID := time.Now().Unix()
+	queuedCount := 0
+	for _, node := range nodes {
+		if err := a.repo.SetPendingCommand(node.ID, string(command), messageID); err != nil {
+			log.Printf("ERROR: Failed to queue update_client_files for node %s: %v", node.ID, err)
+		} else {
+			queuedCount++
+			a.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_client_files")
+		}
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "all_nodes", "Queued update_client_files for "+strconv.Itoa(queuedCount)+" nodes")
+
+	log.Printf("Queued update_client_files for %d nodes", queuedCount)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "ok",
+		"message":         "Client file update queued",
+		"nodes_updated":   len(nodes),
+		"commands_queued": queuedCount,
+	})
 }
 
 

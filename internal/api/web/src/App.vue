@@ -1,46 +1,81 @@
 <template>
-  <div class="bg-gray-900 text-white min-h-screen font-sans">
+  <div class="bg-[#09090b] text-white min-h-screen font-sans relative">
+    <div class="fixed inset-0 pointer-events-none bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.10),transparent_55%)]"></div>
     <div v-if="!isAuthenticated">
       <Login @authenticated="login" />
     </div>
-    <div v-else class="flex min-h-screen">
-      <aside class="w-64 bg-gray-950 p-6 space-y-6 border-r border-gray-800">
-        <div class="flex items-center space-x-3 mb-10">
-          <Globe class="w-8 h-8 text-indigo-500" />
-          <h1 class="text-2xl font-bold">Malaxis Fleet</h1>
-          <span class="bg-red-600 text-white text-xs px-2 py-0.5 rounded font-bold">v2.1-RBAC</span>
+    <div v-else class="relative min-h-screen">
+      <header class="sticky top-4 z-40 mx-auto max-w-6xl mt-4 rounded-3xl bg-zinc-900/60 backdrop-blur-xl border border-white/10 shadow-2xl p-3 px-6">
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center space-x-3 shrink-0">
+            <div class="p-2 rounded-2xl bg-indigo-500/15 border border-indigo-400/20">
+              <Globe class="w-6 h-6 text-indigo-300" />
+            </div>
+            <div class="leading-tight">
+              <h1 class="text-lg font-bold tracking-tight">Malaxis Fleet</h1>
+              <span class="bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">v2.1-RBAC</span>
+            </div>
+          </div>
+          <nav class="hidden md:flex items-center space-x-1 overflow-x-auto">
+            <a @click.prevent="currentView = 'Nodes'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('Nodes')">
+              <Server class="w-4 h-4" />
+              <span>Nodes</span>
+            </a>
+            <a @click.prevent="currentView = 'ClientFiles'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('ClientFiles')">
+              <FileCode2 class="w-4 h-4" />
+              <span>Client Files</span>
+            </a>
+            <a @click.prevent="currentView = 'AdminUsers'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('AdminUsers')">
+              <Users class="w-4 h-4" />
+              <span>Admin Users</span>
+            </a>
+            <a @click.prevent="currentView = 'RoleManager'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('RoleManager')">
+              <Shield class="w-4 h-4" />
+              <span>Roles &amp; Permissions</span>
+            </a>
+            <a @click.prevent="currentView = 'AuditLogs'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('AuditLogs')">
+              <FileText class="w-4 h-4" />
+              <span>Audit Logs</span>
+            </a>
+            <a v-if="isOwner" @click.prevent="currentView = 'Settings'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('Settings')">
+              <Settings class="w-4 h-4" />
+              <span>Settings</span>
+            </a>
+          </nav>
+          <button @click="logout" class="flex items-center space-x-2 px-3 py-2 rounded-xl text-sm text-zinc-400 hover:bg-white/10 hover:text-white transition-colors shrink-0">
+            <Shield class="w-4 h-4" />
+            <span>Logout</span>
+          </button>
         </div>
-        <nav class="space-y-2">
-          <a @click.prevent="currentView = 'Nodes'" href="#" class="flex items-center space-x-3 px-4 py-2 rounded-lg" :class="navLinkClasses('Nodes')">
-            <Server class="w-5 h-5" />
+        <nav class="md:hidden flex items-center space-x-1 overflow-x-auto mt-3 pt-3 border-t border-white/5">
+          <a @click.prevent="currentView = 'Nodes'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('Nodes')">
+            <Server class="w-4 h-4" />
             <span>Nodes</span>
           </a>
-          <a @click.prevent="currentView = 'AdminUsers'" href="#" class="flex items-center space-x-3 px-4 py-2 rounded-lg" :class="navLinkClasses('AdminUsers')">
-            <Users class="w-5 h-5" />
+          <a @click.prevent="currentView = 'ClientFiles'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('ClientFiles')">
+            <FileCode2 class="w-4 h-4" />
+            <span>Client Files</span>
+          </a>
+          <a @click.prevent="currentView = 'AdminUsers'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('AdminUsers')">
+            <Users class="w-4 h-4" />
             <span>Admin Users</span>
           </a>
-          <a @click.prevent="currentView = 'RoleManager'" href="#" class="flex items-center space-x-3 px-4 py-2 rounded-lg" :class="navLinkClasses('RoleManager')">
-            <Shield class="w-5 h-5" />
-            <span>🎭 Roles & Permissions</span>
+          <a @click.prevent="currentView = 'RoleManager'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('RoleManager')">
+            <Shield class="w-4 h-4" />
+            <span>Roles</span>
           </a>
-          <a @click.prevent="currentView = 'AuditLogs'" href="#" class="flex items-center space-x-3 px-4 py-2 rounded-lg" :class="navLinkClasses('AuditLogs')">
-            <FileText class="w-5 h-5" />
+          <a @click.prevent="currentView = 'AuditLogs'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('AuditLogs')">
+            <FileText class="w-4 h-4" />
             <span>Audit Logs</span>
           </a>
-          <a @click.prevent="currentView = 'Settings'" href="#" class="flex items-center space-x-3 px-4 py-2 rounded-lg" :class="navLinkClasses('Settings')" v-if="isOwner">
-            <Settings class="w-5 h-5" />
+          <a v-if="isOwner" @click.prevent="currentView = 'Settings'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('Settings')">
+            <Settings class="w-4 h-4" />
             <span>Settings</span>
           </a>
         </nav>
-        <div class="absolute bottom-6">
-            <button @click="logout" class="flex items-center space-x-3 px-4 py-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors duration-200">
-                <Shield class="w-5 h-5" />
-                <span>Logout</span>
-            </button>
-        </div>
-      </aside>
+      </header>
 
-      <main class="flex-1 p-8">
+      <main class="mx-auto max-w-6xl p-4 sm:p-8 pt-8">
         <component :is="currentViewComponent" />
       </main>
     </div>
@@ -49,9 +84,10 @@
 
 <script>
 import { ref, computed, onMounted } from 'vue';
-import { Globe, Server, Users, FileText, Shield, Settings } from 'lucide-vue-next';
+import { Globe, Server, Users, FileText, Shield, Settings, FileCode2 } from 'lucide-vue-next';
 import Login from './components/Login.vue';
 import Nodes from './components/Nodes.vue';
+import ClientFiles from './components/ClientFiles.vue';
 import AdminUsers from './components/AdminUsers.vue';
 import RoleManager from './components/RoleManager.vue';
 import AuditLogs from './components/AuditLogs.vue';
@@ -60,9 +96,10 @@ import SettingsView from './components/Settings.vue';
 export default {
   name: 'App',
   components: {
-    Globe, Server, Users, FileText, Shield, Settings,
+    Globe, Server, Users, FileText, Shield, Settings, FileCode2,
     Login,
     Nodes,
+    ClientFiles,
     AdminUsers,
     RoleManager,
     AuditLogs,
@@ -78,6 +115,8 @@ export default {
       switch (currentView.value) {
         case 'Nodes':
           return 'Nodes';
+        case 'ClientFiles':
+          return 'ClientFiles';
         case 'AdminUsers':
           return 'AdminUsers';
         case 'RoleManager':
@@ -93,8 +132,8 @@ export default {
 
     const navLinkClasses = (viewName) => {
         return currentView.value === viewName
-            ? 'bg-gray-800 text-white font-semibold'
-            : 'text-gray-400 hover:bg-gray-800 hover:text-white transition-colors duration-200';
+            ? 'bg-white/10 text-white font-semibold shadow-inner'
+            : 'text-zinc-400 hover:bg-white/5 hover:text-white transition-all duration-200';
     };
 
     const login = () => {
@@ -154,6 +193,7 @@ export default {
 
 <style>
 body {
+  background-color: #09090b;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
