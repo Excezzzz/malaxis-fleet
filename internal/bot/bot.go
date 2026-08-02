@@ -181,14 +181,20 @@ func (b *Bot) Stop() {
 
 	if b.backupTicker != nil {
 		b.backupTicker.Stop()
+		b.backupTicker = nil
 	}
 	b.running = false
 	select {
 	case b.stop <- true:
 	default:
 	}
+	// tgbotapi's StopReceivingUpdates closes the updates channel but does NOT
+	// nil it out, so calling it twice (e.g. Reboot after a settings save when
+	// the bot is disabled) would panic with "close of closed channel". Drop the
+	// reference so a second Stop is a no-op. Start() always builds a fresh API.
 	if b.api != nil {
 		b.api.StopReceivingUpdates()
+		b.api = nil
 	}
 }
 
