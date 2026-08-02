@@ -8,7 +8,7 @@
           </div>
           <div class="flex items-center space-x-2">
             <h2 class="text-xl font-bold tracking-tight">{{ node.name }}</h2>
-            <button v-if="canEditSub" @click="showRenameModal = true" title="Rename node"
+            <button v-if="canManage" @click="showRenameModal = true" title="Rename node"
               class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
               <Pencil class="w-3.5 h-3.5" />
             </button>
@@ -62,27 +62,37 @@
       <p v-if="node.pipeline_status && node.status_message" class="text-xs text-zinc-400 mt-1 pl-6">{{ node.status_message }}</p>
 
       <div class="mt-3 space-y-2">
-        <div v-if="isReadOnly" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
+        <div v-if="isReadOnly && !canManage" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
             <EyeOff class="w-4 h-4" />
             <span>Read-only view</span>
         </div>
-        <template v-else>
-            <button v-if="canEditSub" @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
-              <Link class="w-4 h-4" />
-              <span>Manage Subscription URL</span>
-            </button>
-            <button v-if="canSwitchVpn" @click="switchVpnProfile" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
-              <Shield class="w-4 h-4" />
-              <span>Switch VPN Configuration</span>
-            </button>
-            <button v-if="canEditSub" @click="confirmDeleteNode" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
-              <Trash2 class="w-4 h-4" />
-              <span>Delete Node</span>
-            </button>
-            <button v-if="canEditSub && !isTerminated" @click="confirmTerminate" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
-              <Power class="w-4 h-4" />
-              <span>Terminate &amp; Self-Destruct</span>
-            </button>
+        <template v-if="canManage">
+            <div class="grid grid-cols-2 gap-2">
+                <button @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+                  <Link class="w-4 h-4" />
+                  <span>Manage Sub URL</span>
+                </button>
+                <button @click="showSwitchModal = true" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                  <Shield class="w-4 h-4" />
+                  <span>Switch VPN</span>
+                </button>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <button @click="showRenameModal = true" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                    <Pencil class="w-4 h-4" />
+                    <span>Rename</span>
+                </button>
+                <button @click="confirmDelete" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+                  <Trash2 class="w-4 h-4" />
+                  <span>Delete</span>
+                </button>
+            </div>
+            <div>
+                <button v-if="!isTerminated" @click="showTerminateModal = true" class="w-full flex items-center justify-center space-x-2 bg-red-800/20 hover:bg-red-800/40 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+                  <Power class="w-4 h-4" />
+                  <span>Terminate & Self-Destruct</span>
+                </button>
+            </div>
         </template>
       </div>
     </div>
@@ -187,10 +197,10 @@ export default {
   },
   emits: ['node-updated', 'node-deleted'],
   setup(props, { emit }) {
-    const authCtx = inject('authCtx', {});
-    const canEditSub = computed(() => authCtx.canEditSub?.value ?? false);
-    const canSwitchVpn = computed(() => authCtx.canSwitchVpn?.value ?? false);
-    const isReadOnly = computed(() => authCtx.isReadOnly?.value ?? false);
+    const { user, hasPermission, isReadOnly } = inject('authCtx', { user: ref(null), hasPermission: () => false, isReadOnly: ref(false) });
+    
+    const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
+    const canManage = computed(() => isOwner.value || hasPermission('can_manage_nodes'));
 
     const showSubModal = ref(false);
     const newSubUrl = ref('');
@@ -268,7 +278,7 @@ export default {
       }
     };
 
-    const confirmDeleteNode = () => {
+    const confirmDelete = () => {
       if (confirm(`Delete this node "${props.node.name}" from fleet?`)) {
         deleteNode();
       }
@@ -289,10 +299,6 @@ export default {
     };
 
     const showSwitchModal = ref(false);
-
-    const switchVpnProfile = () => {
-      showSwitchModal.value = true;
-    };
 
     const switchTo = async (target) => {
       try {
@@ -318,12 +324,6 @@ export default {
       } catch (error) {
         console.error('Copy failed:', error);
         alert('Could not copy to clipboard.');
-      }
-    };
-
-    const confirmTerminate = () => {
-      if (confirm(`Terminate node "${props.node.name}"?\n\nThe node will self-destruct: engines torn down, local config wiped, agent exits permanently.`)) {
-        showTerminateModal.value = true;
       }
     };
 
@@ -378,9 +378,8 @@ export default {
       newSubUrl,
       updateSubUrl,
       copySubUrl,
-      confirmDeleteNode,
+      confirmDelete,
       deleteNode,
-      switchVpnProfile,
       showSwitchModal,
       switchTo,
       showRenameModal,
@@ -388,8 +387,9 @@ export default {
       renameNode,
       showTerminateModal,
       terminateConfirm,
-      confirmTerminate,
       terminateNode,
+      canManage,
+      isReadOnly,
     };
   },
 };
