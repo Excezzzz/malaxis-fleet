@@ -53,6 +53,85 @@ def _load_node_id() -> str:
 
 NODE_ID = _load_node_id()
 
+
+def _adopt_node_id(new_id: str) -> None:
+    """Persist the canonical node_id handed back by the server (hardware
+    fingerprint dedup): after a reinstall the device keeps its original id."""
+    global NODE_ID
+    if not new_id or new_id == NODE_ID:
+        return
+    log(f"Adopting canonical node_id {new_id} (was {NODE_ID})")
+    NODE_ID = new_id
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(NODE_ID_FILE, "w") as f:
+        f.write(new_id)
+
+
+def get_hardware_hash() -> str:
+    """Immutable device fingerprint: sha256 of hostname + primary MAC + system
+    UUID. Used by the server to dedupe re-registered nodes."""
+    try:
+        host = platform.node() or ""
+        mac = ""
+        if sys.platform.startswith("win"):
+            try:
+                import subprocess as _sp
+                out = _sp.run(["getmac", "/FO", "CSV", "/NH"], capture_output=True, timeout=10)
+                text = out.stdout.decode(errors="replace")
+                for line in text.splitlines():
+                    parts = line.strip().strip('"').split('","')
+                    for p in parts:
+                        p = p.strip().strip('"')
+                        if "-" in p or ":" in p:
+                            mac = p
+                            break
+                    if mac:
+                        break
+            except Exception:
+                pass
+            if not mac:
+                mac = str(uuid.getnode())
+        else:
+            mac = ""
+            for nic in sorted(os.listdir("/sys/class/net/")):
+                try:
+                    with open(f"/sys/class/net/{nic}/address") as f:
+                        addr = f.read().strip()
+                    if addr and addr != "00:00:00:00:00:00" and nic != "lo":
+                        mac = addr
+                        break
+                except OSError:
+                    continue
+            if not mac:
+                mac = str(uuid.getnode())
+        uuid_str = ""
+        if sys.platform.startswith("linux"):
+            try:
+                with open("/sys/class/dmi/id/product_uuid") as f:
+                    uuid_str = f.read().strip()
+            except OSError:
+                pass
+        if not uuid_str and sys.platform.startswith("win"):
+            try:
+                import subprocess as _sp
+                out = _sp.run(["wmic", "csproduct", "get", "UUID"], capture_output=True, timeout=10)
+                text = out.stdout.decode(errors="replace")
+                for line in text.splitlines()[1:]:
+                    line = line.strip()
+                    if line:
+                        uuid_str = line
+                        break
+            except Exception:
+                pass
+        if not uuid_str:
+            uuid_str = str(uuid.getnode())
+        raw = "|".join([host, mac, uuid_str])
+        return hashlib.sha256(raw.encode()).hexdigest()
+    except Exception:
+        return ""
+
+HARDWARE_HASH = get_hardware_hash()
+
 POLL_URL = f"{SERVER_URL}/api/poll"
 REPORT_URL = f"{SERVER_URL}/api/report"
 CONFIG_DIR = "/app/configs"
@@ -247,12 +326,22 @@ def _request(method: str, url: str, payload: dict) -> Tuple[int, Union[dict, str
         return 0, str(e)
 
 def poll():
-    status, data = _request("POST", POLL_URL, {
+    payload: dict[str, Any] = {
         "id": NODE_ID,
         "hostname": platform.node(),
         "ip_lan": _lan_ip(),
-    })
+        "hardware_hash": HARDWARE_HASH,
+    }
+    try:
+        state = load_state()
+        if state.get("node_name"):
+            payload["name"] = state["node_name"]
+    except Exception:
+        pass
+    status, data = _request("POST", POLL_URL, payload)
     if status == 200 and isinstance(data, dict):
+        if data.get("node_id") and data["node_id"] != NODE_ID:
+            _adopt_node_id(data["node_id"])
         if "command" in data:
             log(f"Command: {data['command']}")
             return data
@@ -263,7 +352,7 @@ def poll():
 
 
 def report(**kw: Any) -> None:
-    payload: dict[str, Any] = {"id": NODE_ID}
+    payload: dict[str, Any] = {"id": NODE_ID, "hardware_hash": HARDWARE_HASH}
     payload.update(kw)
     try:
         state = load_state()
@@ -271,6 +360,7 @@ def report(**kw: Any) -> None:
         payload.setdefault("sub_url", state.get("sub_url", ""))
         payload.setdefault("engine", state.get("active_engine", ""))
         payload.setdefault("protocol", state.get("active_proto", ""))
+        payload.setdefault("name", state.get("node_name", ""))
         servers = load_cache()
         payload.setdefault("available_servers", [s.get("tag") or s.get("name") or f"Server {i + 1}" for i, s in enumerate(servers)])
     except Exception:
@@ -1778,6 +1868,9 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         }
         enqueue("update_client_files", urls=urls)
         return True
+    elif action == "terminate":
+        enqueue("terminate")
+        return True
     elif action == "exec":
         return _exec_shell(cmd_data)
     else:
@@ -1924,6 +2017,28 @@ def update_client_files(urls: dict) -> bool:
     return ok
 
 
+def _terminate() -> None:
+    """Self-destruct: report, tear down engine containers, wipe local state, exit."""
+    log("TERMINATE: self-destruct initiated")
+    report(status="Terminated", message="Node terminated")
+    try:
+        import shutil
+        shutil.rmtree(CONFIG_DIR, ignore_errors=True)
+    except Exception:
+        pass
+    # The agent image only ships docker-cli (no compose plugin), so perform the
+    # equivalent of `docker compose down -v` with plain docker commands: remove
+    # the engine containers and the agent container itself (self-destruct).
+    try:
+        os.system("docker stop xray-node singbox-node 2>/dev/null")
+        os.system("docker rm -f xray-node singbox-node 2>/dev/null")
+    except Exception:
+        pass
+    log("TERMINATE: removing own container and exiting")
+    os.system("docker rm -f node-agent 2>/dev/null")
+    os._exit(0)
+
+
 def _worker_loop() -> None:
     while True:
         action = _ACTION_QUEUE.get()
@@ -1959,6 +2074,8 @@ def _worker_loop() -> None:
                     log("[update_client_files] restarting agent with new code...")
                     time.sleep(2)
                     os.execv(sys.executable, [sys.executable] + sys.argv)
+            elif typ == "terminate":
+                _terminate()
             else:
                 log(f"[worker] unknown action type: {typ}")
         except Exception as e:

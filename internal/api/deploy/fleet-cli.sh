@@ -161,10 +161,12 @@ show_menu() {
     echo " 3) Switch Server"
     echo " 4) Toggle Auto-Update"
     echo " 5) View Agent Logs"
-    echo " 6) Exit"
+    echo " 6) Rename Node"
+    echo " 7) Terminate & Self-Destruct"
+    echo " 8) Exit"
     echo "------------------------------------------"
     echo ""
-    read -p "Select option [1-6]: " choice
+    read -p "Select option [1-8]: " choice
 
     case "$choice" in
         1) update_subscription ;;
@@ -172,7 +174,9 @@ show_menu() {
         3) switch_server ;;
         4) toggle_auto_update ;;
         5) view_logs ;;
-        6) clear; exit 0 ;;
+        6) rename_node ;;
+        7) terminate_node ;;
+        8) clear; exit 0 ;;
         *) show_menu ;;
     esac
 }
@@ -239,6 +243,48 @@ update_client_files() {
     echo "Client files updated!"
     sleep 2
     show_menu
+}
+
+rename_node() {
+    echo ""
+    echo "--- Rename Node ---"
+
+    local current_name
+    current_name=$(get_state "node_name" "$(hostname 2>/dev/null || echo 'this node')")
+    echo "Current name: ${current_name}"
+    read -p "Enter new name for this node: " new_name
+    new_name=$(echo "$new_name" | tr -d '[:space:]')
+    if [ -z "$new_name" ]; then
+        echo "No name entered. Cancelled."
+        sleep 2
+        show_menu
+        return
+    fi
+
+    set_state "node_name" "$new_name"
+    docker exec node-agent python3 -c "import node_agent; node_agent.report(status='Renamed', message='Node renamed via CLI')" 2>/dev/null || true
+    echo "Node renamed to '$new_name'. The dashboard will pick it up shortly."
+    sleep 2
+    show_menu
+}
+
+terminate_node() {
+    echo ""
+    echo "--- Terminate & Self-Destruct ---"
+    echo "${RED}WARNING:${NC} This will tear down the VPN containers, wipe this node's local"
+    echo "configuration, and remove the agent. This cannot be undone."
+    echo ""
+    read -p "Type TERMINATE to confirm, or anything else to cancel: " confirm_word
+    if [ "$confirm_word" != "TERMINATE" ]; then
+        echo "Cancelled."
+        sleep 2
+        show_menu
+        return
+    fi
+    echo "Terminating..."
+    docker exec node-agent python3 -c "import node_agent; node_agent.enqueue('terminate')" 2>/dev/null || true
+    echo "Self-destruct initiated. Goodbye."
+    exit 0
 }
 
 switch_server() {

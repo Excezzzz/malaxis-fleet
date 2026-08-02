@@ -20,6 +20,7 @@ const (
 	ActionUpdateUser     = "UPDATE_USER"
 	ActionUpdatePassword = "UPDATE_PASSWORD"
 	ActionUpdateSettings = "UPDATE_SETTINGS"
+	ActionUpdateTemplate = "UPDATE_TEMPLATE"
 )
 
 type Logger struct {

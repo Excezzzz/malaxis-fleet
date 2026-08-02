@@ -1,12 +1,19 @@
 <template>
-  <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 hover:border-indigo-500/30 hover:bg-zinc-900/60 shadow-lg shadow-black/20">
+  <div :class="['bg-zinc-900/40 backdrop-blur-md border rounded-2xl p-5 flex flex-col justify-between transition-all duration-300 hover:border-indigo-500/30 hover:bg-zinc-900/60 shadow-lg shadow-black/20', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/5']">
     <div>
       <div class="flex justify-between items-start mb-4">
         <div class="flex items-center space-x-3">
           <div class="p-2 rounded-xl bg-white/5 border border-white/10">
             <component :is="nodeIcon" class="w-6 h-6 text-indigo-300" />
           </div>
-          <h2 class="text-xl font-bold tracking-tight">{{ node.name }}</h2>
+          <div class="flex items-center space-x-2">
+            <h2 class="text-xl font-bold tracking-tight">{{ node.name }}</h2>
+            <button @click="showRenameModal = true" title="Rename node"
+              class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-all duration-300">
+              <Pencil class="w-3.5 h-3.5" />
+            </button>
+            <span v-if="isTerminated" class="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300">Terminated</span>
+          </div>
         </div>
         <div class="flex items-center space-x-2">
             <div :class="['w-3 h-3 rounded-full', isOnline ? 'bg-green-500 animate-pulse shadow-[0_0_10px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.4)]']" :title="isOnline ? 'Online' : 'Offline'"></div>
@@ -41,6 +48,43 @@
         <Trash2 class="w-4 h-4" />
         <span>Delete Node</span>
       </button>
+      <button v-if="!isTerminated" @click="confirmTerminate" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-all duration-300">
+        <Power class="w-4 h-4" />
+        <span>Terminate &amp; Self-Destruct</span>
+      </button>
+    </div>
+
+    <!-- Rename Modal -->
+    <div v-if="showRenameModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <h2 class="text-2xl font-bold mb-6 tracking-tight">Rename Node</h2>
+        <div class="space-y-4">
+          <div>
+            <label for="new_node_name" class="block text-sm font-medium text-zinc-400">New Name</label>
+            <input v-model="newNodeName" type="text" id="new_node_name" placeholder="My Device" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+          </div>
+        </div>
+        <div class="mt-8 flex justify-end space-x-4">
+          <button type="button" @click="showRenameModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
+          <button type="button" @click="renameNode" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">Rename</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Terminate Confirm Modal -->
+    <div v-if="showTerminateModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300">Terminate Node</h2>
+        <p class="text-zinc-400 mb-5">This will make the node <strong class="text-red-300">self-destruct</strong>: it tears down its VPN containers, wipes its local config and goes offline permanently. It cannot be undone.</p>
+        <p class="text-sm text-zinc-500 mb-2">Type <span class="font-mono text-red-300 font-bold">TERMINATE</span> to confirm:</p>
+        <input v-model="terminateConfirm" type="text" placeholder="TERMINATE" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-red-500 focus:border-red-500/50">
+        <div class="mt-8 flex justify-end space-x-4">
+          <button type="button" @click="showTerminateModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
+          <button type="button" @click="terminateNode" :disabled="terminateConfirm !== 'TERMINATE'" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Terminate
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Subscription URL Modal -->
@@ -95,13 +139,13 @@
 
 <script>
 import { ref, computed } from 'vue';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2 } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2 },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power },
   props: {
     node: {
       type: Object,
@@ -112,6 +156,10 @@ export default {
   setup(props, { emit }) {
     const showSubModal = ref(false);
     const newSubUrl = ref('');
+    const showRenameModal = ref(false);
+    const newNodeName = ref('');
+    const showTerminateModal = ref(false);
+    const terminateConfirm = ref('');
 
     const isOnline = computed(() => {
       if (!props.node.last_seen) return false;
@@ -119,6 +167,8 @@ export default {
       const diffSeconds = (new Date() - lastSeen) / 1000;
       return diffSeconds < ONLINE_THRESHOLD_SECONDS;
     });
+
+    const isTerminated = computed(() => (props.node.pipeline_status || '').toLowerCase() === 'terminated');
 
     const nodeIcon = computed(() => {
         const type = props.node.device_type ? props.node.device_type.toLowerCase() : '';
@@ -222,8 +272,56 @@ export default {
       }
     };
 
+    const confirmTerminate = () => {
+      if (confirm(`Terminate node "${props.node.name}"?\n\nThe node will self-destruct: engines torn down, local config wiped, agent exits permanently.`)) {
+        showTerminateModal.value = true;
+      }
+    };
+
+    const terminateNode = async () => {
+      if (terminateConfirm.value !== 'TERMINATE') return;
+      try {
+        const response = await fetch(`/api/web/nodes/${props.node.id}/terminate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        if (!response.ok) throw new Error('Failed to queue terminate');
+        showTerminateModal.value = false;
+        terminateConfirm.value = '';
+        alert('Terminate queued. The node will self-destruct on its next poll.');
+        emit('node-updated');
+      } catch (error) {
+        console.error('Error terminating node:', error);
+        alert('Could not queue terminate.');
+      }
+    };
+
+    const renameNode = async () => {
+      const name = newNodeName.value.trim();
+      if (!name) {
+        alert('Please enter a name.');
+        return;
+      }
+      try {
+        const response = await fetch(`/api/web/nodes/${props.node.id}/rename`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (!response.ok) throw new Error('Failed to rename node');
+        showRenameModal.value = false;
+        newNodeName.value = '';
+        alert('Node renamed!');
+        emit('node-updated');
+      } catch (error) {
+        console.error('Error renaming node:', error);
+        alert('Could not rename node.');
+      }
+    };
+
     return {
       isOnline,
+      isTerminated,
       nodeIcon,
       pipelineStatusIcon,
       timeSince,
@@ -235,6 +333,13 @@ export default {
       switchVpnProfile,
       showSwitchModal,
       switchTo,
+      showRenameModal,
+      newNodeName,
+      renameNode,
+      showTerminateModal,
+      terminateConfirm,
+      confirmTerminate,
+      terminateNode,
     };
   },
 };
