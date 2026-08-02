@@ -26,7 +26,7 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div v-if="nodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div v-if="nodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
       <NodeCard v-for="node in nodes" :key="node.id" :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" />
     </div>
 
