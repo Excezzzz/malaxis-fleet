@@ -115,6 +115,9 @@ func (r *postgresRepository) Init() error {
 	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL`)
 	// Migrate: Add available_servers column if it doesn't exist
 	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS available_servers TEXT NOT NULL DEFAULT '[]'`)
+	// Migrate: Add hardware_hash column for hardware fingerprint dedup
+	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS hardware_hash TEXT`)
+	r.db.Exec(`CREATE INDEX IF NOT EXISTS idx_nodes_hardware_hash ON nodes(hardware_hash)`)
 
 	// Migrate: Set default value for device_type and update existing NULL values
 	r.db.Exec(`ALTER TABLE nodes ALTER COLUMN device_type SET DEFAULT 'node'`)
@@ -226,7 +229,7 @@ func (r *postgresRepository) AddNode(node *domain.Node) error {
 	return err
 }
 
-func (r *postgresRepository) UpsertNode(node *domain.Node) error {
+func (r *postgresRepository) UpsertNode(node *domain.Node) (string, error) {
 	// Dedup ghost nodes: if another node with the same hostname exists under a
 	// different id (reinstall creates a fresh node_id), remove the stale one —
 	// but only if it has been offline for a while, so a live duplicate is kept.
@@ -234,15 +237,40 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) error {
 		_, _ = r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID)
 	}
 
-	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, last_seen)
-		VALUES ($1, $2, $3, $4, $5, NOW())
+	// Hardware fingerprint dedup: a reinstalled node (fresh node_id.txt) whose
+	// id no longer exists in the DB is adopted back to its original row via the
+	// immutable hardware_hash, so the device keeps its name/history.
+	if node.HardwareHash != "" {
+		var existingID string
+		err := r.db.QueryRow(`SELECT id FROM nodes WHERE hardware_hash = $1 AND id != $2 LIMIT 1`, node.HardwareHash, node.ID).Scan(&existingID)
+		if err == nil && existingID != "" {
+			node.ID = existingID
+		}
+	}
+
+	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, hardware_hash, last_seen)
+		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			last_seen = NOW(),
 			ip_lan = EXCLUDED.ip_lan,
 			sub_url = COALESCE(EXCLUDED.sub_url, nodes.sub_url),
-			name = COALESCE(EXCLUDED.name, nodes.name),
-			hostname = COALESCE(EXCLUDED.hostname, nodes.hostname)`
-	_, err := r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, node.SubURL)
+			name = CASE
+				WHEN nodes.name IS NULL OR nodes.name = '' OR nodes.name = nodes.hostname THEN EXCLUDED.name
+				ELSE nodes.name
+			END,
+			hostname = COALESCE(EXCLUDED.hostname, nodes.hostname),
+			hardware_hash = COALESCE(EXCLUDED.hardware_hash, nodes.hardware_hash)`
+	_, err := r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, node.SubURL, node.HardwareHash)
+	return node.ID, err
+}
+
+func (r *postgresRepository) RenameNode(id, name string) error {
+	_, err := r.db.Exec("UPDATE nodes SET name = $1 WHERE id = $2", name, id)
+	return err
+}
+
+func (r *postgresRepository) SetNodeHardwareHash(id, hardwareHash string) error {
+	_, err := r.db.Exec("UPDATE nodes SET hardware_hash = $1 WHERE id = $2", hardwareHash, id)
 	return err
 }
 
@@ -258,7 +286,8 @@ func (r *postgresRepository) DeleteNode(id string) error {
 }
 
 func (r *postgresRepository) DeleteOfflineNodes(thresholdDays int) (int64, error) {
-	res, err := r.db.Exec(`DELETE FROM nodes WHERE last_seen < NOW() - ($1::int * interval '1 day')`, thresholdDays)
+	// Also cleans Terminated nodes and any rows with a NULL last_seen.
+	res, err := r.db.Exec(`DELETE FROM nodes WHERE COALESCE(last_seen, '1970-01-01') < NOW() - ($1::int * interval '1 day')`, thresholdDays)
 	if err != nil {
 		return 0, err
 	}

@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -32,9 +33,10 @@ type LoginRequest struct {
 }
 
 type PollRequest struct {
-	ID       string `json:"id"`
-	Hostname string `json:"hostname"`
-	IPLan    string `json:"ip_lan"`
+	ID           string `json:"id"`
+	Hostname     string `json:"hostname"`
+	IPLan        string `json:"ip_lan"`
+	HardwareHash string `json:"hardware_hash"`
 }
 
 type ReportRequest struct {
@@ -48,6 +50,8 @@ type ReportRequest struct {
 	ActiveServer     string   `json:"active_server,omitempty"`
 	AvailableServers []string `json:"available_servers,omitempty"`
 	SubURL           string   `json:"sub_url,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	HardwareHash     string   `json:"hardware_hash,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -219,27 +223,34 @@ func (a *API) PollHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := a.registerOrUpdateNode(req); err != nil {
+	canonicalID, err := a.registerOrUpdateNode(req)
+	if err != nil {
 		log.Printf("ERROR: Failed to update node status for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("Poll received from %s (%s)", req.ID, req.Hostname)
+	log.Printf("Poll received from %s (%s)", canonicalID, req.Hostname)
 
-	cmd, err := a.repo.GetPendingCommand(req.ID)
+	cmd, err := a.repo.GetPendingCommand(canonicalID)
 	if err != nil {
-		log.Printf("ERROR: Failed to get pending command for %s: %v", req.ID, err)
+		log.Printf("ERROR: Failed to get pending command for %s: %v", canonicalID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
-	if cmd != "" {
-		log.Printf("Sending pending command to %s", req.ID)
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"command": cmd})
+	resp := map[string]interface{}{}
+	if req.ID != canonicalID {
+		// Hardware fingerprint adoption: tell the agent its canonical node_id.
+		resp["node_id"] = canonicalID
+	}
 
-		if err := a.repo.UpdateNodePipelineStatus(req.ID, "Fetched", ""); err != nil {
-			log.Printf("ERROR: Failed to update pipeline status to Fetched for %s: %v", req.ID, err)
+	if cmd != "" {
+		log.Printf("Sending pending command to %s", canonicalID)
+		resp["command"] = cmd
+		resp["status"] = "ok"
+
+		if err := a.repo.UpdateNodePipelineStatus(canonicalID, "Fetched", ""); err != nil {
+			log.Printf("ERROR: Failed to update pipeline status to Fetched for %s: %v", canonicalID, err)
 		}
 
 		// NOTE: pending_command is NOT cleared here. It stays queued in
@@ -247,9 +258,11 @@ func (a *API) PollHandler(w http.ResponseWriter, r *http.Request) {
 		// (ReportHandler clears it). This keeps the command resilient if the
 		// agent goes offline or crashes mid-execution.
 	} else {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		resp["status"] = "ok"
 	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
@@ -271,6 +284,20 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ERROR: Failed to update node report for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+
+	// Persist the display name set on the device (CLI "Rename Node") so a
+	// custom name survives agent restarts and hostname churn.
+	if req.Name != "" {
+		if err := a.repo.RenameNode(req.ID, req.Name); err != nil {
+			log.Printf("ERROR: Failed to persist reported name for %s: %v", req.ID, err)
+		}
+	}
+	// Store the hardware fingerprint so a future reinstall can be matched.
+	if req.HardwareHash != "" {
+		if err := a.repo.SetNodeHardwareHash(req.ID, req.HardwareHash); err != nil {
+			log.Printf("ERROR: Failed to store hardware_hash for %s: %v", req.ID, err)
+		}
 	}
 
 	// Clear pending command — prevents infinite restart loop
@@ -1424,12 +1451,44 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
+// templateFiles is the whitelist of client template files editable via the web UI.
+var templateFiles = []string{"node_agent.py", "fleet-cli.sh", "requirements.txt", "Dockerfile.client", "entrypoint.sh"}
+
+func isTemplateFile(name string) bool {
+	for _, n := range templateFiles {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// templateKey returns the settings key under which a template override is stored.
+func templateKey(name string) string {
+	return "template:" + name
+}
+
+// readTemplate returns the template content, preferring a web-edited override
+// stored in the database over the embedded copy.
+func (a *API) readTemplate(name string) (string, bool) {
+	if isTemplateFile(name) {
+		if override, err := a.repo.GetSetting(templateKey(name)); err == nil && override != "" {
+			return override, true
+		}
+	}
+	fileBytes, err := deployFS.ReadFile("deploy/" + name)
+	if err != nil {
+		return "", false
+	}
+	return string(fileBytes), true
+}
+
 // serveNodeAgent serves the node_agent.py template with the active SECRET_TOKEN injected.
 func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
-	fileBytes, err := deployFS.ReadFile("deploy/node_agent.py")
-	if err != nil {
+	content, ok := a.readTemplate("node_agent.py")
+	if !ok {
 		http.Error(w, "Internal Server Error: File not found", http.StatusInternalServerError)
-		log.Printf("Error reading embedded node_agent.py: %v", err)
+		log.Printf("Error reading node_agent.py template")
 		return
 	}
 
@@ -1441,7 +1500,6 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	content := string(fileBytes)
 	content = strings.ReplaceAll(content, "__FLEET_SECRET__", secret)
 
 	w.Header().Set("Content-Type", "text/x-python")
@@ -1450,17 +1508,17 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 
 // GetTemplatesHandler returns the client deployment template files stored on
 // the server (node_agent.py, fleet-cli.sh, requirements.txt, Dockerfile.client,
-// entrypoint.sh) with their names and raw contents.
+// entrypoint.sh) with their names and raw contents. Web-edited overrides take
+// precedence over the embedded copies.
 func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
-	names := []string{"node_agent.py", "fleet-cli.sh", "requirements.txt", "Dockerfile.client", "entrypoint.sh"}
-	result := make([]map[string]string, 0, len(names))
-	for _, name := range names {
-		fileBytes, err := deployFS.ReadFile("deploy/" + name)
-		if err != nil {
-			log.Printf("Error reading template %s: %v", name, err)
+	result := make([]map[string]string, 0, len(templateFiles))
+	for _, name := range templateFiles {
+		content, ok := a.readTemplate(name)
+		if !ok {
+			log.Printf("Error reading template %s", name)
 			continue
 		}
-		result = append(result, map[string]string{"name": name, "content": string(fileBytes)})
+		result = append(result, map[string]string{"name": name, "content": content})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1468,6 +1526,65 @@ func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 		"files":  result,
 	})
+}
+
+// UpdateTemplateHandler overwrites a whitelisted client template file with the
+// content from the request body. The new content is stored in the database
+// (authoritative for serving) and written to the local repo deploy dir when
+// possible. Body: {"content": "..."}
+func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	filename := vars["filename"]
+	if !isTemplateFile(filename) {
+		http.Error(w, "Bad Request: unknown template file", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.repo.SetSetting(templateKey(filename), req.Content); err != nil {
+		log.Printf("ERROR: Failed to save template %s: %v", filename, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Best-effort write into the repo deploy dir so a source checkout stays in
+	// sync (on the server the running binary serves from the DB override).
+	if err := os.WriteFile("internal/api/deploy/"+filename, []byte(req.Content), 0o644); err != nil {
+		log.Printf("WARN: Could not write template %s to disk: %v", filename, err)
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateTemplate, filename, "Overwrote client template ("+strconv.Itoa(len(req.Content))+" bytes)")
+
+	log.Printf("Template %s updated (%d bytes)", filename, len(req.Content))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Template saved",
+	})
+}
+
+// serveTemplateFile serves a whitelisted client template, preferring the
+// web-edited DB override over the embedded copy.
+func (a *API) serveTemplateFile(name, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		content, ok := a.readTemplate(name)
+		if !ok {
+			http.Error(w, "Internal Server Error: File not found", http.StatusInternalServerError)
+			log.Printf("Error reading template %s", name)
+			return
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Write([]byte(content))
+	}
 }
 
 // UpdateClientFilesHandler queues an "update_client_files" command for all
@@ -1535,6 +1652,101 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 
+
+// RenameNodeHandler renames a node from the web dashboard.
+// Body: {"name": "new-name"} (permission can_edit_sub)
+func (a *API) RenameNodeHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	nodeID := vars["id"]
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		http.Error(w, "Bad Request: name is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.repo.RenameNode(nodeID, req.Name); err != nil {
+		log.Printf("ERROR: Failed to rename node %s: %v", nodeID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Renamed node to "+req.Name)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Node renamed",
+	})
+}
+
+// AgentRenameNodeHandler renames a node using agent-token auth (used by the
+// local fleet-cli). Body: {"id": "...", "name": "..."}
+func (a *API) AgentRenameNodeHandler(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.ID == "" || req.Name == "" {
+		http.Error(w, "Bad Request: id and name are required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.repo.RenameNode(req.ID, req.Name); err != nil {
+		log.Printf("ERROR: Failed to rename node %s: %v", req.ID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Node %s renamed to %s (agent API)", req.ID, req.Name)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Node renamed",
+	})
+}
+
+// TerminateNodeHandler queues a "terminate" command for a node. The agent
+// reports status "Terminated", tears down its engine containers, wipes its
+// local state and exits (self-destruct).
+func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	nodeID := vars["id"]
+
+	command, _ := json.Marshal(map[string]string{"action": "terminate"})
+	messageID := time.Now().Unix()
+	if err := a.repo.SetPendingCommand(nodeID, string(command), messageID); err != nil {
+		log.Printf("ERROR: Failed to queue terminate for node %s: %v", nodeID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "terminate")
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteDevice, nodeID, "Queued terminate (self-destruct) command")
+
+	log.Printf("Terminate queued for node %s", nodeID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Terminate queued. The node will self-destruct on its next poll.",
+	})
+}
 
 // SendCommandHandler sends a command to a specific node's pending_command.
 // Body: {"action": "switch", "outbound_tag": "zoom"}
@@ -1638,12 +1850,13 @@ func (a *API) AgentTokenMiddleware(next http.Handler) http.Handler {
 
 // --- Helper Functions ---
 
-func (a *API) registerOrUpdateNode(req PollRequest) error {
+func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 	node := &domain.Node{
-		ID:       req.ID,
-		Name:     req.Hostname,
-		Hostname: req.Hostname,
-		IPLan:    req.IPLan,
+		ID:           req.ID,
+		Name:         req.Hostname,
+		Hostname:     req.Hostname,
+		IPLan:        req.IPLan,
+		HardwareHash: req.HardwareHash,
 	}
 	return a.repo.UpsertNode(node)
 }

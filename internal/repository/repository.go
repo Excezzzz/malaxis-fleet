@@ -14,7 +14,9 @@ type Repository interface {
 	GetAllNodes() ([]domain.Node, error)
 	GetNodesByUserID(userID int64) ([]domain.Node, error)
 	AddNode(node *domain.Node) error
-	UpsertNode(node *domain.Node) error
+	UpsertNode(node *domain.Node) (string, error)
+	RenameNode(id, name string) error
+	SetNodeHardwareHash(id, hardwareHash string) error
 	UpdateNode(node *domain.Node) error
 	DeleteNode(id string) error
 	DeleteOfflineNodes(thresholdDays int) (int64, error)

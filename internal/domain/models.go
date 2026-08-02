@@ -60,6 +60,7 @@ type Node struct {
 	PendingMsgID       int64     `json:"pending_msg_id" db:"pending_msg_id"`
 	PipelineStatus     string    `json:"pipeline_status" db:"pipeline_status"`
 	StatusMessage      string    `json:"status_message" db:"status_message"`
+	HardwareHash       string    `json:"hardware_hash" db:"hardware_hash"`
 	UserID             *int64    `json:"user_id,omitempty" db:"user_id"`
 }
 

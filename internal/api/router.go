@@ -64,6 +64,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	agentAPI := apiRouter.PathPrefix("/api").Subrouter()
 	agentAPI.Handle("/poll", api.AgentTokenMiddleware(http.HandlerFunc(api.PollHandler))).Methods("POST")
 	agentAPI.Handle("/report", api.AgentTokenMiddleware(http.HandlerFunc(api.ReportHandler))).Methods("POST")
+	agentAPI.Handle("/nodes/rename", api.AgentTokenMiddleware(http.HandlerFunc(api.AgentRenameNodeHandler))).Methods("PUT")
 	agentAPI.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	agentAPI.HandleFunc("/agent/latest", api.serveNodeAgent).Methods("GET")
 
@@ -108,8 +109,17 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// GET /api/web/templates - list client deployment template files (permission can_edit_sub)
 	webAPIRouter.Handle("/web/templates", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.GetTemplatesHandler)))).Methods("GET")
 
+	// PUT /api/web/templates/{filename} - overwrite a client template file (permission can_edit_sub)
+	webAPIRouter.Handle("/web/templates/{filename}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateTemplateHandler)))).Methods("PUT")
+
 	// POST /api/web/nodes/update-client-files - queue update_client_files for all/one node (permission can_edit_sub)
 	webAPIRouter.Handle("/web/nodes/update-client-files", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
+
+	// PUT /api/web/nodes/{id}/rename - rename a node (permission can_edit_sub)
+	webAPIRouter.Handle("/web/nodes/{id}/rename", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.RenameNodeHandler)))).Methods("PUT")
+
+	// POST /api/web/nodes/{id}/terminate - queue self-destruct for a node (permission can_edit_sub)
+	webAPIRouter.Handle("/web/nodes/{id}/terminate", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.TerminateNodeHandler)))).Methods("POST")
 
 	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_url (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/mass-update-domain", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateDomainHandler)))).Methods("POST")
@@ -205,14 +215,14 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// --- Public Bootstrap Routes ---
 	joinRouter.HandleFunc("/", api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript")).Methods("GET")
-	joinRouter.HandleFunc("/fleet-cli", api.serveFile(deployFS, "deploy/fleet-cli.sh", "application/x-shellscript")).Methods("GET")
+	joinRouter.HandleFunc("/fleet-cli", api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript")).Methods("GET")
 	joinRouter.HandleFunc("/fleet-agent.service", api.serveFile(deployFS, "deploy/fleet-agent.service", "text/plain")).Methods("GET")
 	subRouter.HandleFunc("/docker-compose.yml", api.serveDockerCompose).Methods("GET")
-	subRouter.HandleFunc("/Dockerfile.client", api.serveFile(deployFS, "deploy/Dockerfile.client", "text/plain")).Methods("GET")
-	subRouter.HandleFunc("/requirements.txt", api.serveFile(deployFS, "deploy/requirements.txt", "text/plain")).Methods("GET")
-	subRouter.HandleFunc("/entrypoint.sh", api.serveFile(deployFS, "deploy/entrypoint.sh", "application/x-shellscript")).Methods("GET")
+	subRouter.HandleFunc("/Dockerfile.client", api.serveTemplateFile("Dockerfile.client", "text/plain")).Methods("GET")
+	subRouter.HandleFunc("/requirements.txt", api.serveTemplateFile("requirements.txt", "text/plain")).Methods("GET")
+	subRouter.HandleFunc("/entrypoint.sh", api.serveTemplateFile("entrypoint.sh", "application/x-shellscript")).Methods("GET")
 	subRouter.HandleFunc("/node_agent.py", api.serveNodeAgent).Methods("GET")
-subRouter.HandleFunc("/fleet-cli.sh", api.serveFile(deployFS, "deploy/fleet-cli.sh", "application/x-shellscript")).Methods("GET")
+	subRouter.HandleFunc("/fleet-cli.sh", api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript")).Methods("GET")
 	subRouter.HandleFunc("/configs/xray_config.json", api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json")).Methods("GET")
 	subRouter.HandleFunc("/configs/singbox_config.json", api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json")).Methods("GET")
 }
