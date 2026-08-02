@@ -5,7 +5,7 @@ services:
     restart: always
     working_dir: /app
     environment:
-      - SERVER_URL=https://api-fleet.malaxis.ru
+      - SERVER_URL=https://__API_DOMAIN__
       - SECRET_TOKEN=${FLEET_SECRET:-malaxis_printer_secret_2026}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

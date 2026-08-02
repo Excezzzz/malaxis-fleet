@@ -31,11 +31,11 @@ mkdir -p "$AGENT_DIR/configs"
 cd "$AGENT_DIR"
 
 echo "Downloading client files..."
-curl -sSL https://sub-fleet.malaxis.ru/docker-compose.yml -o docker-compose.yml
-curl -sSL https://sub-fleet.malaxis.ru/Dockerfile.client -o Dockerfile
-curl -sSL https://sub-fleet.malaxis.ru/requirements.txt -o requirements.txt
-curl -sSL https://sub-fleet.malaxis.ru/entrypoint.sh -o entrypoint.sh
-curl -sSL https://api-fleet.malaxis.ru/api/agent/latest -o node_agent.py
+curl -sSL https://__SUB_DOMAIN__/docker-compose.yml -o docker-compose.yml
+curl -sSL https://__SUB_DOMAIN__/Dockerfile.client -o Dockerfile
+curl -sSL https://__SUB_DOMAIN__/requirements.txt -o requirements.txt
+curl -sSL https://__SUB_DOMAIN__/entrypoint.sh -o entrypoint.sh
+curl -sSL https://__API_DOMAIN__/api/agent/latest -o node_agent.py
 chmod +x entrypoint.sh
 
 # Restore configs if backed up
@@ -47,7 +47,7 @@ fi
 
 # Download default configs so containers start cleanly
 echo "Downloading default proxy configs..."
-curl -sSL https://sub-fleet.malaxis.ru/configs/xray_config.json -o configs/xray_config.json 2>/dev/null || cat > configs/xray_config.json << 'XRAYEOF'
+curl -sSL https://__SUB_DOMAIN__/configs/xray_config.json -o configs/xray_config.json 2>/dev/null || cat > configs/xray_config.json << 'XRAYEOF'
 {
   "log": { "loglevel": "warning" },
   "dns": { "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"], "queryStrategy": "UseIPv4" },
@@ -59,7 +59,7 @@ curl -sSL https://sub-fleet.malaxis.ru/configs/xray_config.json -o configs/xray_
   "routing": { "domainStrategy": "IPIfNonMatch" }
 }
 XRAYEOF
-curl -sSL https://sub-fleet.malaxis.ru/configs/singbox_config.json -o configs/singbox_config.json 2>/dev/null || cat > configs/singbox_config.json << 'SINGEOF'
+curl -sSL https://__SUB_DOMAIN__/configs/singbox_config.json -o configs/singbox_config.json 2>/dev/null || cat > configs/singbox_config.json << 'SINGEOF'
 {
   "log": { "level": "warn" },
   "inbounds": [
@@ -72,7 +72,7 @@ SINGEOF
 
 # Download fleet-cli utility
 echo "Downloading fleet-cli utility..."
-curl -sSL https://join-fleet.malaxis.ru/fleet-cli -o fleet-cli.sh
+curl -sSL https://__JOIN_DOMAIN__/fleet-cli -o fleet-cli.sh
 chmod +x fleet-cli.sh
 
 echo "Building agent image and starting services..."
@@ -85,7 +85,7 @@ docker compose create singbox-node 2>/dev/null || true
 # Optional: install systemd service for auto-start at boot (Linux only)
 if command -v systemctl &> /dev/null; then
     echo "Installing systemd service..."
-    curl -sSL https://join-fleet.malaxis.ru/fleet-agent.service -o /etc/systemd/system/fleet-agent.service
+    curl -sSL https://__JOIN_DOMAIN__/fleet-agent.service -o /etc/systemd/system/fleet-agent.service
     systemctl daemon-reload
     systemctl enable fleet-agent.service
     echo "systemd service installed and enabled."

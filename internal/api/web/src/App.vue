@@ -27,7 +27,7 @@
             </a>
             <a @click.prevent="currentView = 'AdminUsers'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('AdminUsers')">
               <Users class="w-4 h-4" />
-              <span>Admin Users</span>
+              <span>Fleet Users</span>
             </a>
             <a @click.prevent="currentView = 'RoleManager'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200" :class="navLinkClasses('RoleManager')">
               <Shield class="w-4 h-4" />
@@ -42,7 +42,7 @@
               <span>Settings</span>
             </a>
           </nav>
-          <button @click="logout" class="flex items-center space-x-2 px-3 py-2 rounded-xl text-sm text-zinc-400 hover:bg-white/10 hover:text-white transition-colors shrink-0">
+          <button @click="logout" class="flex items-center space-x-2 px-3 py-2 rounded-xl text-sm text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors shrink-0">
             <Shield class="w-4 h-4" />
             <span>Logout</span>
           </button>
@@ -58,7 +58,7 @@
           </a>
           <a @click.prevent="currentView = 'AdminUsers'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('AdminUsers')">
             <Users class="w-4 h-4" />
-            <span>Admin Users</span>
+            <span>Fleet Users</span>
           </a>
           <a @click.prevent="currentView = 'RoleManager'" href="#" class="flex items-center space-x-2 px-4 py-2 rounded-xl text-sm transition-all duration-200 shrink-0" :class="navLinkClasses('RoleManager')">
             <Shield class="w-4 h-4" />

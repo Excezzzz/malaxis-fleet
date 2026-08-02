@@ -45,6 +45,7 @@ type Config struct {
 
 	// Features
 	MaxBackupRetention int
+	LoginRateLimit     int
 	LowRAMMode         bool
 	OwnerRoleName      string
 	OwnerColorHex      string
@@ -91,6 +92,7 @@ func LoadConfig() *Config {
 
 		// Features
 		MaxBackupRetention: getIntDefault("MAX_BACKUP_RETENTION", 3),
+		LoginRateLimit:     getIntDefault("LOGIN_RATE_LIMIT", 30),
 		LowRAMMode:         getBoolDefault("LOW_RAM_MODE", false),
 		OwnerRoleName:      getStringDefault("OWNER_ROLE_NAME", "Owner"),
 		OwnerColorHex:      getStringDefault("OWNER_COLOR_HEX", "#FF5733"),
@@ -110,10 +112,19 @@ func getStringDefault(key string, defaultValue string) string {
 	if !ok {
 		return defaultValue
 	}
-	// Trim surrounding quotes and whitespace: .env files commonly contain
-	// values like ADMIN_PASS="admin" whose literal quotes would corrupt
-	// credentials (e.g. hashing `"admin"` instead of `admin` -> login 401).
-	return strings.Trim(strings.TrimSpace(value), "\"'")
+	value = strings.TrimSpace(value)
+	// Unwrap surrounding quotes ONLY when the value is fully wrapped in
+	// matching quotes. This preserves passwords containing special characters
+	// (backticks, quotes, etc.) while still handling the common
+	// ADMIN_PASS="admin" form used in .env files. A value that merely
+	// *contains* a quote is left untouched.
+	if len(value) >= 2 {
+		first, last := value[0], value[len(value)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			value = value[1 : len(value)-1]
+		}
+	}
+	return value
 }
 
 func getInt(key string) int {

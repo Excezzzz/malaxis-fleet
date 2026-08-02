@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold">Admin Users</h1>
+      <h1 class="text-4xl font-bold">Fleet Users</h1>
       <div class="flex space-x-4">
         <button @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">
           <Users class="w-5 h-5" />
