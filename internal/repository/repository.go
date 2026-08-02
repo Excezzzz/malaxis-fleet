@@ -18,7 +18,7 @@ type Repository interface {
 	UpdateNode(node *domain.Node) error
 	DeleteNode(id string) error
 	UpdateNodeStatus(id, ipLan string) error
-	UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer string) error
+	UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers string) error
 	UpdateNodePipelineStatus(nodeID, status, message string) error
 	GetNodesWithSubURL() ([]domain.Node, error)
 	AssignNodeToUser(nodeID string, userID int64) error

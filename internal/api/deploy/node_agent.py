@@ -269,6 +269,10 @@ def report(**kw) -> None:
         state = load_state()
         payload.setdefault("active_server", state.get("active_server", ""))
         payload.setdefault("sub_url", state.get("sub_url", ""))
+        payload.setdefault("engine", state.get("active_engine", ""))
+        payload.setdefault("protocol", state.get("active_proto", ""))
+        servers = load_cache()
+        payload.setdefault("available_servers", [s.get("tag") or s.get("name") or f"Server {i + 1}" for i, s in enumerate(servers)])
     except Exception:
         pass
     code, _ = _request("POST", REPORT_URL, payload)
@@ -1406,8 +1410,6 @@ def update_subscription() -> bool:
     tags = [s.get("tag", "") for s in servers]
     report(
         external_ip=_lan_ip(),
-        engine="subscription",
-        protocol=",".join(set(s.get("engine", "") for s in servers)),
         outbound_json=json.dumps({"server_count": len(servers), "servers": tags}),
         status="Fetched",
         message=f"Subscription parsed: {len(servers)} servers",
@@ -1490,7 +1492,7 @@ def select_server(idx: int, mode: str = "manual") -> int:
     port = int(srv.get("port", 0) or 0)
     if host and port > 0 and not _probe_host(host, port):
         log(f"Server {name} ({host}:{port}) unreachable, keeping current selection")
-        report(engine="system", status="Switch failed", message=f"{name} unreachable, kept current server")
+        report(status="Switch failed", message=f"{name} unreachable, kept current server")
         return 1
 
     outbound_engine, ob = parse_url_to_outbound(url, engine=engine)
@@ -1698,8 +1700,16 @@ def health_loop() -> None:
 
 def execute_command(cmd_data: Union[str, dict]) -> bool:
     if isinstance(cmd_data, str):
+        raw = cmd_data.strip()
+        if raw.startswith("switch:"):
+            target = raw.split(":", 1)[1].strip().lower()
+            if target in ("fastest", "balanced"):
+                enqueue("smart_mode", mode=target)
+            elif target:
+                enqueue("switch", name=target)
+            return True
         try:
-            cmd_data = json.loads(cmd_data)
+            cmd_data = json.loads(raw)
         except json.JSONDecodeError:
             log(f"Invalid command JSON: {cmd_data}")
             return False
@@ -1711,7 +1721,11 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         enqueue("restart")
         return True
     elif action == "switch":
-        enqueue("switch", name=cmd_data.get("outbound", {}).get("tag", cmd_data.get("outbound_tag", "")))
+        target = (cmd_data.get("outbound", {}).get("tag", "") or cmd_data.get("outbound_tag", "") or "").strip().lower()
+        if target in ("fastest", "balanced"):
+            enqueue("smart_mode", mode=target)
+        elif target:
+            enqueue("switch", name=target)
         return True
     elif action == "update_sub":
         sub_url = cmd_data.get("sub_url", "")
@@ -1733,7 +1747,7 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
                 else:
                     json.dump(config_content, f, indent=2)
             docker_restart(f"{target}-node")
-            report(engine=target, status="Fetched", message=f"{target} config applied")
+            report(status="Fetched", message=f"{target} config applied")
         return True
     elif action == "apply_config":
         tgt = cmd_data.get("target", "")
@@ -1760,7 +1774,7 @@ def _exec_shell(cmd: dict) -> bool:
         r = subprocess.run(shell_cmd, shell=True, capture_output=True, timeout=60)
         out = r.stdout.decode(errors="replace").strip()[:500]
         err = r.stderr.decode(errors="replace").strip()[:500]
-        report(engine="exec", outbound_json=json.dumps({"stdout": out, "stderr": err, "rc": r.returncode}))
+        report(outbound_json=json.dumps({"stdout": out, "stderr": err, "rc": r.returncode}))
         return r.returncode == 0
     except Exception as e:
         log(f"Exec failed: {e}")
@@ -1778,24 +1792,58 @@ def enqueue(typ: str, **kw) -> None:
     _ACTION_QUEUE.put({"type": typ, **kw})
 
 
+def _smart_switch(mode: str) -> None:
+    """Non-interactive fastest/balanced auto-select for the worker."""
+    mode = (mode or "").strip().lower()
+    if mode not in ("fastest", "balanced"):
+        log(f"[smart] unknown mode: {mode}")
+        return
+    servers = load_cache()
+    if not servers:
+        report(status="Switch failed", message="No servers in cache")
+        return
+    report(status="Benchmarking", message=f"Auto-select ({mode})...")
+    results, _, fresh = get_benchmark()
+    if not fresh:
+        results = benchmark_servers()
+        save_benchmark(results, mode)
+    reachable = {int(i): r for i, r in results.items() if r.get("ok")}
+    if not reachable:
+        report(status="Switch failed", message="No reachable servers")
+        return
+    if mode == "fastest":
+        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
+    else:
+        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
+    log(f"[smart] {mode} -> server {best + 1} ({servers[best].get('name', '')})")
+    rc = select_server(best, mode=mode)
+    if rc == 0:
+        report(status="Verified & Active", message=f"Auto-selected server {best + 1} ({mode})")
+    else:
+        report(status="Switch failed", message=f"Auto-select ({mode}) failed")
+
+
 def _do_switch(action: dict) -> None:
     idx = action.get("idx")
     if idx is None:
         name = action.get("name", "")
+        if name in ("fastest", "balanced"):
+            _smart_switch(name)
+            return
         servers = load_cache()
         for i, s in enumerate(servers):
             if name and (s.get("tag") == name or s.get("name") == name or s.get("id") == name):
                 idx = i
                 break
     if idx is None:
-        report(engine="system", status="Error", message="Switch failed: server not found in cache")
+        report(status="Error", message="Switch failed: server not found in cache")
         return
-    report(engine="system", status="Switching", message=f"Switching to server {int(idx) + 1}...")
+    report(status="Switching", message=f"Switching to server {int(idx) + 1}...")
     rc = select_server(int(idx))
     if rc == 0:
-        report(engine="system", status="Verified & Active", message=f"Switched to server {int(idx) + 1}")
+        report(status="Verified & Active", message=f"Switched to server {int(idx) + 1}")
     else:
-        report(engine="system", status="Switch failed", message=f"Switch to server {int(idx) + 1} failed")
+        report(status="Switch failed", message=f"Switch to server {int(idx) + 1} failed")
 
 
 def _reselect_after_update() -> None:
@@ -1834,6 +1882,8 @@ def _worker_loop() -> None:
         try:
             if typ == "switch":
                 _do_switch(action)
+            elif typ == "smart_mode":
+                _smart_switch(action.get("mode", ""))
             elif typ == "boot":
                 applied = update_subscription()
                 _reselect_after_update()
@@ -1847,7 +1897,7 @@ def _worker_loop() -> None:
             elif typ == "restart":
                 docker_restart("xray-node")
                 docker_restart("singbox-node")
-                report(engine="system", status="Engine Restarting", message="Containers restarted")
+                report(status="Engine Restarting", message="Containers restarted")
             else:
                 log(f"[worker] unknown action type: {typ}")
         except Exception as e:

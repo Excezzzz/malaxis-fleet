@@ -54,6 +54,7 @@ type Node struct {
 	ActiveProto        string    `json:"active_proto" db:"active_proto"`
 	ActiveIPExt        string    `json:"active_ip_ext" db:"active_ip_ext"`
 	ActiveOutboundJSON string    `json:"active_outbound_json" db:"active_outbound_json"`
+	AvailableServers   []string  `json:"available_servers" db:"available_servers"`
 	LastSeen           time.Time `json:"last_seen" db:"last_seen"`
 	PendingCommand     string    `json:"pending_command" db:"pending_command"`
 	PendingMsgID       int64     `json:"pending_msg_id" db:"pending_msg_id"`

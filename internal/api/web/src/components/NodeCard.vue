@@ -66,17 +66,26 @@
     <!-- Switch VPN Modal -->
     <div v-if="showSwitchModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div class="bg-gray-800 rounded-lg p-8 w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-6">Switch VPN Configuration</h2>
-        <p class="text-gray-400 mb-4">Currently active server: <strong>{{ node.active_server || 'None' }}</strong></p>
-        <div class="space-y-4">
-          <div>
-            <label for="outbound_tag" class="block text-sm font-medium text-gray-400">Server Outbound Tag</label>
-            <input v-model="switchOutboundTag" type="text" id="outbound_tag" placeholder="e.g. zoom" class="mt-1 block w-full bg-gray-700 border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-          </div>
+        <h2 class="text-2xl font-bold mb-2">Switch VPN Configuration</h2>
+        <p class="text-gray-400 mb-5">Currently active server: <strong>{{ node.active_server || 'None' }}</strong></p>
+        <div class="grid grid-cols-2 gap-3 mb-4">
+          <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600/50 hover:bg-blue-500 rounded-xl backdrop-blur transition-colors font-semibold">
+            <span>⚡</span><span>Fastest</span>
+          </button>
+          <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-blue-600/50 hover:bg-blue-500 rounded-xl backdrop-blur transition-colors font-semibold">
+            <span>⚖️</span><span>Balanced</span>
+          </button>
         </div>
-        <div class="mt-8 flex justify-end space-x-4">
-          <button type="button" @click="showSwitchModal = false" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">Cancel</button>
-          <button type="button" @click="confirmSwitchVpn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">Switch VPN</button>
+        <p class="text-xs text-gray-500 mb-2">Available servers ({{ (node.available_servers || []).length }})</p>
+        <div v-if="(node.available_servers || []).length" class="grid grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-1">
+          <button v-for="srv in node.available_servers" :key="srv" @click="switchTo(srv)"
+            :class="['px-4 py-3 rounded-xl backdrop-blur transition-colors font-semibold truncate text-left', srv === node.active_server ? 'bg-green-600/60 hover:bg-green-500 ring-2 ring-green-400/50' : 'bg-gray-700/60 hover:bg-gray-600']">
+            {{ srv }}
+          </button>
+        </div>
+        <p v-else class="text-sm text-gray-500">No server list reported yet — try again in a few seconds.</p>
+        <div class="mt-8 flex justify-end">
+          <button type="button" @click="showSwitchModal = false" class="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors">Close</button>
         </div>
       </div>
     </div>
@@ -191,28 +200,20 @@ export default {
     };
 
     const showSwitchModal = ref(false);
-    const switchOutboundTag = ref('');
 
     const switchVpnProfile = () => {
       showSwitchModal.value = true;
-      switchOutboundTag.value = '';
     };
 
-    const confirmSwitchVpn = async () => {
-      if (!switchOutboundTag.value) {
-        alert('Please enter an outbound tag.');
-        return;
-      }
+    const switchTo = async (target) => {
       try {
         const response = await fetch(`/api/web/devices/${props.node.id}/command`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'switch', outbound_tag: switchOutboundTag.value }),
+          body: JSON.stringify({ action: 'switch', outbound_tag: target }),
         });
         if (!response.ok) throw new Error('Failed to send switch command');
         showSwitchModal.value = false;
-        switchOutboundTag.value = '';
-        alert('Switch command sent to node!');
         emit('node-updated');
       } catch (error) {
         console.error('Error switching VPN:', error);
@@ -232,8 +233,7 @@ export default {
       deleteNode,
       switchVpnProfile,
       showSwitchModal,
-      switchOutboundTag,
-      confirmSwitchVpn,
+      switchTo,
     };
   },
 };
