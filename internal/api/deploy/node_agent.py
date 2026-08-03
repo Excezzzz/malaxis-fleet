@@ -11,6 +11,7 @@ import random
 import re
 import requests
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -1837,6 +1838,25 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
             return False
     assert isinstance(cmd_data, dict), f"Command data is not a dict: {type(cmd_data)}"
     action = cmd_data.get("action", "")
+    # Support the web payload `{"command": "switch:zoom"}`: unwrap the string
+    # command and handle it exactly like its raw string form.
+    if not action and isinstance(cmd_data.get("command"), str):
+        raw = cmd_data["command"].strip()
+        if raw.startswith("switch:"):
+            target = raw.split(":", 1)[1].strip().lower()
+            if target in ("fastest", "balanced"):
+                enqueue("smart_mode", mode=target)
+            elif target:
+                enqueue("switch", name=target)
+            return True
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                cmd_data = parsed
+                action = parsed.get("action", "")
+        except json.JSONDecodeError:
+            log(f"Invalid command payload: {raw}")
+            return False
     log(f"Executing action: {action}")
 
     if action == "restart":
@@ -2054,16 +2074,19 @@ def update_client_files(urls: dict) -> bool:
                     _safe_remove(tmp)
                     continue
             elif fname == "fleet-cli.sh":
-                rc = 1
-                try:
-                    rc = subprocess.run(["bash", "-n", tmp], capture_output=True, timeout=15).returncode
-                except Exception:
-                    pass
-                if rc != 0:
-                    ok = False
-                    log("[update_client_files] SYNTAX CHECK FAILED for fleet-cli.sh")
-                    _safe_remove(tmp)
-                    continue
+                if shutil.which("bash") is not None:
+                    rc = 1
+                    try:
+                        rc = subprocess.run(["bash", "-n", tmp], capture_output=True, timeout=15).returncode
+                    except Exception:
+                        pass
+                    if rc != 0:
+                        ok = False
+                        log("[update_client_files] SYNTAX CHECK FAILED for fleet-cli.sh")
+                        _safe_remove(tmp)
+                        continue
+                else:
+                    log("[update_client_files] bash not found - skipping fleet-cli.sh syntax check")
             os.replace(tmp, dest)
             log(f"[update_client_files] updated {fname} ({len(data)} bytes)")
         except Exception as e:
