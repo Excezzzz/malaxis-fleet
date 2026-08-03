@@ -1282,6 +1282,25 @@ def _docker_output(args: list, timeout: int = 30) -> str:
         return ""
 
 
+def _docker_logs(container: str, tail: int = 100) -> str:
+    """Fetch the tail of a container's logs (stdout+stderr combined)."""
+    try:
+        r = subprocess.run(
+            ["docker", "logs", container, "--tail", str(tail), "--timestamps"],
+            capture_output=True, timeout=30,
+        )
+        out = r.stdout.decode(errors="replace")
+        err = r.stderr.decode(errors="replace")
+        combined = (out + err).strip()
+        if combined:
+            return combined
+        return f"(container '{container}' has no log output)"
+    except subprocess.TimeoutExpired:
+        return f"(docker logs {container} timed out)"
+    except Exception as e:
+        return f"(failed to fetch logs for {container}: {e})"
+
+
 def is_container_running(engine: str) -> bool:
     name = "singbox-node" if engine == "singbox" else "xray-node"
     return _docker_output(["inspect", "-f", "{{.State.Running}}", name]) == "true"
@@ -1870,6 +1889,16 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         }
         enqueue("update_client_files", urls=urls)
         return True
+    elif action == "get_logs":
+        container = (cmd_data.get("container") or "node-agent").strip()
+        allowed = {"node-agent", "xray-node", "singbox-node"}
+        if container not in allowed:
+            log(f"[get_logs] invalid container: {container}")
+            return True
+        output = _docker_logs(container, tail=100)
+        log(f"[get_logs] fetched {len(output)} chars from {container}")
+        report(logs=json.dumps({container: output}))
+        return True
     elif action == "terminate":
         enqueue("terminate")
         return True
@@ -2052,6 +2081,18 @@ def _safe_remove(path: str) -> None:
         pass
 
 
+def _graceful_restart() -> None:
+    """Stop the agent so the supervisor (docker/systemd restart policy) brings
+    it back up with the freshly downloaded client code. Exit code 0 signals a
+    graceful, expected shutdown."""
+    try:
+        os.kill(os.getpid(), signal.SIGTERM)
+    except Exception:
+        pass
+    time.sleep(5)
+    sys.exit(0)
+
+
 def _terminate() -> None:
     """Self-destruct: report, tear down engine containers, wipe local state, exit."""
     log("TERMINATE: self-destruct initiated")
@@ -2103,12 +2144,12 @@ def _worker_loop() -> None:
                 report(status="Engine Restarting", message="Containers restarted")
             elif typ == "update_client_files":
                 ok = update_client_files(action.get("urls", {}))
-                report(status="Updated" if ok else "Update failed",
-                       message="Client files updated, restarting agent" if ok else "Client file update failed")
                 if ok:
-                    log("[update_client_files] restarting agent with new code...")
-                    time.sleep(2)
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                    report(status="Updated", message="Client files updated")
+                    log("[update_client_files] Client files updated, restarting gracefully...")
+                    _graceful_restart()
+                else:
+                    report(status="Update failed", message="Client file update failed")
             elif typ == "terminate":
                 _terminate()
             else:

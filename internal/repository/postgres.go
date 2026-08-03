@@ -118,6 +118,8 @@ func (r *postgresRepository) Init() error {
 	// Migrate: Add hardware_hash column for hardware fingerprint dedup
 	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS hardware_hash TEXT`)
 	r.db.Exec(`CREATE INDEX IF NOT EXISTS idx_nodes_hardware_hash ON nodes(hardware_hash)`)
+	// Migrate: Add node_logs column (JSON map of container -> last log tail)
+	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS node_logs TEXT`)
 
 	// Migrate: Set default value for device_type and update existing NULL values
 	r.db.Exec(`ALTER TABLE nodes ALTER COLUMN device_type SET DEFAULT 'node'`)
@@ -298,6 +300,22 @@ func (r *postgresRepository) UpdateNodeStatus(id, ipLan string) error {
 	query := `UPDATE nodes SET ip_lan = $1, last_seen = $2 WHERE id = $3`
 	_, err := r.db.Exec(query, ipLan, time.Now(), id)
 	return err
+}
+
+// SetNodeLogs stores the JSON map of container -> log tail reported by the agent.
+func (r *postgresRepository) SetNodeLogs(id, logsJSON string) error {
+	_, err := r.db.Exec("UPDATE nodes SET node_logs = $1 WHERE id = $2", logsJSON, id)
+	return err
+}
+
+// GetNodeLogs returns the stored JSON map of container -> log tail for a node.
+func (r *postgresRepository) GetNodeLogs(id string) (string, error) {
+	var raw string
+	err := r.db.QueryRow("SELECT COALESCE(node_logs, '') FROM nodes WHERE id = $1", id).Scan(&raw)
+	if err != nil {
+		return "", err
+	}
+	return raw, nil
 }
 
 func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers, subURL string) error {

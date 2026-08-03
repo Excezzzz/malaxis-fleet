@@ -156,6 +156,12 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// GET /api/web/audit - audit logs (permission can_view_audit)
 	webAPIRouter.Handle("/web/audit", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_audit")(http.HandlerFunc(api.GetAuditLogsHandler)))).Methods("GET")
 
+	// GET /api/web/nodes/{id}/logs - node container logs (permission can_view_nodes)
+	webAPIRouter.Handle("/web/nodes/{id}/logs", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_nodes")(http.HandlerFunc(api.GetNodeLogsHandler)))).Methods("GET")
+
+	// GET /api/web/logs/master - master server logs (permission can_view_audit)
+	webAPIRouter.Handle("/web/logs/master", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_audit")(http.HandlerFunc(api.GetMasterLogsHandler)))).Methods("GET")
+
 	// GET /api/web/backup/download - backup download (permission can_export_backups)
 	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_export_backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
 

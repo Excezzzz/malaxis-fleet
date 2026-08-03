@@ -49,6 +49,9 @@ type Config struct {
 	LowRAMMode         bool
 	OwnerRoleName      string
 	OwnerColorHex      string
+
+	// Master log file path (used by the "Logs & Audit" tab)
+	MasterLogFile string
 }
 
 // LoadConfig loads configuration from environment variables (.env file)
@@ -96,6 +99,7 @@ func LoadConfig() *Config {
 		LowRAMMode:         getBoolDefault("LOW_RAM_MODE", false),
 		OwnerRoleName:      getStringDefault("OWNER_ROLE_NAME", "Owner"),
 		OwnerColorHex:      getStringDefault("OWNER_COLOR_HEX", "#FF5733"),
+		MasterLogFile:      getStringDefault("MASTER_LOG_FILE", "data/logs/master.log"),
 	}
 }
 

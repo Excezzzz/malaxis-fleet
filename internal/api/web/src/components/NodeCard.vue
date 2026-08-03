@@ -72,33 +72,37 @@
             <span>Read-only view</span>
         </div>
         <template v-if="canManage">
-            <div class="grid grid-cols-2 gap-2">
-                <button @click="showSubModal = true" class="w-full flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+            <div class="flex flex-wrap gap-2">
+                <button @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Link class="w-4 h-4" />
                   <span>Manage Sub URL</span>
                 </button>
-                <button @click="showSwitchModal = true" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="!isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Shield class="w-4 h-4" />
                   <span>Switch VPN</span>
                 </button>
             </div>
-            <div class="grid grid-cols-2 gap-2">
-                <button @click="viewLogs" class="w-full flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+            <div class="flex flex-wrap gap-2">
+                <button @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
                     <ScrollText class="w-4 h-4" />
                     <span>View Logs</span>
                 </button>
-                <button @click="confirmDelete" class="w-full flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button @click="confirmDelete" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Trash2 class="w-4 h-4" />
                   <span>Delete</span>
                 </button>
             </div>
-            <div>
-                <button v-if="!isTerminated" @click="showTerminateModal = true" class="w-full flex items-center justify-center space-x-2 bg-red-800/20 hover:bg-red-800/40 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+            <div v-if="!isTerminated">
+                <button @click="showTerminateModal = true" class="w-full flex items-center justify-center space-x-2 bg-red-800/20 hover:bg-red-800/40 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Power class="w-4 h-4" />
                   <span>Terminate & Self-Destruct</span>
                 </button>
             </div>
         </template>
+      </div>
+
+      <div v-if="toast" :class="['fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
+        {{ toast }}
       </div>
     </div>
 
@@ -159,14 +163,38 @@
     </div>
 
     <div v-if="showLogsModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-4xl flex flex-col">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight">Agent Logs: {{ node.name }}</h2>
-        <div class="bg-black p-4 rounded-lg font-mono text-xs text-white/80 h-96 overflow-y-auto whitespace-pre-wrap flex-grow">
-          <div v-if="isLoadingLogs" class="flex items-center justify-center h-full text-zinc-400">Loading logs...</div>
-          <pre v-else>{{ nodeLogs || 'No logs available.' }}</pre>
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 w-full max-w-5xl flex flex-col max-h-[90vh]">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-2xl font-bold tracking-tight">Agent Logs: {{ node.name }}</h2>
+          <button type="button" @click="closeLogs" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>
         </div>
-        <div class="mt-8 flex justify-end space-x-4">
-          <button type="button" @click="showLogsModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Close</button>
+        <div class="flex flex-wrap items-center gap-3 mb-3">
+          <div class="flex rounded-lg bg-black/40 border border-white/10 overflow-hidden">
+            <button v-for="c in logContainers" :key="c" @click="selectContainer(c)"
+              :class="['px-4 py-2 text-sm font-medium transition-colors', logContainer === c ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
+              {{ c }}
+            </button>
+          </div>
+          <div class="flex items-center gap-2 ml-auto">
+            <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+              <input type="checkbox" v-model="autoRefreshLogs" class="accent-indigo-500" />
+              Auto-refresh 3s
+            </label>
+            <button @click="fetchLogs" title="Refresh"
+              class="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-white transition-colors">
+              <RefreshCw :class="['w-4 h-4', isLoadingLogs ? 'animate-spin' : '']" />
+              <span>Refresh</span>
+            </button>
+            <button @click="copyLogs" title="Copy logs"
+              class="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-white transition-colors">
+              <Copy class="w-4 h-4" />
+              <span>Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="bg-black p-4 rounded-lg font-mono text-xs text-white/80 h-96 overflow-y-auto whitespace-pre-wrap flex-grow" ref="logHost">
+          <div v-if="isLoadingLogs && !nodeLogs" class="flex items-center justify-center h-full text-zinc-400">Loading logs...</div>
+          <pre v-else>{{ nodeLogs || 'No logs available yet. Press Refresh or wait for auto-refresh.' }}</pre>
         </div>
       </div>
     </div>
@@ -174,7 +202,8 @@
 </template>
 
 <script>
-import { ref, computed, inject } from 'vue';
+import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
+import axios from 'axios';
 import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
@@ -191,7 +220,7 @@ export default {
   emits: ['node-updated', 'node-deleted'],
   setup(props, { emit }) {
     const { user, hasPermission, isReadOnly } = inject('authCtx', { user: ref(null), hasPermission: () => false, isReadOnly: ref(false) });
-    
+
     const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
     const canManage = computed(() => isOwner.value || hasPermission('can_manage_nodes'));
 
@@ -204,6 +233,14 @@ export default {
     const showLogsModal = ref(false);
     const nodeLogs = ref('');
     const isLoadingLogs = ref(false);
+    const logContainers = ['node-agent', 'xray-node', 'singbox-node'];
+    const logContainer = ref('node-agent');
+    const autoRefreshLogs = ref(false);
+    let logRefreshTimer = null;
+    const logHost = ref(null);
+    const toast = ref('');
+    const toastType = ref('success');
+    let toastTimer = null;
 
     const isOnline = computed(() => {
       if (!props.node.last_seen) return false;
@@ -253,8 +290,27 @@ export default {
         return `${days} day${days > 1 ? 's' : ''} ago`;
     };
 
+    const showToast = (msg, type = 'success', duration = 4000) => {
+      toast.value = msg;
+      toastType.value = type;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.value = ''; }, duration);
+    };
+
     const updateSubUrl = async () => {
-      // ... (implementation unchanged)
+      if (!newSubUrl.value) {
+        showToast('Please enter a subscription URL.', 'error');
+        return;
+      }
+      try {
+        await axios.put(`/api/web/nodes/${props.node.id}/sub`, { sub_url: newSubUrl.value });
+        showSubModal.value = false;
+        emit('node-updated');
+        showToast('Subscription URL updated.');
+      } catch (e) {
+        console.error('Error updating sub URL:', e);
+        showToast('Failed to update subscription URL.', 'error');
+      }
     };
 
     const confirmDelete = () => {
@@ -262,47 +318,144 @@ export default {
     };
 
     const deleteNode = async () => {
-      // ... (implementation unchanged)
+      try {
+        await axios.delete(`/api/web/devices/${props.node.id}`);
+        emit('node-deleted', props.node.id);
+        showToast('Node deleted.');
+      } catch (e) {
+        console.error('Error deleting node:', e);
+        showToast('Failed to delete node.', 'error');
+      }
     };
 
     const showSwitchModal = ref(false);
 
     const switchTo = async (target) => {
-      // ... (implementation unchanged)
+      try {
+        await axios.post(`/api/web/nodes/${props.node.id}/command`, { action: 'switch', outbound_tag: target });
+        showSwitchModal.value = false;
+        emit('node-updated');
+        showToast(`Switch queued to ${target}.`);
+      } catch (e) {
+        console.error('Error switching:', e);
+        showToast('Failed to queue switch.', 'error');
+      }
     };
-    
+
     const copySubUrl = async () => {
-      // ... (implementation unchanged)
+      if (!props.node.sub_url) return;
+      try {
+        await navigator.clipboard.writeText(props.node.sub_url);
+        showToast('Subscription URL copied.');
+      } catch (e) {
+        console.error('Failed to copy sub URL:', e);
+      }
     };
 
     const terminateNode = async () => {
-      // ... (implementation unchanged)
+      if (terminateConfirm.value !== 'TERMINATE') return;
+      try {
+        await axios.post(`/api/web/nodes/${props.node.id}/terminate`);
+        showTerminateModal.value = false;
+        terminateConfirm.value = '';
+        emit('node-updated');
+        showToast('Terminate queued. Node will self-destruct on next poll.');
+      } catch (e) {
+        console.error('Error queueing terminate:', e);
+        showToast('Failed to queue terminate.', 'error');
+      }
     };
 
     const renameNode = async () => {
-      // ... (implementation unchanged)
+      if (!newNodeName.value) return;
+      try {
+        await axios.put(`/api/web/nodes/${props.node.id}/rename`, { name: newNodeName.value });
+        showRenameModal.value = false;
+        emit('node-updated');
+        showToast('Node renamed.');
+      } catch (e) {
+        console.error('Error renaming node:', e);
+        showToast('Failed to rename node.', 'error');
+      }
     };
 
-    const viewLogs = async () => {
-      showLogsModal.value = true;
+    const scrollLogsToBottom = async () => {
+      await nextTick();
+      if (logHost.value) logHost.value.scrollTop = logHost.value.scrollHeight;
+    };
+
+    const fetchLogs = async () => {
       isLoadingLogs.value = true;
-      nodeLogs.value = '';
       try {
-        // This is a placeholder. The backend endpoint needs to be implemented.
-        // Once implemented, the actual fetch request will be:
-        // const response = await fetch(`/api/web/nodes/${props.node.id}/logs`);
-        // if (!response.ok) throw new Error('Failed to fetch logs');
-        // const data = await response.json();
-        // nodeLogs.value = data.logs;
-        await new Promise(res => setTimeout(res, 1000));
-        nodeLogs.value = 'Log fetching not yet implemented. This is a placeholder UI.';
-      } catch (error) {
-        console.error('Error fetching logs:', error);
+        const response = await axios.get(`/api/web/nodes/${props.node.id}/logs`, {
+          params: { container: logContainer.value },
+        });
+        nodeLogs.value = response.data.logs || '(no logs for ' + logContainer.value + ')';
+        scrollLogsToBottom();
+      } catch (e) {
+        console.error('Error fetching logs:', e);
         nodeLogs.value = 'Failed to load logs.';
       } finally {
         isLoadingLogs.value = false;
       }
     };
+
+    const selectContainer = (c) => {
+      if (logContainer.value === c) return;
+      logContainer.value = c;
+      nodeLogs.value = '';
+      stopAutoRefresh();
+      fetchLogs();
+    };
+
+    const scheduleLogRefresh = () => {
+      clearTimeout(logRefreshTimer);
+      logRefreshTimer = setTimeout(async () => {
+        await fetchLogs();
+        scheduleLogRefresh();
+      }, 3000);
+    };
+
+    const stopAutoRefresh = () => {
+      clearTimeout(logRefreshTimer);
+      logRefreshTimer = null;
+    };
+
+    const openLogs = () => {
+      showLogsModal.value = true;
+      logContainer.value = 'node-agent';
+      nodeLogs.value = '';
+      fetchLogs();
+      if (autoRefreshLogs.value) scheduleLogRefresh();
+    };
+
+    const closeLogs = () => {
+      showLogsModal.value = false;
+      stopAutoRefresh();
+      autoRefreshLogs.value = false;
+    };
+
+    watch(autoRefreshLogs, (enabled) => {
+      if (enabled && showLogsModal.value) {
+        scheduleLogRefresh();
+      } else {
+        stopAutoRefresh();
+      }
+    });
+
+    const copyLogs = async () => {
+      if (!nodeLogs.value) return;
+      try {
+        await navigator.clipboard.writeText(nodeLogs.value);
+        showToast('Logs copied.');
+      } catch (e) {
+        console.error('Failed to copy logs:', e);
+      }
+    };
+
+    onUnmounted(() => {
+      stopAutoRefresh();
+    });
 
     return {
       isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass,
@@ -311,8 +464,9 @@ export default {
       showSwitchModal, switchTo,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,
-      showLogsModal, nodeLogs, isLoadingLogs, viewLogs,
-      canManage, isReadOnly,
+      showLogsModal, nodeLogs, isLoadingLogs, openLogs, closeLogs, fetchLogs, selectContainer,
+      logContainers, logContainer, autoRefreshLogs, copyLogs,
+      canManage, isReadOnly, toast, toastType, logHost,
     };
   },
 };

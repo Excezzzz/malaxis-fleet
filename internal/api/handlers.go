@@ -53,6 +53,7 @@ type ReportRequest struct {
 	SubURL           string   `json:"sub_url,omitempty"`
 	Name             string   `json:"name,omitempty"`
 	HardwareHash     string   `json:"hardware_hash,omitempty"`
+	Logs             string   `json:"logs,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -221,13 +222,13 @@ func (a *API) MeHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":            user.ID,
-		"username":      user.Username,
-		"role":          user.Role,
-		"color":         user.ColorHex,
-		"role_name":     user.RoleName,
-		"role_color":    user.RoleColor,
-		"permissions":   permissions,
+		"id":          user.ID,
+		"username":    user.Username,
+		"role":        user.Role,
+		"color":       user.ColorHex,
+		"role_name":   user.RoleName,
+		"role_color":  user.RoleColor,
+		"permissions": permissions,
 	})
 }
 
@@ -326,6 +327,14 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		err := a.repo.UpdateNodePipelineStatus(req.ID, req.Status, req.Message)
 		if err != nil {
 			log.Printf("ERROR: Failed to update node pipeline status for %s: %v", req.ID, err)
+		}
+	}
+
+	// Persist container logs (docker logs tail) reported by the agent. The
+	// value is a JSON map keyed by container name (node-agent/xray-node/singbox-node).
+	if req.Logs != "" {
+		if err := a.repo.SetNodeLogs(req.ID, req.Logs); err != nil {
+			log.Printf("ERROR: Failed to store node logs for %s: %v", req.ID, err)
 		}
 	}
 
@@ -696,10 +705,10 @@ func (a *API) MassUpdateDomainHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Mass updated domain to %s for %d/%d nodes", req.Domain, updatedCount, len(nodes))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":         "ok",
-		"message":        "Subscription domain updated for all nodes",
-		"nodes_total":    len(nodes),
-		"nodes_updated":  updatedCount,
+		"status":        "ok",
+		"message":       "Subscription domain updated for all nodes",
+		"nodes_total":   len(nodes),
+		"nodes_updated": updatedCount,
 	})
 }
 
@@ -1667,10 +1676,10 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 
 	baseURL := "https://" + a.config.SubDomain
 	command, _ := json.Marshal(map[string]string{
-		"action":        "update_client_files",
-		"agent_url":     baseURL + "/node_agent.py",
-		"cli_url":       baseURL + "/fleet-cli.sh",
-		"req_url":       baseURL + "/requirements.txt",
+		"action":         "update_client_files",
+		"agent_url":      baseURL + "/node_agent.py",
+		"cli_url":        baseURL + "/fleet-cli.sh",
+		"req_url":        baseURL + "/requirements.txt",
 		"entrypoint_url": baseURL + "/entrypoint.sh",
 	})
 
@@ -1716,8 +1725,6 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 		"commands_queued": queuedCount,
 	})
 }
-
-
 
 // RenameNodeHandler renames a node from the web dashboard.
 // Body: {"name": "new-name"} (permission can_edit_sub)
@@ -1856,6 +1863,75 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
 		"message": "Command queued for node",
+	})
+}
+
+// --- Log Fetching Handlers ---
+
+// GetNodeLogsHandler returns the latest docker log tail for a node's
+// container. It queues a fresh "get_logs" command so the agent runs
+// `docker logs --tail 100 <container>` on its next poll, then returns the
+// most recent stored logs for that container.
+// Query param: container=node-agent|xray-node|singbox-node (default node-agent)
+func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	nodeID := vars["id"]
+
+	container := r.URL.Query().Get("container")
+	if container == "" {
+		container = "node-agent"
+	}
+	allowed := map[string]bool{"node-agent": true, "xray-node": true, "singbox-node": true}
+	if !allowed[container] {
+		http.Error(w, "Bad Request: invalid container", http.StatusBadRequest)
+		return
+	}
+
+	command, _ := json.Marshal(map[string]string{"action": "get_logs", "container": container})
+	messageID := time.Now().Unix()
+	if err := a.repo.SetPendingCommand(nodeID, string(command), messageID); err != nil {
+		log.Printf("ERROR: Failed to queue get_logs for node %s: %v", nodeID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	logsMap := map[string]string{}
+	if raw, err := a.repo.GetNodeLogs(nodeID); err == nil && raw != "" {
+		json.Unmarshal([]byte(raw), &logsMap)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"container": container,
+		"logs":      logsMap[container],
+		"stored":    logsMap,
+	})
+}
+
+// GetMasterLogsHandler reads the master server's own log file and returns
+// the last 100 lines (used by the "Logs & Audit" tab).
+func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
+	path := a.config.MasterLogFile
+	if path == "" {
+		path = "data/logs/master.log"
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"logs":  "(master log file not found: " + err.Error() + ")",
+			"error": "not_found",
+		})
+		return
+	}
+	lines := strings.Split(string(content), "\n")
+	const tailLines = 100
+	if len(lines) > tailLines {
+		lines = lines[len(lines)-tailLines:]
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs": strings.Join(lines, "\n"),
 	})
 }
 
