@@ -108,7 +108,7 @@ export default {
       if (canEditSub.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode2' });
       if (canManageUsers.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
       if (canManageUsers.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
-      if (canViewAudit.value) items.push({ view: 'AuditLogs', label: 'Audit Logs', icon: 'FileText' });
+      if (canViewAudit.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'FileText' });
       if (isOwner.value) items.push({ view: 'Settings', label: 'Settings', icon: 'Settings' });
       return items;
     });

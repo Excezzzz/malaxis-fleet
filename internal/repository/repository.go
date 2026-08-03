@@ -26,6 +26,8 @@ type Repository interface {
 	GetNodesWithSubURL() ([]domain.Node, error)
 	AssignNodeToUser(nodeID string, userID int64) error
 	UpdateAllNodesSubURL(subURL string) error
+	SetNodeLogs(id, logsJSON string) error
+	GetNodeLogs(id string) (string, error)
 
 	// --- Command Methods ---
 	GetPendingCommand(nodeID string) (string, error)

@@ -2,10 +2,16 @@
   <div>
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-4xl font-bold tracking-tight">Audit Logs</h1>
-      <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
-        <Download class="w-5 h-5" />
-        <span>Export Logs</span>
-      </button>
+      <div class="flex items-center space-x-3">
+        <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
+          <Download class="w-5 h-5" />
+          <span>Export Logs</span>
+        </button>
+      </div>
+    </div>
+
+    <div v-if="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border bg-emerald-500/15 border-emerald-500/40 text-emerald-200">
+      {{ toast }}
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden">
@@ -30,18 +36,48 @@
         </tbody>
       </table>
     </div>
+
+    <div class="mt-10">
+      <div class="flex flex-wrap justify-between items-center mb-4 gap-4">
+        <h2 class="text-2xl font-bold tracking-tight">Master Server Logs</h2>
+        <div class="flex items-center gap-3">
+          <button @click="fetchMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
+            <RefreshCw :class="['w-4 h-4', isLoadingMasterLogs ? 'animate-spin' : '']" />
+            <span>Refresh</span>
+          </button>
+          <button @click="copyMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
+            <Copy class="w-4 h-4" />
+            <span>Copy</span>
+          </button>
+        </div>
+      </div>
+      <div class="bg-black p-4 rounded-2xl border border-white/5 font-mono text-xs text-white/80 h-96 overflow-y-auto whitespace-pre-wrap">
+        <div v-if="isLoadingMasterLogs && !masterLogs" class="flex items-center justify-center h-full text-zinc-400">Loading master logs...</div>
+        <pre v-else>{{ masterLogs || 'No master logs available yet.' }}</pre>
+      </div>
+    </div>
   </div>
 </template>
 
 <script>
 import { ref, onMounted } from 'vue';
-import { Download } from 'lucide-vue-next';
+import { Download, RefreshCw, Copy } from 'lucide-vue-next';
 
 export default {
   name: 'AuditLogs',
-  components: { Download },
+  components: { Download, RefreshCw, Copy },
   setup() {
     const logs = ref([]);
+    const masterLogs = ref('');
+    const isLoadingMasterLogs = ref(false);
+    const toast = ref('');
+    let toastTimer = null;
+
+    const showToast = (msg, type = 'success', duration = 4000) => {
+      toast.value = msg;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.value = ''; }, duration);
+    };
 
     const fetchLogs = async () => {
       try {
@@ -54,8 +90,34 @@ export default {
       }
     };
 
+    const fetchMasterLogs = async () => {
+      isLoadingMasterLogs.value = true;
+      try {
+        const response = await fetch('/api/web/logs/master');
+        if (!response.ok) throw new Error('Failed to fetch master logs');
+        const data = await response.json();
+        masterLogs.value = data.logs || '';
+      } catch (e) {
+        console.error('Error fetching master logs:', e);
+        masterLogs.value = 'Failed to load master logs.';
+      } finally {
+        isLoadingMasterLogs.value = false;
+      }
+    };
+
+    const copyMasterLogs = async () => {
+      if (!masterLogs.value) return;
+      try {
+        await navigator.clipboard.writeText(masterLogs.value);
+        showToast('Master logs copied.');
+      } catch (e) {
+        console.error('Failed to copy master logs:', e);
+      }
+    };
+
     onMounted(() => {
       fetchLogs();
+      fetchMasterLogs();
     });
 
     const exportLogs = async () => {
@@ -90,6 +152,11 @@ export default {
     return {
       logs,
       exportLogs,
+      masterLogs,
+      isLoadingMasterLogs,
+      fetchMasterLogs,
+      copyMasterLogs,
+      toast,
     };
   },
 };
