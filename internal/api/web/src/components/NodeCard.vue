@@ -332,7 +332,7 @@ export default {
 
     const switchTo = async (target) => {
       try {
-        await axios.post(`/api/web/nodes/${props.node.id}/command`, { action: 'switch', outbound_tag: target });
+        await axios.post(`/api/web/nodes/${props.node.id}/command`, { command: `switch:${target}` });
         showSwitchModal.value = false;
         emit('node-updated');
         showToast(`Switch queued to ${target}.`);

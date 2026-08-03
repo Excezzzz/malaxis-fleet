@@ -1822,7 +1822,8 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // SendCommandHandler sends a command to a specific node's pending_command.
-// Body: {"action": "switch", "outbound_tag": "zoom"}
+// Accepts either the documented switch payload `{"command": "switch:zoom"}`
+// or a structured action payload `{"action": "switch", "outbound_tag": "zoom"}`.
 func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
@@ -1833,9 +1834,11 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, ok := req["action"]; !ok {
-		http.Error(w, "Bad Request: action is required", http.StatusBadRequest)
-		return
+	if _, hasCmd := req["command"]; !hasCmd {
+		if _, hasAction := req["action"]; !hasAction {
+			http.Error(w, "Bad Request: command or action is required", http.StatusBadRequest)
+			return
+		}
 	}
 
 	cmdJSON, err := json.Marshal(req)
@@ -1852,6 +1855,9 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action, _ := req["action"].(string)
+	if action == "" {
+		action, _ = req["command"].(string)
+	}
 	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", action)
 
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
@@ -1887,12 +1893,20 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	command, _ := json.Marshal(map[string]string{"action": "get_logs", "container": container})
+	command, _ := json.Marshal(map[string]interface{}{
+		"action":    "get_logs",
+		"container": container,
+		"req_id":    time.Now().UnixNano(),
+	})
 	messageID := time.Now().Unix()
-	if err := a.repo.SetPendingCommand(nodeID, string(command), messageID); err != nil {
-		log.Printf("ERROR: Failed to queue get_logs for node %s: %v", nodeID, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
+
+	// Only queue a fresh get_logs command when no other command is already
+	// pending. Otherwise the frontend's logs polling (every few seconds) would
+	// clobber queued switch/terminate/etc. commands with its own request.
+	if existing, err := a.repo.GetPendingCommand(nodeID); err == nil && existing == "" {
+		if err := a.repo.SetPendingCommand(nodeID, string(command), messageID); err != nil {
+			log.Printf("ERROR: Failed to queue get_logs for node %s: %v", nodeID, err)
+		}
 	}
 
 	logsMap := map[string]string{}
