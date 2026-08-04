@@ -1,5 +1,5 @@
 <template>
-  <div :class="['bg-zinc-900 border rounded-2xl p-5 flex flex-col justify-between transition-colors duration-300 hover:border-indigo-500/30 hover:bg-zinc-800/80', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/10']">
+  <div :class="['bg-zinc-900 border rounded-2xl p-5 flex flex-col justify-between h-full transition-colors duration-300 hover:border-indigo-500/30 hover:bg-zinc-800/80', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/10']">
     <div>
       <div class="flex justify-between items-start mb-4">
         <div class="flex items-center space-x-3">
@@ -57,14 +57,19 @@
       </div>
     </div>
     <div class="mt-auto pt-4">
-      <div v-if="node.pipeline_status || (node.available_servers && node.available_servers.length)" class="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs text-zinc-400">
-        <div class="flex items-center space-x-2">
-          <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-4 h-4" :class="statusColorClass" />
-          <span>Status: <strong class="font-medium" :class="statusColorClass">{{ node.pipeline_status || 'Idle' }}</strong></span>
-        </div>
-        <span v-if="node.available_servers && node.available_servers.length" class="text-zinc-500">{{ node.available_servers.length }} servers</span>
-      </div>
-      <p v-if="node.pipeline_status && node.status_message && !isTaskQueued" class="text-sm mt-1 pl-6" :class="statusColorClass">{{ node.status_message }}</p>
+      <button v-if="node.pipeline_status || (node.available_servers && node.available_servers.length)" type="button" @click="activeModal = 'status'"
+        class="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 text-xs text-zinc-400 w-full h-8 cursor-pointer hover:bg-white/5 rounded px-2 transition-colors -ml-2 text-left">
+        <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-4 h-4 shrink-0" :class="statusColorClass" />
+        <span class="flex-1 min-w-0 truncate whitespace-nowrap">
+          <span class="text-zinc-500">Status:</span>
+          <strong class="font-medium mx-1" :class="statusColorClass">{{ node.pipeline_status || 'Idle' }}</strong>
+          <template v-if="node.status_message && !isTaskQueued">
+            <span class="text-zinc-500">—</span>
+            <span :class="statusColorClass" class="ml-1">{{ node.status_message }}</span>
+          </template>
+        </span>
+        <span v-if="(node.available_servers || []).length" class="text-zinc-500 shrink-0">{{ node.available_servers.length }} servers</span>
+      </button>
 
       <div class="mt-3 space-y-2">
         <div v-if="isReadOnly && !canManage" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
@@ -244,6 +249,29 @@
         </div>
       </div>
     </div>
+
+    <div v-if="activeModal === 'status'" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="text-2xl font-bold tracking-tight">Detailed Status</h2>
+          <button type="button" @click="activeModal = ''" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>
+        </div>
+        <div class="space-y-5 text-sm">
+          <div>
+            <p class="text-xs uppercase tracking-wider text-zinc-500 mb-1">Pipeline Status</p>
+            <p class="text-base font-semibold" :class="statusColorClass">{{ node.pipeline_status || 'Idle' }}</p>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-wider text-zinc-500 mb-1">Message</p>
+            <p class="text-zinc-300 leading-relaxed break-words whitespace-pre-wrap">{{ node.status_message || 'No message.' }}</p>
+          </div>
+          <div>
+            <p class="text-xs uppercase tracking-wider text-zinc-500 mb-1">Pending Command</p>
+            <code class="block text-xs text-zinc-400 break-all whitespace-pre-wrap">{{ node.pending_command ? node.pending_command : 'None' }}</code>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -280,6 +308,7 @@ export default {
     const deleteChoice = ref('');
     const showTaskQueueModal = ref(false);
     const showLogsModal = ref(false);
+    const activeModal = ref('');
     const nodeLogs = ref('');
     const isLoadingLogs = ref(false);
     const logContainers = ['node-agent', 'xray-node', 'singbox-node'];
@@ -546,6 +575,7 @@ export default {
       copySubUrl, softDeleteNode,
       showDeleteModal, deleteChoice,
       showTaskQueueModal,
+      activeModal,
       showSwitchModal, switchTo,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,
