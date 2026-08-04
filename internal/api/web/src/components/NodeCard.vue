@@ -58,17 +58,21 @@
     </div>
     <div class="mt-auto pt-4">
       <button v-if="node.pipeline_status || (node.available_servers && node.available_servers.length)" type="button" @click="activeModal = 'status'"
-        class="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 text-xs text-zinc-400 w-full h-8 cursor-pointer hover:bg-white/5 rounded px-2 transition-colors -ml-2 text-left">
-        <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-4 h-4 shrink-0" :class="statusColorClass" />
-        <span class="flex-1 min-w-0 truncate whitespace-nowrap">
-          <span class="text-zinc-500">Status:</span>
-          <strong class="font-medium mx-1" :class="statusColorClass">{{ node.pipeline_status || 'Idle' }}</strong>
+        class="mt-3 w-full h-10 flex items-center gap-2 px-3 rounded-xl bg-zinc-900/40 border border-white/10 hover:border-white/20 hover:bg-zinc-800/60 transition-colors cursor-pointer text-left group">
+        <span class="shrink-0 flex items-center justify-center w-6 h-6 rounded-lg" :class="statusBgClass">
+          <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-3.5 h-3.5" :class="statusColorClass" />
+        </span>
+        <span class="flex-1 min-w-0 truncate whitespace-nowrap leading-none">
+          <strong class="font-semibold" :class="statusColorClass">{{ node.pipeline_status || 'Idle' }}</strong>
           <template v-if="node.status_message && !isTaskQueued">
-            <span class="text-zinc-500">—</span>
-            <span :class="statusColorClass" class="ml-1">{{ node.status_message }}</span>
+            <span class="text-zinc-600 mx-1">·</span>
+            <span :class="statusColorClass">{{ node.status_message }}</span>
           </template>
         </span>
-        <span v-if="(node.available_servers || []).length" class="text-zinc-500 shrink-0">{{ node.available_servers.length }} servers</span>
+        <span v-if="(node.available_servers || []).length" class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">
+          {{ node.available_servers.length }} configs
+        </span>
+        <ChevronRight class="w-4 h-4 shrink-0 text-zinc-600 group-hover:text-zinc-200 group-hover:translate-x-0.5 transition-all" />
       </button>
 
       <div class="mt-3 space-y-2">
@@ -194,14 +198,14 @@
           <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold"><span>⚡</span><span>Fastest</span></button>
           <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold"><span>⚖️</span><span>Balanced</span></button>
         </div>
-        <p class="text-xs text-zinc-500 mb-2">Available servers ({{ (node.available_servers || []).length }})</p>
+        <p class="text-xs text-zinc-500 mb-2">Available configs ({{ (node.available_servers || []).length }})</p>
         <div v-if="(node.available_servers || []).length" class="grid grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-1">
           <button v-for="srv in node.available_servers" :key="srv" @click="switchTo(srv)"
             :class="['px-4 py-3 rounded-xl transition-colors font-semibold truncate text-left', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
             {{ srv }}
           </button>
         </div>
-        <p v-else class="text-sm text-zinc-500">No servers reported yet.</p>
+        <p v-else class="text-sm text-zinc-500">No configs reported yet.</p>
         <div class="mt-8 flex justify-end"><button type="button" @click="showSwitchModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Close</button></div>
       </div>
     </div>
@@ -278,13 +282,13 @@
 <script>
 import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight },
   props: {
     node: {
       type: Object,
@@ -351,6 +355,14 @@ export default {
         if (status.includes('queued') || status.includes('pending') || status.includes('progress')) return 'text-yellow-400';
         if (status.includes('fetched') || status.includes('healthy') || status.includes('active') || status.includes('updated') || status.includes('success') || status.includes('idle')) return 'text-emerald-400';
         return 'text-zinc-400';
+    });
+
+    const statusBgClass = computed(() => {
+        const status = `${(props.node.pipeline_status || '')} ${(props.node.status_message || '')}`.toLowerCase();
+        if (status.includes('fail') || status.includes('error')) return 'bg-red-500/15 text-red-300';
+        if (status.includes('queued') || status.includes('pending') || status.includes('progress')) return 'bg-yellow-500/15 text-yellow-300';
+        if (status.includes('fetched') || status.includes('healthy') || status.includes('active') || status.includes('updated') || status.includes('success') || status.includes('idle')) return 'bg-emerald-500/15 text-emerald-300';
+        return 'bg-white/10 text-zinc-300';
     });
 
     const nodeIcon = computed(() => {
@@ -570,7 +582,7 @@ export default {
     });
 
     return {
-      isOnline, isTerminated, isTaskQueued, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, pendingTaskLabel, pendingCommandCount,
+      isOnline, isTerminated, isTaskQueued, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, statusBgClass, pendingTaskLabel, pendingCommandCount,
       showSubModal, newSubUrl, updateSubUrl,
       copySubUrl, softDeleteNode,
       showDeleteModal, deleteChoice,
