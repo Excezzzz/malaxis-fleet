@@ -30,8 +30,8 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div v-if="nodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
-      <NodeCard v-for="node in nodes" :key="node.id" :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" />
+    <div v-if="nodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 items-stretch">
+      <div v-for="node in nodes" :key="node.id" class="h-full"><NodeCard :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" /></div>
     </div>
 
     <div v-else-if="!error" class="text-center py-16">
