@@ -7,10 +7,6 @@
           <Link class="w-5 h-5" />
           <span>Mass Update Subscription Domain</span>
         </button>
-        <button v-if="canEditSub" @click="handleUpdateAll" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-all duration-300">
-          <RefreshCw class="w-5 h-5" />
-          <span>Update All Devices</span>
-        </button>
         <button v-if="canEditSub" @click="handlePurgeOffline" class="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 rounded-xl transition-all duration-300" title="Delete ghost nodes offline for more than 7 days">
           <Trash2 class="w-5 h-5" />
           <span>Purge Offline</span>
@@ -62,7 +58,7 @@
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import NodeCard from './NodeCard.vue';
-import { RefreshCw, Activity, Link, Trash2 } from 'lucide-vue-next';
+import { Activity, Link, Trash2 } from 'lucide-vue-next';
 
 const POLLING_INTERVAL = 5000; // 5 seconds
 
@@ -70,7 +66,6 @@ export default {
   name: 'Nodes',
   components: {
     NodeCard,
-    RefreshCw,
     Activity,
     Link,
     Trash2,
@@ -102,20 +97,6 @@ export default {
       } catch (e) {
         console.error("Failed to fetch nodes:", e);
         error.value = e.message;
-      }
-    };
-
-    const handleUpdateAll = async () => {
-      if (!confirm('Queue client-file update for ALL nodes? Offline nodes will apply it automatically when they reconnect.')) return;
-      try {
-        // Send an empty object for the body
-        const response = await axios.post('/api/web/nodes/mass-update-client', {});
-        if (response.data.status !== 'ok') throw new Error('Mass update failed');
-        showToast(`Queued update for ${response.data.nodes_updated} nodes.`);
-        fetchNodes();
-      } catch (e) {
-        console.error("Failed to update all devices:", e);
-        showToast('Could not update all devices.', 'error');
       }
     };
 
@@ -176,7 +157,6 @@ export default {
       toast,
       toastType,
       fetchNodes,
-      handleUpdateAll,
       handleMassUpdateDomain,
       onNodeDeleted,
       handlePurgeOffline,
