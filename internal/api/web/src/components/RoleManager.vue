@@ -56,7 +56,7 @@
     </div>
 
     <!-- Create Role Modal -->
-    <div v-if="showCreateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showCreateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showCreateModal = false">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Create New Custom Role</h2>
 
@@ -98,7 +98,7 @@
     </div>
 
     <!-- Edit Role Modal -->
-    <div v-if="editingRole" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="editingRole" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="editingRole = null">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6">Edit Role: {{ editingRole.name }}</h2>
 
