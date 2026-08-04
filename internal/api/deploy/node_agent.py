@@ -1284,10 +1284,18 @@ def _docker_output(args: list, timeout: int = 30) -> str:
 
 
 def _docker_logs(container: str, tail: int = 100) -> str:
-    """Fetch the tail of a container's logs (stdout+stderr combined)."""
+    """Fetch the tail of a container's logs (stdout+stderr combined).
+
+    Resolves the container dynamically because docker-compose renames services
+    into e.g. `fleet-agent-xray-node-1` (project-scoped). `docker logs xray-node`
+    would then fail, so we look up the real container id by name filter first.
+    """
+    target = _resolve_container_id(container)
+    if not target:
+        return f"(container '{container}' not found - is it running?)"
     try:
         r = subprocess.run(
-            ["docker", "logs", container, "--tail", str(tail), "--timestamps"],
+            ["docker", "logs", target, "--tail", str(tail), "--timestamps"],
             capture_output=True, timeout=30,
         )
         out = r.stdout.decode(errors="replace")
@@ -1300,6 +1308,47 @@ def _docker_logs(container: str, tail: int = 100) -> str:
         return f"(docker logs {container} timed out)"
     except Exception as e:
         return f"(failed to fetch logs for {container}: {e})"
+
+
+def _resolve_container_id(name: str) -> str:
+    """Find the running container id for a service name.
+
+    Docker-compose renames services to `<project>-<service>-<counter>` (e.g.
+    `fleet-agent-xray-node-1`). We search by name filter to match both the bare
+    alias and the compose-prefixed variant. Returns the container id, or ''.
+    """
+    candidates = []
+    filters = [
+        f"name={name}",
+        f"name={name}-",       # prefix match for compose projects
+        f"name=-{name}-",      # e.g. fleet-agent-xray-node-1
+        f"name=-{name}-1",
+    ]
+    for f in filters:
+        try:
+            out = _docker_output(["ps", "-q", "-f", f])
+        except Exception:
+            continue
+        if out:
+            candidates.extend(out.splitlines())
+            if f == f"name={name}":
+                break
+    # Prefer an exact running match.
+    for cid in candidates:
+        if not cid:
+            continue
+        if _docker_output(["inspect", "-f", "{{.Name}}", cid]) in (f"/{name}", f"/{name}-1"):
+            return cid
+    if candidates:
+        return candidates[0]
+    # Fall back to `docker compose ps -q <service>` for compose v2.
+    try:
+        out = _docker_output(["compose", "ps", "-q", name], timeout=10)
+        if out:
+            return out.split()[0]
+    except Exception:
+        pass
+    return ""
 
 
 def is_container_running(engine: str) -> bool:
@@ -2168,6 +2217,15 @@ def _worker_loop() -> None:
             elif typ == "update_client_files":
                 ok = update_client_files(action.get("urls", {}))
                 if ok:
+                    # Fetch the absolute latest proxy configs from the server in
+                    # addition to the new Python/Bash scripts, so nodes get both
+                    # fresh code AND fresh subscription coverage.
+                    log("[update_client_files] refreshing subscription before restart...")
+                    try:
+                        update_subscription()
+                        _reselect_after_update()
+                    except Exception as e:
+                        log(f"[update_client_files] subscription refresh failed (continuing): {e}")
                     report(status="Updated", message="Client files updated")
                     log("[update_client_files] Client files updated, restarting gracefully...")
                     _graceful_restart()

@@ -169,6 +169,8 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	webAPIRouter.Handle("/web/devices/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
 	// POST /api/web/nodes/{id}/command - send a command to a specific node (permission can_switch_vpn)
 	webAPIRouter.Handle("/web/nodes/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
+	// PUT /api/web/nodes/{id}/clear-command - cancel a queued command (permission can_switch_vpn)
+	webAPIRouter.Handle("/web/nodes/{id}/clear-command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.ClearCommandHandler)))).Methods("PUT")
 
 	// Admin/Owner routes (alternative paths)
 	adminAPIRoutes := webAPIRouter.PathPrefix("/admin").Subrouter()

@@ -66,6 +66,17 @@
       </div>
       <p v-if="node.pipeline_status && node.status_message" class="text-xs mt-1 pl-6" :class="statusColorClass">{{ node.status_message }}</p>
 
+      <div v-if="node.pending_command" class="mt-2 flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+        <span class="text-xs text-amber-200 font-medium flex items-center space-x-2 truncate">
+          <Hourglass class="w-3.5 h-3.5 shrink-0" />
+          <span class="truncate">Pending Task: {{ pendingTaskLabel }}</span>
+        </span>
+        <button @click="cancelPendingCommand" title="Cancel pending task"
+          class="shrink-0 ml-2 p-1 rounded-md bg-red-500/15 hover:bg-red-500/30 border border-red-500/30 text-red-300 hover:text-red-200 transition-colors">
+          <X class="w-3.5 h-3.5" />
+        </button>
+      </div>
+
       <div class="mt-3 space-y-2">
         <div v-if="isReadOnly && !canManage" class="w-full flex items-center justify-center space-x-2 border border-dashed border-white/10 text-zinc-500 font-medium py-2 px-4 rounded-xl">
             <EyeOff class="w-4 h-4" />
@@ -178,8 +189,15 @@
           <div class="flex items-center gap-2 ml-auto">
             <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
               <input type="checkbox" v-model="autoRefreshLogs" class="accent-indigo-500" />
-              Auto-refresh 3s
+              Auto-refresh
             </label>
+            <select v-model="logRefreshInterval" :disabled="!autoRefreshLogs"
+              class="bg-black/40 border border-white/10 rounded-lg px-2 py-1 text-xs text-zinc-300 focus:outline-none disabled:opacity-40">
+              <option :value="3000">3s</option>
+              <option :value="5000">5s</option>
+              <option :value="10000">10s</option>
+              <option :value="30000">30s</option>
+            </select>
             <button @click="fetchLogs" title="Refresh"
               class="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-white transition-colors">
               <RefreshCw :class="['w-4 h-4', isLoadingLogs ? 'animate-spin' : '']" />
@@ -204,13 +222,13 @@
 <script>
 import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText, X } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText, X },
   props: {
     node: {
       type: Object,
@@ -236,6 +254,7 @@ export default {
     const logContainers = ['node-agent', 'xray-node', 'singbox-node'];
     const logContainer = ref('node-agent');
     const autoRefreshLogs = ref(false);
+    const logRefreshInterval = ref(3000);
     let logRefreshTimer = null;
     const logHost = ref(null);
     const toast = ref('');
@@ -250,6 +269,17 @@ export default {
     });
 
     const isTerminated = computed(() => (props.node.pipeline_status || '').toLowerCase() === 'terminated');
+
+    const pendingTaskLabel = computed(() => {
+        const cmd = props.node.pending_command || '';
+        try {
+            const parsed = JSON.parse(cmd);
+            const action = parsed.command || parsed.action || (typeof parsed === 'string' ? parsed : '');
+            return String(action).replace(/^switch[.:-]+/, 'switch to ').replace(/^update[.:-]+/, 'update ').replace(/^terminate.*/, 'terminate');
+        } catch (e) {
+            return cmd;
+        }
+    });
 
     const statusColorClass = computed(() => {
         const status = `${(props.node.pipeline_status || '')} ${(props.node.status_message || '')}`.toLowerCase();
@@ -366,6 +396,17 @@ export default {
       }
     };
 
+    const cancelPendingCommand = async () => {
+      try {
+        await axios.put(`/api/web/nodes/${props.node.id}/clear-command`);
+        emit('node-updated');
+        showToast('Pending task cancelled.');
+      } catch (e) {
+        console.error('Error clearing pending command:', e);
+        showToast('Failed to cancel pending task.', 'error');
+      }
+    };
+
     const renameNode = async () => {
       if (!newNodeName.value) return;
       try {
@@ -413,13 +454,17 @@ export default {
       logRefreshTimer = setTimeout(async () => {
         await fetchLogs();
         scheduleLogRefresh();
-      }, 3000);
+      }, logRefreshInterval.value);
     };
 
     const stopAutoRefresh = () => {
       clearTimeout(logRefreshTimer);
       logRefreshTimer = null;
     };
+
+    watch(logRefreshInterval, () => {
+      if (autoRefreshLogs.value && showLogsModal.value) scheduleLogRefresh();
+    });
 
     const openLogs = () => {
       showLogsModal.value = true;
@@ -458,14 +503,15 @@ export default {
     });
 
     return {
-      isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass,
+      isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, pendingTaskLabel,
       showSubModal, newSubUrl, updateSubUrl,
       copySubUrl, confirmDelete, deleteNode,
       showSwitchModal, switchTo,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,
+      cancelPendingCommand,
       showLogsModal, nodeLogs, isLoadingLogs, openLogs, closeLogs, fetchLogs, selectContainer,
-      logContainers, logContainer, autoRefreshLogs, copyLogs,
+      logContainers, logContainer, autoRefreshLogs, logRefreshInterval, copyLogs,
       canManage, isReadOnly, toast, toastType, logHost,
     };
   },

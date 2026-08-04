@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -1821,6 +1822,31 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ClearCommandHandler removes a queued (not yet fetched) pending command for a
+// node, so a task can be cancelled from the web UI before the agent picks it up.
+func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	nodeID := vars["id"]
+
+	if err := a.repo.ClearPendingCommand(nodeID); err != nil {
+		log.Printf("ERROR: Failed to clear pending command for node %s: %v", nodeID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	a.repo.UpdateNodePipelineStatus(nodeID, "Idle", "Command cancelled")
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, nodeID, "Cleared pending command")
+
+	log.Printf("Pending command cleared for node %s", nodeID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Pending command cleared",
+	})
+}
+
 // SendCommandHandler sends a command to a specific node's pending_command.
 // Accepts either the documented switch payload `{"command": "switch:zoom"}`
 // or a structured action payload `{"action": "switch", "outbound_tag": "zoom"}`.
@@ -1922,30 +1948,43 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetMasterLogsHandler reads the master server's own log file and returns
-// the last 100 lines (used by the "Logs & Audit" tab).
+// GetMasterLogsHandler returns the last 100 lines of the master server's own
+// logs (used by the "Logs & Audit" tab). It prefers the Go server's log file,
+// and falls back to `docker logs fleet-master` (the real container output)
+// when no file is configured/available.
 func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
 	path := a.config.MasterLogFile
 	if path == "" {
 		path = "data/logs/master.log"
 	}
 	content, err := os.ReadFile(path)
-	if err != nil {
+	if err == nil && strings.TrimSpace(string(content)) != "" {
+		lines := strings.Split(string(content), "\n")
+		const tailLines = 100
+		if len(lines) > tailLines {
+			lines = lines[len(lines)-tailLines:]
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"logs":  "(master log file not found: " + err.Error() + ")",
+			"logs": strings.Join(lines, "\n"),
+		})
+		return
+	}
+
+	// Fallback: read the master container's actual output. The Go binary runs
+	// inside `fleet-master` (docker-compose), so its stdout is the real log.
+	out, dockerErr := exec.Command("docker", "logs", "fleet-master", "--tail", "100", "--timestamps").CombinedOutput()
+	if dockerErr != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"logs":  "(master log file not found: " + err.Error() + "; docker logs failed: " + dockerErr.Error() + ")",
 			"error": "not_found",
 		})
 		return
 	}
-	lines := strings.Split(string(content), "\n")
-	const tailLines = 100
-	if len(lines) > tailLines {
-		lines = lines[len(lines)-tailLines:]
-	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs": strings.Join(lines, "\n"),
+		"logs": strings.TrimSpace(string(out)),
 	})
 }
 
