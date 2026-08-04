@@ -98,17 +98,15 @@
                     <ScrollText class="w-4 h-4" />
                     <span>View Logs</span>
                 </button>
-                <button @click="confirmDelete" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                  <Hourglass class="w-4 h-4" />
+                  <span>Task Queue ({{ pendingCommandCount }})</span>
+                </button>
+            </div>
+            <button @click="showDeleteModal = true" class="w-full flex items-center justify-center space-x-2 bg-red-800/20 hover:bg-red-800/40 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Trash2 class="w-4 h-4" />
                   <span>Delete</span>
                 </button>
-            </div>
-            <div v-if="!isTerminated">
-                <button @click="showTerminateModal = true" class="w-full flex items-center justify-center space-x-2 bg-red-800/20 hover:bg-red-800/40 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
-                  <Power class="w-4 h-4" />
-                  <span>Terminate & Self-Destruct</span>
-                </button>
-            </div>
         </template>
       </div>
 
@@ -129,15 +127,56 @@
       </div>
     </div>
 
-    <div v-if="showTerminateModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div v-if="showDeleteModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300">Terminate Node</h2>
-        <p class="text-zinc-400 mb-5">This will make the node <strong class="text-red-300">self-destruct</strong>, wiping its config and going offline permanently. It cannot be undone.</p>
-        <p class="text-sm text-zinc-500 mb-2">Type <span class="font-mono text-red-300 font-bold">TERMINATE</span> to confirm:</p>
-        <input v-model="terminateConfirm" type="text" placeholder="TERMINATE" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-red-500 focus:border-red-500/50">
+        <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300">Delete Node</h2>
+        <p class="text-zinc-400 mb-6 text-sm">Choose how to remove <strong class="text-white">{{ node.name }}</strong> from the fleet.</p>
+        <button @click="softDeleteNode" class="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-left mb-3">
+          <span>
+            <span class="block font-semibold text-white">Soft Delete</span>
+            <span class="block text-xs text-zinc-400 mt-1">Remove from dashboard. The client device keeps running and will re-register on its next poll.</span>
+          </span>
+        </button>
+        <div class="rounded-xl border border-red-500/30 bg-red-900/10 p-4">
+          <button @click="deleteChoice = 'terminate'" class="w-full flex items-center justify-between text-left">
+            <span>
+              <span class="block font-semibold text-red-300">Terminate & Self-Destruct</span>
+              <span class="block text-xs text-red-200/60 mt-1">Wipe the client: tears down engine containers, wipes local config and goes offline permanently.</span>
+            </span>
+          </button>
+          <template v-if="deleteChoice === 'terminate'">
+            <p class="text-xs text-zinc-500 mt-3 mb-1">Type <span class="font-mono text-red-300 font-bold">TERMINATE</span> to confirm:</p>
+            <input v-model="terminateConfirm" type="text" placeholder="TERMINATE" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-red-500 focus:border-red-500/50">
+          </template>
+        </div>
         <div class="mt-8 flex justify-end space-x-4">
-          <button type="button" @click="showTerminateModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
-          <button type="button" @click="terminateNode" :disabled="terminateConfirm !== 'TERMINATE'" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Terminate</button>
+          <button type="button" @click="showDeleteModal = false; deleteChoice = ''; terminateConfirm = ''" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
+          <button v-if="deleteChoice === 'terminate'" type="button" @click="terminateNode" :disabled="terminateConfirm !== 'TERMINATE'" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Terminate</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="showTaskQueueModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-2xl font-bold tracking-tight">Task Queue</h2>
+          <button type="button" @click="showTaskQueueModal = false" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>
+        </div>
+        <div v-if="node.pending_command" class="flex items-center justify-between bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          <div class="min-w-0">
+            <p class="text-xs text-amber-200 font-medium flex items-center space-x-2">
+              <Hourglass class="w-3.5 h-3.5 shrink-0" />
+              <span>Pending Task: {{ pendingTaskLabel }}</span>
+            </p>
+            <code class="block mt-1 text-xs text-zinc-400 break-all whitespace-pre-wrap">{{ node.pending_command }}</code>
+          </div>
+        </div>
+        <div v-else class="text-sm text-zinc-500 py-6 text-center">No pending tasks. The queue is empty.</div>
+        <div class="mt-6 flex justify-end space-x-4">
+          <button v-if="node.pending_command" type="button" @click="cancelPendingCommand" class="px-4 py-2 bg-red-500/15 hover:bg-red-500/30 border border-red-500/30 text-red-200 rounded-xl transition-colors flex items-center space-x-2">
+            <X class="w-4 h-4" />
+            <span>Cancel Pending Task</span>
+          </button>
         </div>
       </div>
     </div>
@@ -222,13 +261,13 @@
 <script>
 import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText, X } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Power, Copy, EyeOff, ScrollText, X },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X },
   props: {
     node: {
       type: Object,
@@ -248,6 +287,9 @@ export default {
     const newNodeName = ref('');
     const showTerminateModal = ref(false);
     const terminateConfirm = ref('');
+    const showDeleteModal = ref(false);
+    const deleteChoice = ref('');
+    const showTaskQueueModal = ref(false);
     const showLogsModal = ref(false);
     const nodeLogs = ref('');
     const isLoadingLogs = ref(false);
@@ -280,6 +322,8 @@ export default {
             return cmd;
         }
     });
+
+    const pendingCommandCount = computed(() => (props.node.pending_command ? 1 : 0));
 
     const statusColorClass = computed(() => {
         const status = `${(props.node.pipeline_status || '')} ${(props.node.status_message || '')}`.toLowerCase();
@@ -343,13 +387,12 @@ export default {
       }
     };
 
-    const confirmDelete = () => {
-      if (confirm(`Delete this node "${props.node.name}" from fleet?`)) deleteNode();
-    };
-
-    const deleteNode = async () => {
+    const softDeleteNode = async () => {
       try {
         await axios.delete(`/api/web/devices/${props.node.id}`);
+        showDeleteModal.value = false;
+        deleteChoice.value = '';
+        terminateConfirm.value = '';
         emit('node-deleted', props.node.id);
         showToast('Node deleted.');
       } catch (e) {
@@ -386,7 +429,8 @@ export default {
       if (terminateConfirm.value !== 'TERMINATE') return;
       try {
         await axios.post(`/api/web/nodes/${props.node.id}/terminate`);
-        showTerminateModal.value = false;
+        showDeleteModal.value = false;
+        deleteChoice.value = '';
         terminateConfirm.value = '';
         emit('node-updated');
         showToast('Terminate queued. Node will self-destruct on next poll.');
@@ -503,9 +547,11 @@ export default {
     });
 
     return {
-      isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, pendingTaskLabel,
+      isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, pendingTaskLabel, pendingCommandCount,
       showSubModal, newSubUrl, updateSubUrl,
-      copySubUrl, confirmDelete, deleteNode,
+      copySubUrl, softDeleteNode,
+      showDeleteModal, deleteChoice,
+      showTaskQueueModal,
       showSwitchModal, switchTo,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,

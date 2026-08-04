@@ -1727,6 +1727,43 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// MassUpdateSubscriptionsHandler queues an "update_sub" command for ALL nodes
+// (their existing sub_url is kept; each agent just re-fetches + re-applies the
+// latest subscription). Used by the "Refresh All Subscriptions" dashboard button.
+func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Request) {
+	nodes, err := a.repo.GetAllNodes()
+	if err != nil {
+		log.Printf("ERROR: Failed to get nodes: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	command, _ := json.Marshal(map[string]string{"action": "update_sub"})
+	messageID := time.Now().Unix()
+	queuedCount := 0
+	for _, node := range nodes {
+		if err := a.repo.SetPendingCommand(node.ID, string(command), messageID); err != nil {
+			log.Printf("ERROR: Failed to queue update_sub for node %s: %v", node.ID, err)
+		} else {
+			queuedCount++
+			a.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_sub")
+		}
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "all_nodes", "Queued update_sub for "+strconv.Itoa(queuedCount)+" nodes")
+
+	log.Printf("Queued update_sub for %d nodes", queuedCount)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":          "ok",
+		"message":         "Subscription refresh queued for all nodes",
+		"nodes_updated":   len(nodes),
+		"commands_queued": queuedCount,
+	})
+}
+
 // RenameNodeHandler renames a node from the web dashboard.
 // Body: {"name": "new-name"} (permission can_edit_sub)
 func (a *API) RenameNodeHandler(w http.ResponseWriter, r *http.Request) {
@@ -1948,43 +1985,51 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetMasterLogsHandler returns the last 100 lines of the master server's own
-// logs (used by the "Logs & Audit" tab). It prefers the Go server's log file,
-// and falls back to `docker logs fleet-master` (the real container output)
-// when no file is configured/available.
+// GetMasterLogsHandler returns the last 100 lines of a master server container's
+// logs (used by the "Logs & Audit" tab). The container is chosen via the
+// `?container=` query param (fleet-master, fleet-postgres, ...; default
+// fleet-master) and read from `docker logs` so the real output is shown.
+// For fleet-master, a configured log file (MasterLogFile) is preferred.
 func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
-	path := a.config.MasterLogFile
-	if path == "" {
-		path = "data/logs/master.log"
-	}
-	content, err := os.ReadFile(path)
-	if err == nil && strings.TrimSpace(string(content)) != "" {
-		lines := strings.Split(string(content), "\n")
-		const tailLines = 100
-		if len(lines) > tailLines {
-			lines = lines[len(lines)-tailLines:]
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"logs": strings.Join(lines, "\n"),
-		})
-		return
+	container := r.URL.Query().Get("container")
+	if container == "" {
+		container = "fleet-master"
 	}
 
-	// Fallback: read the master container's actual output. The Go binary runs
-	// inside `fleet-master` (docker-compose), so its stdout is the real log.
-	out, dockerErr := exec.Command("docker", "logs", "fleet-master", "--tail", "100", "--timestamps").CombinedOutput()
+	// For the master itself, prefer a configured log file when it exists.
+	if container == "fleet-master" {
+		path := a.config.MasterLogFile
+		if path == "" {
+			path = "data/logs/master.log"
+		}
+		if content, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(content)) != "" {
+			lines := strings.Split(string(content), "\n")
+			const tailLines = 100
+			if len(lines) > tailLines {
+				lines = lines[len(lines)-tailLines:]
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"container": container,
+				"logs":      strings.Join(lines, "\n"),
+			})
+			return
+		}
+	}
+
+	out, dockerErr := exec.Command("docker", "logs", container, "--tail", "100", "--timestamps").CombinedOutput()
 	if dockerErr != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"logs":  "(master log file not found: " + err.Error() + "; docker logs failed: " + dockerErr.Error() + ")",
+			"logs":  "(docker logs " + container + " failed: " + dockerErr.Error() + ")",
 			"error": "not_found",
 		})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs": strings.TrimSpace(string(out)),
+		"container": container,
+		"logs":      strings.TrimSpace(string(out)),
 	})
 }
 

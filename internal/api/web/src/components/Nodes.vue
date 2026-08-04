@@ -7,6 +7,10 @@
           <Link class="w-5 h-5" />
           <span>Mass Update Subscription Domain</span>
         </button>
+        <button v-if="canEditSub" @click="handleRefreshAllSubs" class="flex items-center space-x-2 px-4 py-2 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-100 rounded-xl transition-all duration-300" title="Queue a subscription re-fetch for ALL nodes" :disabled="refreshingSubs">
+          <RefreshCw :class="['w-5 h-5', refreshingSubs ? 'animate-spin' : '']" />
+          <span>{{ refreshingSubs ? 'Refreshing...' : 'Refresh All Subscriptions' }}</span>
+        </button>
         <button v-if="canEditSub" @click="handlePurgeOffline" class="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 rounded-xl transition-all duration-300" title="Delete ghost nodes offline for more than 7 days">
           <Trash2 class="w-5 h-5" />
           <span>Purge Offline</span>
@@ -58,7 +62,7 @@
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import NodeCard from './NodeCard.vue';
-import { Activity, Link, Trash2 } from 'lucide-vue-next';
+import { Activity, Link, Trash2, RefreshCw } from 'lucide-vue-next';
 
 const POLLING_INTERVAL = 5000; // 5 seconds
 
@@ -69,6 +73,7 @@ export default {
     Activity,
     Link,
     Trash2,
+    RefreshCw,
   },
   setup() {
     const authCtx = inject('authCtx', {});
@@ -79,6 +84,7 @@ export default {
     const massUpdateDomain = ref('');
     const toast = ref('');
     const toastType = ref('success');
+    const refreshingSubs = ref(false);
     let pollInterval;
     let toastTimer;
 
@@ -87,6 +93,22 @@ export default {
       toastType.value = type;
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { toast.value = ''; }, duration);
+    };
+
+    const handleRefreshAllSubs = async () => {
+      if (!confirm('Queue subscription refresh for ALL nodes? Each agent will re-fetch its subscription and re-apply VPN config.')) return;
+      refreshingSubs.value = true;
+      try {
+        const response = await axios.post('/api/web/nodes/mass-update-sub', {});
+        if (response.data.status !== 'ok') throw new Error('Refresh failed');
+        showToast(`Queued subscription refresh for ${response.data.commands_queued} node(s).`);
+        fetchNodes();
+      } catch (e) {
+        console.error("Failed to refresh all subscriptions:", e);
+        showToast('Could not queue subscription refresh.', 'error');
+      } finally {
+        refreshingSubs.value = false;
+      }
     };
 
     const fetchNodes = async () => {
@@ -157,6 +179,8 @@ export default {
       toast,
       toastType,
       fetchNodes,
+      handleRefreshAllSubs,
+      refreshingSubs,
       handleMassUpdateDomain,
       onNodeDeleted,
       handlePurgeOffline,

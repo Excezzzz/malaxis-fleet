@@ -39,7 +39,13 @@
 
     <div class="mt-10">
       <div class="flex flex-wrap justify-between items-center mb-4 gap-4">
-        <h2 class="text-2xl font-bold tracking-tight">Master Server Logs</h2>
+        <div class="flex items-center gap-3">
+          <h2 class="text-2xl font-bold tracking-tight">Master Server Logs</h2>
+          <select v-model="masterContainer" @change="fetchMasterLogs"
+            class="bg-zinc-900/60 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-zinc-300 focus:outline-none">
+            <option v-for="c in masterContainers" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
         <div class="flex items-center gap-3">
           <button @click="fetchMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
             <RefreshCw :class="['w-4 h-4', isLoadingMasterLogs ? 'animate-spin' : '']" />
@@ -70,6 +76,8 @@ export default {
     const logs = ref([]);
     const masterLogs = ref('');
     const isLoadingMasterLogs = ref(false);
+    const masterContainers = ['fleet-master', 'fleet-postgres'];
+    const masterContainer = ref('fleet-master');
     const toast = ref('');
     let toastTimer = null;
 
@@ -93,7 +101,7 @@ export default {
     const fetchMasterLogs = async () => {
       isLoadingMasterLogs.value = true;
       try {
-        const response = await fetch('/api/web/logs/master');
+        const response = await fetch(`/api/web/logs/master?container=${encodeURIComponent(masterContainer.value)}`);
         if (!response.ok) throw new Error('Failed to fetch master logs');
         const data = await response.json();
         masterLogs.value = data.logs || '';
@@ -156,6 +164,8 @@ export default {
       isLoadingMasterLogs,
       fetchMasterLogs,
       copyMasterLogs,
+      masterContainers,
+      masterContainer,
       toast,
     };
   },

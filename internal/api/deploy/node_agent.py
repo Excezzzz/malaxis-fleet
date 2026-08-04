@@ -1283,12 +1283,31 @@ def _docker_output(args: list, timeout: int = 30) -> str:
         return ""
 
 
-def _docker_logs(container: str, tail: int = 100) -> str:
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_ANSI_OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _clean_log_text(text: str) -> str:
+    """Strip ANSI escape sequences and stray control chars from docker logs.
+
+    `docker logs` output is full of terminal color codes (e.g. `\x1b[0m`) and
+    binary noise that bloats JSON payloads and can break display/serialization.
+    """
+    text = _ANSI_OSC_RE.sub("", text)
+    text = _ANSI_RE.sub("", text)
+    text = _CONTROL_RE.sub("", text)
+    return text
+
+
+def _docker_logs(container: str, tail: int = 200) -> str:
     """Fetch the tail of a container's logs (stdout+stderr combined).
 
     Resolves the container dynamically because docker-compose renames services
     into e.g. `fleet-agent-xray-node-1` (project-scoped). `docker logs xray-node`
     would then fail, so we look up the real container id by name filter first.
+    The output is cleaned of ANSI codes and decoded as UTF-8 with errors
+    ignored so JSON serialization never truncates or fails.
     """
     target = _resolve_container_id(container)
     if not target:
@@ -1298,9 +1317,9 @@ def _docker_logs(container: str, tail: int = 100) -> str:
             ["docker", "logs", target, "--tail", str(tail), "--timestamps"],
             capture_output=True, timeout=30,
         )
-        out = r.stdout.decode(errors="replace")
-        err = r.stderr.decode(errors="replace")
-        combined = (out + err).strip()
+        out = r.stdout.decode("utf-8", errors="ignore")
+        err = r.stderr.decode("utf-8", errors="ignore")
+        combined = _clean_log_text((out + err)).strip()
         if combined:
             return combined
         return f"(container '{container}' has no log output)"
@@ -1534,6 +1553,22 @@ def update_subscription() -> bool:
     current_engine = state.get("active_engine", "xray")
     active_name = state.get("active_server", "")
 
+    # VPN state retention: keep the current server when it still exists in the
+    # fresh subscription; otherwise fall back to the first available server.
+    active_exists = any(
+        s.get("tag") == active_name or s.get("name") == active_name
+        for s in servers
+    )
+    if active_name and not active_exists:
+        fallback = servers[0]
+        fallback_name = fallback.get("tag") or fallback.get("name") or ""
+        log(f"Active server '{active_name}' no longer in subscription, falling back to '{fallback_name}'")
+        state["active_server"] = fallback_name
+        if fallback.get("full_link"):
+            state["active_url"] = fallback["full_link"]
+        save_state(state)
+        active_name = fallback_name
+
     def _resolve_idx(subset: list) -> int:
         if not active_name:
             return 0
@@ -1545,8 +1580,16 @@ def update_subscription() -> bool:
     def _apply_engine(engine: str, subset: list) -> bool:
         idx = _resolve_idx(subset)
         if idx < 0:
-            log(f"Active server '{active_name}' no longer in subscription, keeping current {engine} config")
-            return False
+            fallback = subset[0] if subset else None
+            if not fallback:
+                return False
+            fallback_name = fallback.get("tag") or fallback.get("name") or ""
+            log(f"Active server '{active_name}' not in {engine} subset, applying fallback '{fallback_name}'")
+            state["active_server"] = fallback_name
+            if fallback.get("full_link"):
+                state["active_url"] = fallback["full_link"]
+            save_state(state)
+            idx = 0
         save_rollback(engine)
         return apply_configs(engine, subset, active_idx=idx)
 
@@ -1964,8 +2007,10 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         if container not in allowed:
             log(f"[get_logs] invalid container: {container}")
             return True
-        output = _docker_logs(container, tail=100)
+        output = _docker_logs(container, tail=200)
         log(f"[get_logs] fetched {len(output)} chars from {container}")
+        # Report immediately within the poll cycle so fresh logs reach the
+        # backend without waiting for the next poll interval.
         report(logs=json.dumps({container: output}))
         return True
     elif action == "terminate":

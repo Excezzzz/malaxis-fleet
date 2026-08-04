@@ -119,6 +119,8 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// POST /api/web/nodes/mass-update-client - OTA alias: queue update_client_files for ALL nodes (permission can_edit_sub)
 	webAPIRouter.Handle("/web/nodes/mass-update-client", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
+	// POST /api/web/nodes/mass-update-sub - queue update_sub for ALL nodes (permission can_edit_sub)
+	webAPIRouter.Handle("/web/nodes/mass-update-sub", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateSubscriptionsHandler)))).Methods("POST")
 
 	// PUT /api/web/nodes/{id}/rename - rename a node (permission can_edit_sub)
 	webAPIRouter.Handle("/web/nodes/{id}/rename", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.RenameNodeHandler)))).Methods("PUT")
