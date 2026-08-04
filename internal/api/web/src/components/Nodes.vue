@@ -39,7 +39,7 @@
     </div>
 
     <!-- Mass Update Subscription Domain Modal -->
-    <div v-if="showMassUpdateModal" class="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+    <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
       <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Mass Update Subscription Domain</h2>
         <p class="text-zinc-400 mb-4">This will replace the domain portion of the subscription URL for ALL nodes while preserving each node&apos;s unique path and token.</p>
