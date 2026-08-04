@@ -1,13 +1,15 @@
 <template>
-  <div :class="['bg-zinc-900 border rounded-2xl p-5 flex flex-col justify-between h-full transition-colors duration-300 hover:border-indigo-500/30 hover:bg-zinc-800/80', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/10']">
+  <div :class="['relative bg-zinc-900 border rounded-2xl p-5 flex flex-col justify-between h-full transition-colors duration-300 hover:border-indigo-500/30 hover:bg-zinc-800/80', isTerminated ? 'border-red-500/50 bg-red-950/20' : 'border-white/10']">
+    <span v-if="isOnline" class="absolute top-4 right-4 w-3 h-3 rounded-full bg-emerald-500 shadow-md shadow-emerald-500/50 animate-pulse" title="Online"></span>
+    <span v-else class="absolute top-4 right-4 w-3 h-3 rounded-full bg-red-500/80" title="Offline"></span>
     <div>
-      <div class="flex justify-between items-start mb-4">
-        <div class="flex items-center space-x-3">
-          <div class="p-2 rounded-xl bg-white/5 border border-white/10">
+      <div class="flex justify-between items-start mb-4 pr-8">
+        <div class="flex items-center space-x-3 min-w-0">
+          <div class="p-2 rounded-xl bg-white/5 border border-white/10 shrink-0">
             <component :is="nodeIcon" class="w-6 h-6 text-indigo-300" />
           </div>
-          <div class="flex items-center space-x-2">
-            <h2 class="text-xl font-bold tracking-tight">{{ node.name }}</h2>
+          <div class="flex items-center space-x-2 min-w-0">
+            <h2 class="text-xl font-bold tracking-tight truncate">{{ node.name }}</h2>
             <button v-if="canManage" @click="showRenameModal = true" title="Rename node"
               class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
               <Pencil class="w-3.5 h-3.5" />
@@ -42,17 +44,9 @@
             </template>
             <span v-else class="text-xs text-zinc-500">Not set</span>
         </div>
-        <div class="flex justify-between items-baseline h-5">
-            <template v-if="isOnline">
-                <span class="text-emerald-400 font-semibold flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                    Online
-                </span>
-            </template>
-            <template v-else>
-                <span class="text-zinc-500 text-xs uppercase">Last Seen</span>
-                <span class="text-zinc-400 font-medium">{{ timeSince(node.last_seen) }}</span>
-            </template>
+        <div class="flex justify-between items-baseline gap-2">
+            <span class="text-zinc-500 text-xs uppercase">Last Seen</span>
+            <span class="text-white font-medium truncate">{{ isOnline ? 'just now' : timeSince(node.last_seen) }}</span>
         </div>
       </div>
     </div>
@@ -114,7 +108,7 @@
     </div>
 
     <!-- Modals -->
-    <div v-if="showRenameModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showRenameModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showRenameModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Rename Node</h2>
         <input v-model="newNodeName" type="text" placeholder="My Device" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
@@ -125,7 +119,7 @@
       </div>
     </div>
 
-    <div v-if="showDeleteModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showDeleteModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showDeleteModal = false">
       <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300">Delete Node</h2>
         <p class="text-zinc-400 mb-6 text-sm">Choose how to remove <strong class="text-white">{{ node.name }}</strong> from the fleet.</p>
@@ -154,7 +148,7 @@
       </div>
     </div>
 
-    <div v-if="showTaskQueueModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showTaskQueueModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showTaskQueueModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-bold tracking-tight">Task Queue</h2>
@@ -179,7 +173,7 @@
       </div>
     </div>
 
-    <div v-if="showSubModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showSubModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSubModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Manage Subscription URL</h2>
         <input v-model="newSubUrl" type="text" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
@@ -190,7 +184,7 @@
       </div>
     </div>
 
-    <div v-if="showSwitchModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showSwitchModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSwitchModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 tracking-tight">Switch VPN Configuration</h2>
         <p class="text-zinc-400 mb-5">Currently: <strong>{{ node.active_server || 'None' }}</strong></p>
@@ -210,7 +204,7 @@
       </div>
     </div>
 
-    <div v-if="showLogsModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showLogsModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="closeLogs">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 w-full max-w-5xl flex flex-col max-h-[90vh]">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-bold tracking-tight">Agent Logs: {{ node.name }}</h2>
@@ -254,7 +248,7 @@
       </div>
     </div>
 
-    <div v-if="activeModal === 'status'" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="activeModal === 'status'" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="activeModal = ''">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold tracking-tight">Detailed Status</h2>

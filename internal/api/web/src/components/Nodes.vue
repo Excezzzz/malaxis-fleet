@@ -15,8 +15,9 @@
           <Trash2 class="w-5 h-5" />
           <span>Purge Offline</span>
         </button>
-        <button @click="fetchNodes" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh list">
-          <Activity class="w-5 h-5" />
+        <button @click="refreshList" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
+          <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
+          <span>{{ refreshingList ? 'Refreshing...' : 'Refresh List' }}</span>
         </button>
       </div>
     </div>
@@ -39,7 +40,7 @@
     </div>
 
     <!-- Mass Update Subscription Domain Modal -->
-    <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+    <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showMassUpdateModal = false">
       <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Mass Update Subscription Domain</h2>
         <p class="text-zinc-400 mb-4">This will replace the domain portion of the subscription URL for ALL nodes while preserving each node&apos;s unique path and token.</p>
@@ -62,7 +63,7 @@
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import NodeCard from './NodeCard.vue';
-import { Activity, Link, Trash2, RefreshCw } from 'lucide-vue-next';
+import { Link, Trash2, RefreshCw } from 'lucide-vue-next';
 
 const POLLING_INTERVAL = 5000; // 5 seconds
 
@@ -70,7 +71,6 @@ export default {
   name: 'Nodes',
   components: {
     NodeCard,
-    Activity,
     Link,
     Trash2,
     RefreshCw,
@@ -85,6 +85,7 @@ export default {
     const toast = ref('');
     const toastType = ref('success');
     const refreshingSubs = ref(false);
+    const refreshingList = ref(false);
     let pollInterval;
     let toastTimer;
 
@@ -108,6 +109,15 @@ export default {
         showToast('Could not queue subscription refresh.', 'error');
       } finally {
         refreshingSubs.value = false;
+      }
+    };
+
+    const refreshList = async () => {
+      refreshingList.value = true;
+      try {
+        await fetchNodes();
+      } finally {
+        refreshingList.value = false;
       }
     };
 
@@ -178,7 +188,9 @@ export default {
       massUpdateDomain,
       toast,
       toastType,
-      fetchNodes,
+fetchNodes,
+      refreshList,
+      refreshingList,
       handleRefreshAllSubs,
       refreshingSubs,
       handleMassUpdateDomain,
