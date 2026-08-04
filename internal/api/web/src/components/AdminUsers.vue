@@ -52,7 +52,7 @@
     </div>
 
     <!-- Add User Modal -->
-    <div v-if="showAddUserModal" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div v-if="showAddUserModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Add New User</h2>
         <form @submit.prevent="handleCreateUser">
@@ -90,7 +90,7 @@
     </div>
 
     <!-- Edit User Modal -->
-    <div v-if="editingUser" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+    <div v-if="editingUser" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-6 tracking-tight">Edit User: {{ editingUser.username }}</h2>
         <form @submit.prevent="handleEditUser">
