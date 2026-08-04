@@ -302,9 +302,27 @@ func (r *postgresRepository) UpdateNodeStatus(id, ipLan string) error {
 	return err
 }
 
-// SetNodeLogs stores the JSON map of container -> log tail reported by the agent.
+// SetNodeLogs merges a JSON map of container -> log tail into the node's stored
+// logs. Each agent report only carries the container it just fetched, so a naive
+// overwrite would wipe the other containers' entries (node-agent polls would
+// erase xray-node/singbox-node logs and vice versa).
 func (r *postgresRepository) SetNodeLogs(id, logsJSON string) error {
-	_, err := r.db.Exec("UPDATE nodes SET node_logs = $1 WHERE id = $2", logsJSON, id)
+	existing := map[string]string{}
+	if raw, err := r.GetNodeLogs(id); err == nil && raw != "" {
+		json.Unmarshal([]byte(raw), &existing)
+	}
+	incoming := map[string]string{}
+	if err := json.Unmarshal([]byte(logsJSON), &incoming); err != nil {
+		incoming = map[string]string{"raw": logsJSON}
+	}
+	for k, v := range incoming {
+		existing[k] = v
+	}
+	merged, err := json.Marshal(existing)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.Exec("UPDATE nodes SET node_logs = $1 WHERE id = $2", string(merged), id)
 	return err
 }
 
