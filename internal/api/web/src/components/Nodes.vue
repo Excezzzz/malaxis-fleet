@@ -2,19 +2,18 @@
   <div>
     <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
       <h1 class="text-4xl font-bold tracking-tight">Nodes</h1>
-      <div class="flex flex-wrap space-x-4 gap-y-2">
-        <button v-if="canEditSub" @click="showMassUpdateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 rounded-xl transition-all duration-300">
-          <Link class="w-5 h-5" />
-          <span>Mass Update Subscription Domain</span>
-        </button>
-        <button v-if="canEditSub" @click="handleRefreshAllSubs" class="flex items-center space-x-2 px-4 py-2 bg-sky-500/15 hover:bg-sky-500/25 border border-sky-500/30 text-sky-100 rounded-xl transition-all duration-300" title="Queue a subscription re-fetch for ALL nodes" :disabled="refreshingSubs">
-          <RefreshCw :class="['w-5 h-5', refreshingSubs ? 'animate-spin' : '']" />
-          <span>{{ refreshingSubs ? 'Refreshing...' : 'Refresh All Subscriptions' }}</span>
-        </button>
-        <button v-if="canEditSub" @click="handlePurgeOffline" class="flex items-center space-x-2 px-4 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 rounded-xl transition-all duration-300" title="Delete ghost nodes offline for more than 7 days">
-          <Trash2 class="w-5 h-5" />
-          <span>Purge Offline</span>
-        </button>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative">
+          <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+          <input v-model="searchQuery" type="text" placeholder="Search name, hostname, IP..." aria-label="Search nodes"
+            class="w-64 pl-10 pr-4 py-2 bg-zinc-900 border border-white/10 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors" />
+        </div>
+        <select v-model="statusFilter" aria-label="Filter by status"
+          class="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
+          <option value="all">All</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+        </select>
         <button @click="refreshList" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
           <span>{{ refreshingList ? 'Refreshing...' : 'Refresh List' }}</span>
@@ -31,12 +30,47 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div v-if="nodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 items-stretch">
-      <div v-for="node in nodes" :key="node.id" class="h-full"><NodeCard :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" /></div>
+    <div v-if="filteredNodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 items-stretch">
+      <div v-for="node in filteredNodes" :key="node.id" class="h-full"><NodeCard :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" /></div>
+    </div>
+
+    <div v-else-if="nodes.length > 0" class="text-center py-16">
+      <p class="text-zinc-500 text-lg">No nodes match your search or filters.</p>
     </div>
 
     <div v-else-if="!error" class="text-center py-16">
       <p class="text-zinc-500 text-lg">No nodes found. Waiting for agents to poll...</p>
+    </div>
+
+    <!-- Floating Action Button -->
+    <div class="fixed bottom-8 right-8 z-50 flex flex-col-reverse items-end gap-3">
+      <transition name="fab">
+        <div v-if="fabOpen" class="flex flex-col items-end gap-3">
+          <button v-if="canEditSub" @click="handlePurgeOffline"
+            class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300"
+            title="Delete ghost nodes offline for more than 7 days">
+            <Trash2 class="w-4 h-4" />
+            <span>Purge Offline</span>
+          </button>
+          <button v-if="canEditSub" @click="handleRefreshAllSubs"
+            class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 text-sm font-semibold shadow-lg shadow-indigo-500/10 transition-all duration-300"
+            title="Queue a subscription re-fetch for ALL nodes" :disabled="refreshingSubs">
+            <RefreshCw :class="['w-4 h-4', refreshingSubs ? 'animate-spin' : '']" />
+            <span>{{ refreshingSubs ? 'Updating...' : 'Update All Devices' }}</span>
+          </button>
+          <button v-if="canEditSub" @click="showMassUpdateModal = true"
+            class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 text-sm font-semibold shadow-lg shadow-emerald-500/10 transition-all duration-300"
+            title="Mass update the subscription domain for all nodes">
+            <Link class="w-4 h-4" />
+            <span>Mass Update Sub</span>
+          </button>
+        </div>
+      </transition>
+      <button @click="fabOpen = !fabOpen"
+        class="w-14 h-14 flex items-center justify-center rounded-full bg-indigo-500 hover:bg-indigo-400 text-white shadow-xl shadow-indigo-500/30 transition-all duration-300"
+        title="Global actions">
+        <Plus :class="['w-7 h-7 transition-transform duration-300', fabOpen ? 'rotate-45' : '']" />
+      </button>
     </div>
 
     <!-- Mass Update Subscription Domain Modal -->
@@ -63,9 +97,10 @@
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import NodeCard from './NodeCard.vue';
-import { Link, Trash2, RefreshCw } from 'lucide-vue-next';
+import { Link, Trash2, RefreshCw, Search, Plus } from 'lucide-vue-next';
 
 const POLLING_INTERVAL = 5000; // 5 seconds
+const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'Nodes',
@@ -74,6 +109,8 @@ export default {
     Link,
     Trash2,
     RefreshCw,
+    Search,
+    Plus,
   },
   setup() {
     const authCtx = inject('authCtx', {});
@@ -86,8 +123,35 @@ export default {
     const toastType = ref('success');
     const refreshingSubs = ref(false);
     const refreshingList = ref(false);
+    const searchQuery = ref('');
+    const statusFilter = ref('all');
+    const fabOpen = ref(false);
     let pollInterval;
     let toastTimer;
+
+    const isNodeOnline = (node) => {
+      if (!node.last_seen) return false;
+      const lastSeen = new Date(node.last_seen);
+      const diffSeconds = (new Date() - lastSeen) / 1000;
+      return diffSeconds < ONLINE_THRESHOLD_SECONDS;
+    };
+
+    const filteredNodes = computed(() => {
+      let result = nodes.value;
+      if (statusFilter.value !== 'all') {
+        const wantOnline = statusFilter.value === 'online';
+        result = result.filter((n) => isNodeOnline(n) === wantOnline);
+      }
+      const query = searchQuery.value.trim().toLowerCase();
+      if (query) {
+        result = result.filter((n) =>
+          (n.name || '').toLowerCase().includes(query) ||
+          (n.hostname || '').toLowerCase().includes(query) ||
+          (n.ip_lan || '').toLowerCase().includes(query)
+        );
+      }
+      return result;
+    });
 
     const showToast = (msg, type = 'success', duration = 4000) => {
       toast.value = msg;
@@ -180,15 +244,19 @@ export default {
       clearInterval(pollInterval);
     });
 
-    return {
+return {
       nodes,
+      filteredNodes,
       error,
       canEditSub,
       showMassUpdateModal,
       massUpdateDomain,
       toast,
       toastType,
-fetchNodes,
+      searchQuery,
+      statusFilter,
+      fabOpen,
+      fetchNodes,
       refreshList,
       refreshingList,
       handleRefreshAllSubs,
@@ -196,7 +264,19 @@ fetchNodes,
       handleMassUpdateDomain,
       onNodeDeleted,
       handlePurgeOffline,
-    };
+};
   },
 };
 </script>
+
+<style scoped>
+.fab-enter-active,
+.fab-leave-active {
+  transition: all 0.2s ease;
+}
+.fab-enter-from,
+.fab-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
+}
+</style>
