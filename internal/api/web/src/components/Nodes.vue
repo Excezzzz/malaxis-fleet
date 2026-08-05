@@ -67,11 +67,11 @@
         </div>
       </transition>
       <button @click="fabOpen = !fabOpen"
-        class="px-3.5 py-2 bg-zinc-900/90 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 hover:border-indigo-500/30 rounded-xl text-xs font-mono shadow-2xl transition-all cursor-pointer flex items-center gap-1.5"
+        class="px-5 py-3 bg-zinc-900/90 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 hover:border-indigo-500/30 rounded-xl text-sm font-semibold font-mono shadow-2xl transition-all cursor-pointer flex items-center gap-2"
         title="Quick Fleet Actions" aria-label="Quick Fleet Actions">
         <span class="text-indigo-400 font-bold">[</span>
-        <svg class="w-3.5 h-3.5 text-indigo-400 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        <span class="text-zinc-200 font-medium">Commands</span>
+        <svg class="w-4 h-4 inline-block text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        <span class="text-zinc-200">Commands</span>
         <span class="text-indigo-400 font-bold">]</span>
       </button>
     </div>
