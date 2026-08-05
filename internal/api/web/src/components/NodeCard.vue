@@ -191,8 +191,8 @@
         <h2 class="text-2xl font-bold mb-2 tracking-tight"><span class="font-mono text-indigo-400">[</span>Switch VPN Configuration<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-5">Currently: <strong>{{ node.active_server || 'None' }}</strong></p>
         <div class="grid grid-cols-2 gap-3 mb-4">
-          <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold"><span>⚡</span><span>Fastest</span></button>
-          <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold"><span>⚖️</span><span>Balanced</span></button>
+          <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold text-zinc-200"><Zap class="w-4 h-4 text-indigo-400" /><span>Fastest</span></button>
+          <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold text-zinc-200"><Scale class="w-4 h-4 text-indigo-400" /><span>Balanced</span></button>
         </div>
         <p class="text-xs text-zinc-500 mb-2">Available configs ({{ (node.available_servers || []).length }})</p>
         <div v-if="(node.available_servers || []).length" class="grid grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-1">
@@ -278,13 +278,13 @@
 <script>
 import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale },
   props: {
     node: {
       type: Object,
