@@ -67,13 +67,9 @@
         </div>
       </transition>
       <button @click="fabOpen = !fabOpen"
-        class="bg-zinc-900/80 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-2.5 text-xs font-mono font-bold text-indigo-400 shadow-2xl hover:border-indigo-500/30 transition-all flex items-center gap-2 cursor-pointer"
+        class="px-4 py-2 bg-zinc-900/80 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 rounded-2xl text-xs font-mono font-semibold text-indigo-400 shadow-2xl hover:border-indigo-500/30 transition-all cursor-pointer"
         title="Quick Fleet Actions" aria-label="Quick Fleet Actions">
-        <svg viewBox="0 0 24 24" fill="currentColor"
-          :class="['w-3.5 h-3.5 drop-shadow-[0_0_8px_rgba(129,140,248,0.9)] transition-transform duration-300', fabOpen ? 'rotate-90' : '']">
-          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
-        </svg>
-        <span>[⌘ Commands]</span>
+        <span>[ ⚡ Commands ]</span>
       </button>
     </div>
 
