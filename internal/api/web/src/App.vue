@@ -11,7 +11,7 @@
           </div>
           <div class="leading-tight">
             <h1 class="text-base sm:text-lg font-bold tracking-tight">Malaxis Fleet</h1>
-            <span class="hidden sm:inline-block bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded font-bold">v2.1-RBAC</span>
+            <span class="hidden sm:inline-block bg-red-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-red-950/50">v2.1-BETA</span>
           </div>
         </div>
 
