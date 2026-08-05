@@ -162,7 +162,6 @@ func fetchSubOutbounds(subURL string) ([]domain.Outbound, error) {
 	return outbounds, nil
 }
 
-
 func parseLink(link string) (*domain.Outbound, error) {
 	if !strings.Contains(link, "://") {
 		return nil, fmt.Errorf("invalid link format")

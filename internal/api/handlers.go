@@ -1707,13 +1707,13 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 		if dbSecret != "" {
 			secret = dbSecret
 		} else {
-			secret = "malaxis_printer_secret_2026"
+			secret = "changeme_fleet_secret"
 		}
 	}
 
 	// Replace the SECRET_TOKEN placeholder with the actual active secret
 	content := string(fileBytes)
-	content = strings.ReplaceAll(content, "${FLEET_SECRET:-malaxis_printer_secret_2026}", secret)
+	content = strings.ReplaceAll(content, "${FLEET_SECRET:-changeme_fleet_secret}", secret)
 	content = strings.ReplaceAll(content, "FLEET_SECRET", "FLEET_SECRET") // keep env var name
 	content = a.applyDomainPlaceholders(content)
 

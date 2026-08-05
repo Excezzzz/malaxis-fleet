@@ -237,7 +237,7 @@ func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
 				case "start":
-					b.showMainMenu(adminChatID)
+					b.showMainMenuFresh(adminChatID)
 				default:
 					b.showMainMenu(adminChatID)
 				}
@@ -386,6 +386,32 @@ func (b *Bot) showMainMenu(chatID int64) {
 	sent, err := b.api.Send(msg)
 	if err != nil {
 		log.Printf("Bot: failed to send main menu: %v", err)
+		return
+	}
+	b.mu.Lock()
+	b.mainMenuID[chatID] = sent.MessageID
+	b.mu.Unlock()
+}
+
+// showMainMenuFresh is used for the /start command: it always sends a BRAND
+// NEW main menu message (instead of editing the previous one) so the user can
+// summon a fresh menu at the bottom of the chat. Any previous menu message is
+// deleted to keep the chat to one dynamic bot message.
+func (b *Bot) showMainMenuFresh(chatID int64) {
+	if old := b.getMainMenuID(chatID); old > 0 {
+		b.deleteMessage(chatID, old)
+		b.mu.Lock()
+		delete(b.mainMenuID, chatID)
+		b.mu.Unlock()
+	}
+
+	text, markup := b.getMainMenuContent()
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+	msg.ReplyMarkup = &markup
+	sent, err := b.api.Send(msg)
+	if err != nil {
+		log.Printf("Bot: failed to send fresh main menu: %v", err)
 		return
 	}
 	b.mu.Lock()

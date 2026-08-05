@@ -9,7 +9,7 @@
 
 | Metric | Value |
 |---|---|
-| Master server | Go, single binary, multi-subdomain router (`dash/api/join/sub`).malaxis.ru |
+| Master server | Go, single binary, multi-subdomain router (`dash/api/join/sub`).yourdomain.com |
 | Fleet agent | Python 3, runs in Docker (`node-agent`), orchestrates `xray-node` / `singbox-node` |
 | Dashboard | Vue 3 + Tailwind, floating-island glassmorphism, 100% mobile-first |
 | Database | PostgreSQL in Docker (nodes / users / roles / audit_logs / settings) |
@@ -103,7 +103,7 @@ Reinstall-proof node identity:
     "Unsaved changes" indicator, 💾 **Save File** button, and success toasts.
   - `PUT /api/web/templates/{filename}` (whitelisted, audit-logged as `UPDATE_TEMPLATE`)
     stores the override in PostgreSQL (serving is DB-first, embed-fallback) — edits go
-    live at `sub-fleet.malaxis.ru` immediately, no rebuild needed.
+    live at `sub.yourdomain.com` immediately, no rebuild needed.
   - **One clean rocket icon** on the push button (duplicate `🚀` emoji removed).
 - The **Push** button queues `update_client_files` for all/one node; agents download the 4
   files atomically and graceful-restart onto the new code.
@@ -159,9 +159,9 @@ Reinstall-proof node identity:
 | `go build ./...` | ✅ 0 errors |
 | `npx pyright node_agent.py` | ✅ 0 errors (1 benign `requests` env warning) |
 | `npm run build` (Vue) | ✅ Build complete |
-| Login `admin/admin` on `https://dash-fleet.malaxis.ru` | ✅ HTTP 200, `owner` role |
+| Login `admin/admin` on `https://dash.yourdomain.com` | ✅ HTTP 200, `owner` role |
 | Hardware-hash adoption (new id + known hash) | ✅ returned canonical `node_id` |
-| Template edit via web → served at `sub-fleet.malaxis.ru` | ✅ live immediately |
+| Template edit via web → served at `sub.yourdomain.com` | ✅ live immediately |
 | Rename via web & CLI → persisted across polls | ✅ |
 | Terminate VPS node → containers gone, `Terminated`, row deleted | ✅ |
 | CLI sub-url change → dashboard within 15 s | ✅ |

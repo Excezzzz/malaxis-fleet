@@ -3,13 +3,23 @@
 # Usage: ./scripts/test_api.sh [base_url] [admin_user] [admin_pass]
 #   base_url defaults to http://localhost:8000
 #   admin_user defaults to "admin"
-#   admin_pass defaults to value from .env or >cI#+H!z5sUo=`j,&'^z
+#   admin_pass defaults to $ADMIN_PASS_ENV or the ADMIN_PASS value from .env
 
 set -euo pipefail
 
 BASE="${1:-http://localhost:8000}"
 ADMIN_USER="${2:-admin}"
-ADMIN_PASS="${3:-">cI#+H!z5sUo=\`j,&'^z"}"
+ADMIN_PASS="${3:-}"
+
+# Read ADMIN_PASS from .env (without sourcing it, so embedded backticks/quotes
+# in the value can never be executed). Applies only to the password variable.
+if [ -z "$ADMIN_PASS" ] && [ -f .env ] && grep -q '^[[:space:]]*ADMIN_PASS=' .env; then
+    ADMIN_PASS=$(grep '^[[:space:]]*ADMIN_PASS=' .env | head -1 | sed 's/^[[:space:]]*ADMIN_PASS=//; s/^"//; s/"$//')
+fi
+if [ -z "$ADMIN_PASS" ]; then
+    echo "ERROR: No admin password supplied. Pass it as \$3 or set ADMIN_PASS in .env" >&2
+    exit 1
+fi
 
 if ! command -v python3 &>/dev/null && ! command -v jq &>/dev/null; then
     echo "ERROR: This script requires python3 or jq for JSON handling."
