@@ -14,6 +14,12 @@
               class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
               <Pencil class="w-3.5 h-3.5" />
             </button>
+            <button v-if="canManage" @click="confirmDelete()" title="Delete node"
+              class="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+              <svg class="w-4 h-4 text-zinc-500 hover:text-red-400 cursor-pointer transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
             <span v-if="isTerminated" class="text-xs font-bold uppercase tracking-wider px-2 py-0.5 rounded-lg bg-red-500/20 border border-red-500/40 text-red-300">Terminated</span>
           </div>
         </div>
@@ -95,11 +101,7 @@
                   <span>Task Queue ({{ pendingCommandCount }})</span>
                 </button>
             </div>
-            <button @click="showDeleteModal = true" class="w-full flex items-center justify-center space-x-2 bg-red-800/20 hover:bg-red-800/40 border border-red-500/40 text-red-300 font-semibold py-2 px-4 rounded-xl transition-colors">
-                  <Trash2 class="w-4 h-4" />
-                  <span>Delete</span>
-                </button>
-        </template>
+            </template>
       </div>
 
       <div v-if="toast" :class="['fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
@@ -276,13 +278,13 @@
 <script>
 import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Trash2, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight },
   props: {
     node: {
       type: Object,
@@ -411,6 +413,12 @@ export default {
         console.error('Error updating sub URL:', e);
         showToast('Failed to update subscription URL.', 'error');
       }
+    };
+
+    const confirmDelete = () => {
+      deleteChoice.value = '';
+      terminateConfirm.value = '';
+      showDeleteModal.value = true;
     };
 
     const softDeleteNode = async () => {
@@ -578,7 +586,7 @@ export default {
     return {
       isOnline, isTerminated, isTaskQueued, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, statusBgClass, pendingTaskLabel, pendingCommandCount,
       showSubModal, newSubUrl, updateSubUrl,
-      copySubUrl, softDeleteNode,
+      copySubUrl, softDeleteNode, confirmDelete,
       showDeleteModal, deleteChoice,
       showTaskQueueModal,
       activeModal,
