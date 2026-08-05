@@ -2,6 +2,7 @@ package backup
 
 import (
 	"archive/zip"
+	"compress/gzip"
 	"fmt"
 	"io"
 	"os"
@@ -84,6 +85,66 @@ func (e *Engine) CreateBackup() (string, error) {
 	return zipFilePath, nil
 }
 
+// CreateGzipBackup dumps the PostgreSQL database with pg_dump and compresses
+// the resulting .sql dump with gzip. Returns the path of the .sql.gz file
+// stored inside the backups directory. Used by the Telegram bot so a single
+// gzipped file can be sent as a Telegram document.
+func (e *Engine) CreateGzipBackup() (string, error) {
+	if err := os.MkdirAll(e.backupDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create backup directory: %w", err)
+	}
+
+	timestamp := time.Now().Format("2006-01-02_1504")
+	dumpFileName := fmt.Sprintf("dump_%s.sql", timestamp)
+	dumpFilePath := filepath.Join(os.TempDir(), dumpFileName)
+
+	cmd := exec.Command("pg_dump",
+		"-U", e.cfg.PostgresUser,
+		"-h", e.cfg.PostgresHost,
+		"-p", e.cfg.PostgresPort,
+		"-d", e.cfg.PostgresDB,
+		"-f", dumpFilePath,
+		"--clean",
+	)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", e.cfg.PostgresPassword))
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("pg_dump failed: %w\nOutput: %s", err, string(output))
+	}
+	defer os.Remove(dumpFilePath)
+
+	gzFileName := fmt.Sprintf("malaxis_fleet_backup_%s.sql.gz", timestamp)
+	gzFilePath := filepath.Join(e.backupDir, gzFileName)
+
+	dumpFile, err := os.Open(dumpFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open dump file: %w", err)
+	}
+	defer dumpFile.Close()
+
+	gzipFile, err := os.Create(gzFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gzip file: %w", err)
+	}
+
+	gzipWriter := gzip.NewWriter(gzipFile)
+	_, copyErr := io.Copy(gzipWriter, dumpFile)
+	closeErr := gzipWriter.Close()
+	fileCloseErr := gzipFile.Close()
+	if copyErr != nil || closeErr != nil || fileCloseErr != nil {
+		os.Remove(gzFilePath)
+		return "", fmt.Errorf("failed to compress dump: %v %v %v", copyErr, closeErr, fileCloseErr)
+	}
+
+	// After a successful backup, enforce retention policy
+	if err := e.enforceRetention(); err != nil {
+		fmt.Printf("Warning: failed to enforce backup retention policy: %v\n", err)
+	}
+
+	return gzFilePath, nil
+}
+
 // GetLatestBackup returns the path to the most recent backup file.
 func (e *Engine) GetLatestBackup() (string, error) {
 	files, err := e.getBackupFiles()
@@ -132,7 +193,8 @@ func (e *Engine) getBackupFiles() ([]string, error) {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasPrefix(info.Name(), "malaxis_fleet_backup_") && strings.HasSuffix(info.Name(), ".zip") {
+		if !info.IsDir() && strings.HasPrefix(info.Name(), "malaxis_fleet_backup_") &&
+			(strings.HasSuffix(info.Name(), ".zip") || strings.HasSuffix(info.Name(), ".sql.gz")) {
 			files = append(files, path)
 		}
 		return nil
