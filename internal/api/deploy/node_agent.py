@@ -154,9 +154,9 @@ DEFAULT_XRAY_CONFIG = {
         {
             "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
             "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-            "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+            "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True},
             "tag": "socks-in",
-            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpUserTimeout": 15000},
         },
         {
             "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
@@ -172,20 +172,30 @@ DEFAULT_XRAY_CONFIG = {
     },
 }
 DEFAULT_SINGBOX_CONFIG = {
+    "log": {"level": "warn"},
     "dns": {
         "servers": [
-            {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "prefer_ipv4"},
+            {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "ipv4_only"},
             {"tag": "block", "address": "rcode://success"},
         ],
         "final": "resolver",
         "independent_cache": True,
     },
     "inbounds": [
-        {"type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357},
-        {"type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358},
+        {
+            "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
+            "sniff": {"enabled": True, "override_destination": False, "route_only": True},
+        },
+        {
+            "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
+            "sniff": {"enabled": True, "override_destination": True, "route_only": True},
+        },
     ],
     "outbounds": [{"type": "direct", "tag": "direct"}],
-    "route": {"final": "direct", "auto_detect_interface": True},
+    "route": {
+        "final": "direct",
+        "auto_detect_interface": True,
+    },
     "experimental": {"cache_file": {"enabled": True}},
 }
 
@@ -627,9 +637,9 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True},
                 "tag": "socks-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpUserTimeout": 15000},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
@@ -650,6 +660,9 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
         "rules": [
             {"type": "field", "port": 53, "network": "udp", "outboundTag": tag},
             {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": tag},
+            # Telegram MTProto / QUIC: matched by IP, routed through the proxy
+            # WITHOUT going through slow sniffing fallbacks.
+            {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": tag},
         ],
     }
     return cfg
@@ -727,7 +740,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                     "mode": "auto",
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        "maxConnections": 1,
+                        "maxConnections": 4,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
@@ -800,9 +813,9 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True},
                 "tag": "socks-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpUserTimeout": 15000},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
@@ -815,6 +828,8 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             "rules": [
                 {"type": "field", "port": 53, "network": "udp", "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": ob.get("tag", "proxy")},
+                # Telegram MTProto / QUIC IP ranges bypass sniffing fallbacks.
+                {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": ob.get("tag", "proxy")},
             ],
         },
     }
@@ -822,20 +837,30 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
 
 def _singbox_cfg_with_outbound(ob: dict) -> dict:
     return {
+        "log": {"level": "warn"},
         "dns": {
             "servers": [
-                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "prefer_ipv4"},
+                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "ipv4_only"},
                 {"tag": "block", "address": "rcode://success"},
             ],
             "final": "resolver",
             "independent_cache": True,
         },
         "inbounds": [
-            {"type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357},
-            {"type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358},
+            {
+                "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
+                "sniff": {"enabled": True, "override_destination": False, "route_only": True},
+            },
+            {
+                "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
+                "sniff": {"enabled": True, "override_destination": True, "route_only": True},
+            },
         ],
         "outbounds": [ob, {"type": "direct", "tag": "direct"}],
-        "route": {"final": ob.get("tag", "proxy"), "auto_detect_interface": True},
+        "route": {
+            "final": ob.get("tag", "proxy"),
+            "auto_detect_interface": True,
+        },
         "experimental": {"cache_file": {"enabled": True}},
     }
 
@@ -891,17 +916,24 @@ def restore_active_vpn() -> None:
 
 def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     cfg = {
+        "log": {"level": "warn"},
         "dns": {
             "servers": [
-                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "prefer_ipv4"},
+                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "ipv4_only"},
                 {"tag": "block", "address": "rcode://success"},
             ],
             "final": "resolver",
             "independent_cache": True,
         },
         "inbounds": [
-            {"type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357},
-            {"type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358},
+            {
+                "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
+                "sniff": {"enabled": True, "override_destination": False, "route_only": True},
+            },
+            {
+                "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
+                "sniff": {"enabled": True, "override_destination": True, "route_only": True},
+            },
         ],
         "outbounds": [],
     }
@@ -911,7 +943,10 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
             ob["tag"] = srv.get("tag", f"server-{i}")
             cfg["outbounds"].append(ob)
     tag = servers[active_idx].get("tag", f"server-{active_idx}") if servers else "direct"
-    cfg["route"] = {"final": tag, "auto_detect_interface": True}
+    cfg["route"] = {
+        "final": tag,
+        "auto_detect_interface": True,
+    }
     cfg["experimental"] = {"cache_file": {"enabled": True}}
     cfg["outbounds"].append({"type": "direct", "tag": "direct"})
     return cfg
@@ -951,6 +986,7 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         ob["password"] = srv.get("password", "")
         ob["congestion_control"] = srv.get("congestion_control", "bbr")
         ob["udp_relay_mode"] = srv.get("udp_relay_mode", "native")
+        ob["domain_strategy"] = "ipv4_only"
         ob["tls"] = {
             "enabled": True,
             "server_name": srv.get("sni", "") or host,

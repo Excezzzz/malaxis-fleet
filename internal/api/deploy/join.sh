@@ -52,20 +52,35 @@ curl -sSL https://__SUB_DOMAIN__/configs/xray_config.json -o configs/xray_config
   "log": { "loglevel": "warning" },
   "dns": { "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"], "queryStrategy": "UseIPv4" },
   "inbounds": [
-    { "port": 6357, "listen": "0.0.0.0", "protocol": "socks", "settings": { "auth": "noauth", "udp": true }, "tag": "socks-in", "sockopt": { "tcpNoDelay": true, "tcpKeepAliveInterval": 15 } },
+    { "port": 6357, "listen": "0.0.0.0", "protocol": "socks", "settings": { "auth": "noauth", "udp": true }, "sniffing": { "enabled": true, "destOverride": ["http", "tls", "quic"], "routeOnly": true }, "tag": "socks-in", "sockopt": { "tcpNoDelay": true, "tcpKeepAliveInterval": 15 } },
     { "port": 6358, "listen": "0.0.0.0", "protocol": "http", "settings": { "timeout": 0 }, "tag": "http-in", "sockopt": { "tcpNoDelay": true, "tcpKeepAliveInterval": 15 } }
   ],
   "outbounds": [ { "protocol": "freedom", "tag": "direct" } ],
-  "routing": { "domainStrategy": "IPIfNonMatch" }
+  "routing": {
+    "domainStrategy": "IPIfNonMatch",
+    "rules": [
+      { "type": "field", "port": 53, "network": "udp", "outboundTag": "direct" },
+      { "type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": "direct" }
+    ]
+  }
 }
 XRAYEOF
 curl -sSL https://__SUB_DOMAIN__/configs/singbox_config.json -o configs/singbox_config.json 2>/dev/null || cat > configs/singbox_config.json << 'SINGEOF'
 {
   "log": { "level": "warn" },
+  "dns": {
+    "servers": [
+      { "tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "ipv4_only" },
+      { "tag": "block", "address": "rcode://success" }
+    ],
+    "final": "resolver",
+    "independent_cache": true
+  },
   "inbounds": [
-    { "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357, "udp": true, "users": [] },
-    { "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358, "users": [] }
+    { "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357, "udp": true, "users": [], "sniff": { "enabled": true, "override_destination": false, "route_only": true } },
+    { "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358, "users": [], "sniff": { "enabled": true, "override_destination": true, "route_only": true } }
   ],
+  "route": { "final": "direct", "auto_detect_interface": true },
   "outbounds": [ { "type": "direct", "tag": "direct" } ]
 }
 SINGEOF
