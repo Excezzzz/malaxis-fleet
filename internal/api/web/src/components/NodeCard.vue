@@ -10,11 +10,11 @@
           </div>
           <div class="flex items-center space-x-2 min-w-0">
             <h2 class="text-xl font-bold tracking-tight truncate">{{ node.name }}</h2>
-            <button v-if="canManage" @click="showRenameModal = true" title="Rename node"
+            <button v-if="canRename" @click="showRenameModal = true" title="Rename node"
               class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
               <Pencil class="w-3.5 h-3.5" />
             </button>
-            <button v-if="canManage" @click="confirmDelete()" title="Delete node"
+            <button v-if="canDelete" @click="confirmDelete()" title="Delete node"
               class="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
               <svg class="w-4 h-4 text-zinc-500 hover:text-red-400 cursor-pointer transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -82,21 +82,21 @@
         </div>
         <template v-if="canManage">
             <div class="flex flex-wrap gap-2">
-                <button @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canEditSubCard" @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Link class="w-4 h-4" />
                   <span class="font-mono text-sm">[Manage Sub URL]</span>
                 </button>
-                <button v-if="!isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Shield class="w-4 h-4" />
                   <span class="font-mono text-sm">[Switch VPN]</span>
                 </button>
             </div>
             <div class="flex flex-wrap gap-2">
-                <button @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canViewNodeLogs" @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
                     <ScrollText class="w-4 h-4" />
                     <span class="font-mono text-sm">[View Logs]</span>
                 </button>
-                <button @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
                   <Hourglass class="w-4 h-4" />
                   <span class="font-mono text-sm">[Task Queue ({{ pendingCommandCount }})]</span>
                 </button>
@@ -296,7 +296,12 @@ export default {
     const { user, hasPermission, isReadOnly } = inject('authCtx', { user: ref(null), hasPermission: () => false, isReadOnly: ref(false) });
 
     const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
-    const canManage = computed(() => isOwner.value || hasPermission('can_manage_nodes'));
+    const canRename = computed(() => isOwner.value || hasPermission('can_rename_node'));
+    const canDelete = computed(() => isOwner.value || hasPermission('can_edit_sub'));
+    const canEditSubCard = computed(() => isOwner.value || hasPermission('can_edit_sub'));
+    const canSwitch = computed(() => isOwner.value || hasPermission('can_switch_vpn'));
+    const canViewNodeLogs = computed(() => isOwner.value || hasPermission('can_view_node_logs'));
+    const canManage = computed(() => isOwner.value || hasPermission('can_edit_sub') || hasPermission('can_switch_vpn') || hasPermission('can_rename_node') || hasPermission('can_terminate_node') || hasPermission('can_purge_nodes') || hasPermission('can_update_client') || hasPermission('can_view_node_logs'));
 
     const showSubModal = ref(false);
     const newSubUrl = ref('');
@@ -596,7 +601,8 @@ export default {
       cancelPendingCommand,
       showLogsModal, nodeLogs, isLoadingLogs, openLogs, closeLogs, fetchLogs, selectContainer,
       logContainers, logContainer, autoRefreshLogs, logRefreshInterval, copyLogs,
-      canManage, isReadOnly, toast, toastType, logHost,
+      user, isOwner, canManage, canRename, canDelete, canEditSubCard, canSwitch, canViewNodeLogs,
+      isReadOnly, toast, toastType, logHost,
     };
   },
 };

@@ -155,7 +155,10 @@ const PERMISSION_LABELS = {
   can_purge_nodes: 'Purge Offline Nodes',
   can_manage_users: 'Manage Users',
   can_manage_roles: 'Manage Roles',
-  can_view_audit: 'View Audit Logs',
+  can_view_audit: 'View Audit Logs (legacy)',
+  can_view_node_logs: 'View Node Logs',
+  can_view_master_logs: 'View Master Server Logs',
+  can_view_audit_logs: 'View Audit Trail',
   can_export_backups: 'Export Backups',
 };
 

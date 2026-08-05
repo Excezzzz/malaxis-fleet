@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"malaxis-fleet/internal/audit"
 	"malaxis-fleet/internal/auth"
 	"malaxis-fleet/internal/domain"
+	"malaxis-fleet/internal/repository"
 
 	"github.com/gorilla/mux"
 	"golang.org/x/crypto/bcrypt"
@@ -108,15 +110,94 @@ type UpdateNodeRequest struct {
 
 // --- Auth Handlers ---
 
+// enforcePermission is the defense-in-depth check every restricted handler
+// MUST run before mutating state: it re-verifies the session user's role
+// against the permissions_json stored in PostgreSQL and writes a 403 response
+// when the permission is missing. Returns true when the call is allowed.
+func (a *API) enforcePermission(w http.ResponseWriter, r *http.Request, permission string) bool {
+	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized: Not authenticated", http.StatusUnauthorized)
+		return false
+	}
+
+	user, err := a.repo.GetUserByID(userID)
+	if err != nil {
+		http.Error(w, "Forbidden: User not found", http.StatusForbidden)
+		return false
+	}
+
+	// Owner (and the original admin account) implicitly holds every permission.
+	if user.Role == domain.RoleOwner || user.Username == "admin" {
+		return true
+	}
+
+	role, err := a.repo.GetRoleByName(user.Role)
+	if err != nil {
+		http.Error(w, "Forbidden: Role not found", http.StatusForbidden)
+		return false
+	}
+
+	if auth.HasPermission(a.parsePermissionsJSON(role.PermissionsJSON), permission) {
+		return true
+	}
+
+	http.Error(w, "Forbidden: Missing permission: "+permission, http.StatusForbidden)
+	return false
+}
+
+// requireOwner is the defense-in-depth check for user/role management: only
+// the owner role may manage other users or roles. Writes 403 when denied.
+func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
+	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized: Not authenticated", http.StatusUnauthorized)
+		return false
+	}
+
+	user, err := a.repo.GetUserByID(userID)
+	if err != nil {
+		http.Error(w, "Forbidden: User not found", http.StatusForbidden)
+		return false
+	}
+
+	if user.Role == domain.RoleOwner || user.Username == "admin" {
+		return true
+	}
+
+	http.Error(w, "Forbidden: Only the owner can perform this action", http.StatusForbidden)
+	return false
+}
+
+// parsePermissionsJSON parses a role's permissions_json in both supported
+// storage formats (array of strings, or map key->bool).
+func (a *API) parsePermissionsJSON(raw string) []string {
+	if raw == "" {
+		return []string{}
+	}
+	var perms []string
+	if err := json.Unmarshal([]byte(raw), &perms); err != nil {
+		var permMap map[string]bool
+		if err2 := json.Unmarshal([]byte(raw), &permMap); err2 == nil {
+			for p, v := range permMap {
+				if v {
+					perms = append(perms, p)
+				}
+			}
+		}
+	}
+	if perms == nil {
+		perms = []string{}
+	}
+	return perms
+}
+
 // permissionsForUser resolves the permission list for a user. Owner and admin
 // bypass checks (implicitly granted all permissions); custom roles read their
 // permissions_json, supporting both array and map storage formats.
 func (a *API) permissionsForUser(user *domain.User) []string {
-	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
-		return []string{
-			"can_view_nodes", "can_switch_vpn", "can_edit_sub",
-			"can_manage_users", "can_view_audit", "can_export_backups",
-		}
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" {
+		return domain.AllPermissions
 	}
 
 	var permissions []string
@@ -124,19 +205,7 @@ func (a *API) permissionsForUser(user *domain.User) []string {
 	if err != nil || role.PermissionsJSON == "" {
 		return []string{}
 	}
-	if err := json.Unmarshal([]byte(role.PermissionsJSON), &permissions); err != nil {
-		var permMap map[string]bool
-		if err2 := json.Unmarshal([]byte(role.PermissionsJSON), &permMap); err2 == nil {
-			for p, v := range permMap {
-				if v {
-					permissions = append(permissions, p)
-				}
-			}
-		}
-	}
-	if permissions == nil {
-		permissions = []string{}
-	}
+	permissions = a.parsePermissionsJSON(role.PermissionsJSON)
 	return permissions
 }
 
@@ -521,6 +590,10 @@ func (a *API) GetNodesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) UpdateNodeHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -548,12 +621,20 @@ func (a *API) UpdateNodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Updated node (name/sub_url)")
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(node)
 }
 
 // UpdateNodeSubHandler updates only the sub_url field for a node. Fixes PostgreSQL UPDATE.
 func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -594,6 +675,10 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 		a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub")
 	}
 
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Updated subscription URL to "+req.SubURL)
+
 	log.Printf("Updated sub_url for node %s: %s", nodeID, req.SubURL)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -605,6 +690,10 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 // MassUpdateSubHandler updates the subscription URL for ALL nodes at once and
 // queues update commands for every node (online and offline).
 func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	var req struct {
 		SubURL string `json:"sub_url"`
 	}
@@ -661,6 +750,10 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 // MassUpdateDomainHandler updates only the domain portion of sub_url for ALL nodes.
 // Each node keeps its existing path/token and query parameters; only the host changes.
 func (a *API) MassUpdateDomainHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	var req struct {
 		Domain string `json:"domain"`
 	}
@@ -742,6 +835,10 @@ func replaceDomain(rawURL, newDomain string) string {
 }
 
 func (a *API) DeleteNodeHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -750,6 +847,10 @@ func (a *API) DeleteNodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteDevice, nodeID, "Node deleted")
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -757,6 +858,10 @@ func (a *API) DeleteNodeHandler(w http.ResponseWriter, r *http.Request) {
 // the given number of days (default 7). Used to clean up ghost rows from
 // reinstalled/removed machines.
 func (a *API) PurgeOfflineNodesHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermPurgeNodes) {
+		return
+	}
+
 	days := 7
 	if q := r.URL.Query().Get("days"); q != "" {
 		if v, err := strconv.Atoi(q); err == nil && v > 0 {
@@ -770,11 +875,19 @@ func (a *API) PurgeOfflineNodesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteDevice, "all_nodes", "Purged "+strconv.FormatInt(deleted, 10)+" offline nodes (older than "+strconv.Itoa(days)+" days)")
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "deleted": deleted})
 }
 
 func (a *API) AssignNodeToUserHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 	userIDStr := vars["userId"]
@@ -785,16 +898,29 @@ func (a *API) AssignNodeToUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	targetUser, _ := a.repo.GetUserByID(userID)
 	if err := a.repo.AssignNodeToUser(nodeID, userID); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	targetName := userIDStr
+	if targetUser != nil {
+		targetName = targetUser.Username
+	}
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Assigned node to user "+targetName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func (a *API) GetAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermViewAuditLogs) {
+		return
+	}
+
 	limit := 100
 	offset := 0
 
@@ -810,6 +936,10 @@ func (a *API) GetAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetUsersHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	users, err := a.repo.GetAllUsers()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -831,6 +961,10 @@ type CreateUserRequest struct {
 }
 
 func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	actorUser, _ := a.repo.GetUserByID(actorID)
 
@@ -936,6 +1070,10 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	log.Printf("[UpdateUser] Path ID: %s", idStr)
@@ -1061,6 +1199,10 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -1110,6 +1252,10 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -1140,6 +1286,15 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	targetUser, _ := a.repo.GetUserByID(id)
+	targetName := idStr
+	if targetUser != nil {
+		targetName = targetUser.Username
+	}
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdatePassword, targetName, "Password reset by owner")
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
@@ -1147,6 +1302,10 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 // --- Custom Roles Handlers ---
 
 func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	ownerID, _ := r.Context().Value(auth.UserContextKey).(int64)
 
 	var req CustomRoleRequest
@@ -1196,6 +1355,10 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetCustomRolesHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	ownerID, _ := r.Context().Value(auth.UserContextKey).(int64)
 
 	roles, err := a.repo.GetCustomRolesByOwner(strconv.FormatInt(ownerID, 10))
@@ -1209,6 +1372,10 @@ func (a *API) GetCustomRolesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetRolesHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	roles, err := a.repo.GetAllRoles()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -1221,6 +1388,10 @@ func (a *API) GetRolesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -1270,6 +1441,10 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	idStr := vars["id"]
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -1313,6 +1488,10 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 // --- Bot Settings Handlers ---
 
 func (a *API) UpdateBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	var req BotSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -1351,6 +1530,10 @@ func (a *API) UpdateBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	enabled, _ := a.repo.GetSetting("tg_bot_enabled")
 	token, _ := a.repo.GetSetting("tg_bot_token")
 	chatIDStr, _ := a.repo.GetSetting("tg_admin_chat_id")
@@ -1377,6 +1560,10 @@ func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) TestTelegramBotHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	var req struct {
 		Token string `json:"token"`
 	}
@@ -1437,6 +1624,10 @@ func (a *API) TestTelegramBotHandler(w http.ResponseWriter, r *http.Request) {
 // --- General Settings Handler ---
 
 func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
 	autosyncInterval, _ := a.repo.GetSetting("autosync_interval_minutes")
 	botEnabled, _ := a.repo.GetSetting("tg_bot_enabled")
 	botToken, _ := a.repo.GetSetting("tg_bot_token")
@@ -1467,6 +1658,10 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) DownloadBackupHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermExportBackups) {
+		return
+	}
+
 	backupPath, err := a.backupEngine.CreateBackup()
 	if err != nil {
 		http.Error(w, "Failed to create backup", http.StatusInternalServerError)
@@ -1587,6 +1782,10 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 // entrypoint.sh) with their names and raw contents. Web-edited overrides take
 // precedence over the embedded copies.
 func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	result := make([]map[string]string, 0, len(templateFiles))
 	for _, name := range templateFiles {
 		content, ok := a.readTemplate(name)
@@ -1609,6 +1808,10 @@ func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 // (authoritative for serving) and written to the local repo deploy dir when
 // possible. Body: {"content": "..."}
 func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	filename := vars["filename"]
 	if !isTemplateFile(filename) {
@@ -1667,6 +1870,10 @@ func (a *API) serveTemplateFile(name, contentType string) http.HandlerFunc {
 // nodes (or a single node when node_id is provided). The agent downloads the
 // latest client files from the sub-domain and performs a graceful restart.
 func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermUpdateClient) {
+		return
+	}
+
 	var req struct {
 		NodeID string `json:"node_id,omitempty"`
 	}
@@ -1731,6 +1938,10 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 // (their existing sub_url is kept; each agent just re-fetches + re-applies the
 // latest subscription). Used by the "Refresh All Subscriptions" dashboard button.
 func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermEditSub) {
+		return
+	}
+
 	nodes, err := a.repo.GetAllNodes()
 	if err != nil {
 		log.Printf("ERROR: Failed to get nodes: %v", err)
@@ -1765,8 +1976,12 @@ func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Requ
 }
 
 // RenameNodeHandler renames a node from the web dashboard.
-// Body: {"name": "new-name"} (permission can_edit_sub)
+// Body: {"name": "new-name"} (permission can_rename_node)
 func (a *API) RenameNodeHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermRenameNode) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -1835,6 +2050,10 @@ func (a *API) AgentRenameNodeHandler(w http.ResponseWriter, r *http.Request) {
 // reports status "Terminated", tears down its engine containers, wipes its
 // local state and exits (self-destruct).
 func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermTerminateNode) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -1842,7 +2061,11 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	messageID := time.Now().Unix()
 	if err := a.repo.SetPendingCommand(nodeID, string(command), messageID); err != nil {
 		log.Printf("ERROR: Failed to queue terminate for node %s: %v", nodeID, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		if errors.Is(err, repository.ErrNodeNotFound) {
+			http.Error(w, "Node not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 		return
 	}
 	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "terminate")
@@ -1862,6 +2085,10 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 // ClearCommandHandler removes a queued (not yet fetched) pending command for a
 // node, so a task can be cancelled from the web UI before the agent picks it up.
 func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermSwitchVPN) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -1888,6 +2115,10 @@ func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
 // Accepts either the documented switch payload `{"command": "switch:zoom"}`
 // or a structured action payload `{"action": "switch", "outbound_tag": "zoom"}`.
 func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermSwitchVPN) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -1913,7 +2144,11 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	messageID := time.Now().Unix()
 	if err := a.repo.SetPendingCommand(nodeID, string(cmdJSON), messageID); err != nil {
 		log.Printf("ERROR: Failed to set pending command for node %s: %v", nodeID, err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		if errors.Is(err, repository.ErrNodeNotFound) {
+			http.Error(w, "Node not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -1943,6 +2178,10 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 // most recent stored logs for that container.
 // Query param: container=node-agent|xray-node|singbox-node (default node-agent)
 func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermViewNodeLogs) {
+		return
+	}
+
 	vars := mux.Vars(r)
 	nodeID := vars["id"]
 
@@ -1991,6 +2230,10 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 // fleet-master) and read from `docker logs` so the real output is shown.
 // For fleet-master, a configured log file (MasterLogFile) is preferred.
 func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermViewMasterLogs) {
+		return
+	}
+
 	container := r.URL.Query().Get("container")
 	if container == "" {
 		container = "fleet-master"
