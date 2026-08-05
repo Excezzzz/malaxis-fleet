@@ -84,7 +84,7 @@
         <div class="space-y-4">
           <div>
             <label for="mass_domain" class="block text-sm font-medium text-zinc-400">New Subdomain</label>
-            <input v-model="massUpdateDomain" type="text" id="mass_domain" placeholder="sub2.malaxis.ru" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50" required>
+            <input v-model="massUpdateDomain" type="text" id="mass_domain" placeholder="sub.yourdomain.com" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50" required>
           </div>
         </div>
         <div class="mt-8 flex justify-end space-x-4">

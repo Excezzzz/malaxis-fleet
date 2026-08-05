@@ -70,14 +70,14 @@ func LoadConfig() *Config {
 		SessionSecret: getStringDefault("SESSION_SECRET", ""),
 
 		// Subdomain Architecture from .env
-		DashboardDomain: getStringDefault("DASHBOARD_DOMAIN", "dash-fleet.malaxis.ru"),
-		ApiDomain:       getStringDefault("API_DOMAIN", "api-fleet.malaxis.ru"),
-		JoinDomain:      getStringDefault("JOIN_DOMAIN", "join-fleet.malaxis.ru"),
-		SubDomain:       getStringDefault("SUB_DOMAIN", "sub-fleet.malaxis.ru"),
-		DashboardURL:    getStringDefault("DASHBOARD_URL", "https://dash-fleet.malaxis.ru"),
-		ApiURL:          getStringDefault("API_URL", "https://api-fleet.malaxis.ru"),
-		JoinURL:         getStringDefault("JOIN_URL", "https://join-fleet.malaxis.ru"),
-		SubURL:          getStringDefault("SUB_URL", "https://sub-fleet.malaxis.ru"),
+		DashboardDomain: getStringDefault("DASHBOARD_DOMAIN", "dash.yourdomain.com"),
+		ApiDomain:       getStringDefault("API_DOMAIN", "api.yourdomain.com"),
+		JoinDomain:      getStringDefault("JOIN_DOMAIN", "join.yourdomain.com"),
+		SubDomain:       getStringDefault("SUB_DOMAIN", "sub.yourdomain.com"),
+		DashboardURL:    getStringDefault("DASHBOARD_URL", "https://dash.yourdomain.com"),
+		ApiURL:          getStringDefault("API_URL", "https://api.yourdomain.com"),
+		JoinURL:         getStringDefault("JOIN_URL", "https://join.yourdomain.com"),
+		SubURL:          getStringDefault("SUB_URL", "https://sub.yourdomain.com"),
 
 		// SSL/TLS Certificates
 		SSLCertPath: getStringDefault("SSL_CERT_PATH", "/cf-certs/cf.crt"),
@@ -90,7 +90,7 @@ func LoadConfig() *Config {
 		PostgresHost:     getStringDefault("POSTGRES_HOST", "postgres"),
 		PostgresPort:     getStringDefault("POSTGRES_PORT", "5432"),
 		PostgresUser:     getStringDefault("POSTGRES_USER", "fleet_internal"),
-		PostgresPassword: getStringDefault("POSTGRES_PASSWORD", "fleet_internal_db_pass_2026"),
+		PostgresPassword: getStringDefault("POSTGRES_PASSWORD", ""),
 		PostgresDB:       getStringDefault("POSTGRES_DB", "fleet_db"),
 
 		// Features

@@ -61,7 +61,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	joinRouter := router.Host(stripPort(cfg.JoinDomain)).Subrouter()
 	subRouter := router.Host(stripPort(cfg.SubDomain)).Subrouter()
 
-	// --- API Routes (api-fleet.malaxis.ru) ---
+	// --- API Routes (api.yourdomain.com) ---
 	agentAPI := apiRouter.PathPrefix("/api").Subrouter()
 	agentAPI.Handle("/poll", api.AgentTokenMiddleware(http.HandlerFunc(api.PollHandler))).Methods("POST")
 	agentAPI.Handle("/report", api.AgentTokenMiddleware(http.HandlerFunc(api.ReportHandler))).Methods("POST")
@@ -79,7 +79,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	clientAPI.HandleFunc("/nodes", api.GetOwnNodesHandler).Methods("GET")
 	clientAPI.HandleFunc("/password", api.UpdateOwnPasswordHandler).Methods("POST")
 
-	// --- Dashboard Routes (dash-fleet.malaxis.ru) ---
+	// --- Dashboard Routes (dash.yourdomain.com) ---
 	webAPIRouter := dashboardRouter.PathPrefix("/api").Subrouter()
 
 	// Auth routes (login is the only heavily rate-limited route)

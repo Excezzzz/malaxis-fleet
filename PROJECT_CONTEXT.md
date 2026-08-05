@@ -24,8 +24,8 @@ Your goal is to migrate and refactor the existing working Python-based system in
   - `internal/bot/` (Telegram Bot with BotFather single-message HTML UI)
   - `web/` (Embedded Vue 3 + Tailwind CSS Web Dashboard via `go:embed`)
 
-### 3. Web Dashboard UI (`https://hub.malaxis.ru`)
-- Served via Caddy Reverse Proxy (`host.docker.internal:8080`).
+### 3. Web Dashboard UI (`https://dash.yourdomain.com`)
+- Served via Caddy Reverse Proxy (Docker network).
 - Modern dark-themed, mobile-responsive SPA built with **Vue 3 + Tailwind CSS** (embedded inside the Go binary).
 - Real-time device cards, 1-click VPN switching, network diagnostics, and global controls.
 

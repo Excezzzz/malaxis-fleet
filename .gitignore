@@ -1,13 +1,64 @@
+# === Environment & Secrets ===
+# NEVER commit real credentials. Copy .env.example to .env and fill in your own values.
 .env
+.env.*
+!.env.example
+
+# === Agent runtime state (created locally on nodes, never committed) ===
+configs/
+configs/agent_state.json
+configs/node_id.txt
+configs/subscription_cache.json
+configs/benchmark_cache.json
+configs/xray_config.json
+configs/singbox_config.json
+
+# === Certificates & keys ===
+*.crt
+*.key
+*.pem
+certs/
+certificates/
+
+# === Backups, binaries, artifacts ===
+*.zip
+*.gz
+*.sql
 *.db
 *.db-journal
-data/
-master_server
 *.exe
-agent_state.json
-xray_config.json
-singbox_config.json
+*.dll
+*.bin
+xray-win/
+windows-xray/
+*.tar
+*.tar.gz
+
+# === Build output ===
 node_modules/
 dist/
+.tmp/
 __pycache__/
 *.pyc
+*.pyo
+target/
+build/
+
+# === Runtime data & logs ===
+data/
+backups/
+*.log
+logs/
+
+# === Compiled binary ===
+master_server
+server.exe
+/server
+
+# === IDE / OS ===
+.idea/
+.vscode/
+*.suo
+*.swp
+.DS_Store
+Thumbs.db

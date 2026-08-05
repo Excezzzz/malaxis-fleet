@@ -29,12 +29,12 @@
 
 ### Шаг 2: Сборка и деплой сервера ✅
 - Go-сервер скомпилирован, Docker образ собран и отправлен по SCP
-- Docker на сервере 185.207.133.181 перезапущен
+- Docker на сервере `<DEPLOY_SERVER_IP>` перезапущен
 - Сервер работает как fleet-master + fleet-postgres
 
 ### Шаг 3: Локальный запуск клиента (Windows) ✅
 - Docker Compose поднят локально (xray-node, singbox-node + node-agent)
-- Подписка `https://my-sub.malaxis.ru/rfcj51pmfy732aw8` загружена
+- Подписка `https://<sub.yourdomain.com>/<subscription_token>` загружена
 - 5 серверов распарсено:
   1. nvidia-rogstrix-main-laptop (VLESS Reality TCP, 8443)
   2. zoom (VLESS Reality TCP, 2087)

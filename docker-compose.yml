@@ -34,10 +34,12 @@ services:
     restart: always
     # PostgreSQL is NOT exposed to the host or the internet. The Go backend
     # connects over the internal Docker network (fleet-postgres:5432) only.
+    # Credentials come from .env (POSTGRES_USER / POSTGRES_PASSWORD /
+    # POSTGRES_DB). The defaults are generic and MUST be overridden.
     environment:
-      POSTGRES_USER: fleet_internal
-      POSTGRES_PASSWORD: fleet_internal_db_pass_2026
-      POSTGRES_DB: fleet_db
+      POSTGRES_USER: ${POSTGRES_USER:-fleet_internal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-fleet_db}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
     logging:
