@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold tracking-tight">Settings</h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Settings<span class="font-mono text-indigo-400">]</span></h1>
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
-      <h2 class="text-2xl font-bold tracking-tight mb-6">Telegram Bot Settings</h2>
+      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>Telegram Bot Settings<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
         <div class="flex items-center justify-between">
@@ -32,12 +32,12 @@
 
         <div class="flex space-x-4">
           <button @click="saveBotSettings" :disabled="saving" class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
-            <span v-if="saving">Saving...</span>
-            <span v-else>Save Bot Settings</span>
+            <span class="font-mono text-sm" v-if="saving">[Saving...]</span>
+            <span class="font-mono text-sm" v-else>[Save Bot Settings]</span>
           </button>
           <button @click="testConnection" :disabled="testing" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-200 rounded-xl transition-colors disabled:opacity-50">
-            <span v-if="testing">Testing...</span>
-            <span v-else>Test Connection</span>
+            <span class="font-mono text-sm" v-if="testing">[Testing...]</span>
+            <span class="font-mono text-sm" v-else>[Test Connection]</span>
           </button>
         </div>
 
@@ -53,10 +53,10 @@
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6">
-      <h2 class="text-2xl font-bold tracking-tight mb-6">Database Backup</h2>
+      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>Database Backup<span class="font-mono text-indigo-400">]</span></h2>
       <p class="text-zinc-400 mb-4">Download a complete database backup as a zip archive.</p>
       <button @click="downloadBackup" class="px-4 py-2 bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-100 rounded-xl transition-colors">
-        Download Backup
+        <span class="font-mono text-sm">[Download Backup]</span>
       </button>
     </div>
   </div>
