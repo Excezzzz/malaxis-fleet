@@ -11,11 +11,11 @@
     </div>
 
     <div class="flex rounded-xl bg-white/5 border border-white/10 p-1 mb-8 w-fit">
-      <button @click="activeTab = 'audit'"
+      <button v-if="canViewAuditLogs" @click="activeTab = 'audit'"
         :class="['px-5 py-2 text-sm font-semibold rounded-lg transition-colors', activeTab === 'audit' ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
         Audit Trail
       </button>
-      <button @click="activeTab = 'master'"
+      <button v-if="canViewMasterLogs" @click="activeTab = 'master'"
         :class="['px-5 py-2 text-sm font-semibold rounded-lg transition-colors', activeTab === 'master' ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
         Master Server Logs
       </button>
@@ -77,15 +77,19 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue';
+import { ref, computed, inject, onMounted } from 'vue';
 import { Download, RefreshCw, Copy } from 'lucide-vue-next';
 
 export default {
   name: 'AuditLogs',
   components: { Download, RefreshCw, Copy },
   setup() {
+    const authCtx = inject('authCtx', {});
+    const canViewAuditLogs = computed(() => authCtx.canViewAuditLogs?.value ?? false);
+    const canViewMasterLogs = computed(() => authCtx.canViewMasterLogs?.value ?? false);
+
     const logs = ref([]);
-    const activeTab = ref('audit');
+    const activeTab = ref(canViewAuditLogs.value ? 'audit' : 'master');
     const masterLogs = ref('');
     const isLoadingMasterLogs = ref(false);
     const masterContainers = ['fleet-master', 'fleet-postgres'];
@@ -136,8 +140,8 @@ export default {
     };
 
     onMounted(() => {
-      fetchLogs();
-      fetchMasterLogs();
+      if (canViewAuditLogs.value) fetchLogs();
+      if (canViewMasterLogs.value) fetchMasterLogs();
     });
 
     const exportLogs = async () => {
@@ -180,6 +184,8 @@ export default {
       masterContainers,
       masterContainer,
       toast,
+      canViewAuditLogs,
+      canViewMasterLogs,
     };
   },
 };

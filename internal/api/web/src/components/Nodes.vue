@@ -46,7 +46,7 @@
     <div class="fixed bottom-8 right-8 z-50 flex flex-col-reverse items-end gap-3">
       <transition name="slide-up">
         <div v-if="fabOpen" class="flex flex-col items-end gap-3">
-          <button v-if="canEditSub" @click="handlePurgeOffline"
+          <button v-if="canPurgeNodes" @click="handlePurgeOffline"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300"
             title="Delete ghost nodes offline for more than 7 days">
             <Trash2 class="w-4 h-4" />
@@ -117,6 +117,7 @@ export default {
   setup() {
     const authCtx = inject('authCtx', {});
     const canEditSub = computed(() => authCtx.canEditSub?.value ?? false);
+    const canPurgeNodes = computed(() => authCtx.canPurgeNodes?.value ?? false);
     const nodes = ref([]);
     const error = ref(null);
     const showMassUpdateModal = ref(false);
@@ -251,6 +252,7 @@ return {
       filteredNodes,
       error,
       canEditSub,
+      canPurgeNodes,
       showMassUpdateModal,
       massUpdateDomain,
       toast,

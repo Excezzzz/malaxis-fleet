@@ -138,6 +138,18 @@ func RequireAdminOrOwner(repo repository.Repository) func(http.Handler) http.Han
 	return RequireRole(repo, domain.RoleAdmin, domain.RoleOwner)
 }
 
+// HasPermission reports whether the granted permission list satisfies the
+// required permission. Enforcement is strict: the exact key must be present in
+// the role's permissions_json (no implicit grants for custom roles).
+func HasPermission(granted []string, required string) bool {
+	for _, p := range granted {
+		if p == required {
+			return true
+		}
+	}
+	return false
+}
+
 // RequirePermission returns middleware that checks if the authenticated user's role
 // has a specific permission in permissions_json. Owner and admin bypass permission checks.
 func RequirePermission(repo repository.Repository, permission string) func(http.Handler) http.Handler {
@@ -183,15 +195,7 @@ func RequirePermission(repo repository.Repository, permission string) func(http.
 				}
 			}
 
-			hasPermission := false
-			for _, p := range perms {
-				if p == permission {
-					hasPermission = true
-					break
-				}
-			}
-
-			if !hasPermission {
+			if !HasPermission(perms, permission) {
 				http.Error(w, "Forbidden: Missing permission: "+permission, http.StatusForbidden)
 				return
 			}

@@ -138,7 +138,61 @@ func (r *postgresRepository) Init() error {
 	// Migrate: Copy old bot settings keys to new tg_ prefixed keys
 	r.migrateBotSettings()
 
+	// Migrate: Ensure the system admin role carries every current permission key,
+	// including the granular log permissions introduced for server-side RBAC.
+	r.migrateSystemRolePermissions()
+
 	return nil
+}
+
+// migrateSystemRolePermissions merges the full permission set into the system
+// admin role's permissions_json on every startup. This is the idempotent
+// upgrade path for existing deployments whose roles table was seeded before
+// granular keys (can_view_node_logs, can_view_master_logs, can_view_audit_logs)
+// existed. Only roles owned by "system" (admin/client) are touched.
+func (r *postgresRepository) migrateSystemRolePermissions() {
+	systemRoles, err := r.GetCustomRolesByOwner("system")
+	if err != nil {
+		log.Printf("ERROR: failed to load system roles for permission migration: %v", err)
+		return
+	}
+
+	for _, role := range systemRoles {
+		permSet := map[string]bool{}
+		// Merge existing permissions (array or map encoding).
+		if err := json.Unmarshal([]byte(role.PermissionsJSON), &permSet); err != nil {
+			var arr []string
+			if err2 := json.Unmarshal([]byte(role.PermissionsJSON), &arr); err2 == nil {
+				for _, p := range arr {
+					if p != "" {
+						permSet[p] = true
+					}
+				}
+			}
+		}
+		merged := role.PermissionsJSON
+		if role.Name == "admin" {
+			for _, p := range domain.AllPermissions {
+				if !permSet[p] {
+					log.Printf("Migrating system role %q: adding permission %s", role.Name, p)
+					permSet[p] = true
+				}
+			}
+			b, err := json.Marshal(permSet)
+			if err != nil {
+				log.Printf("ERROR: failed to encode migrated permissions for role %q: %v", role.Name, err)
+				continue
+			}
+			merged = string(b)
+		}
+		if merged != role.PermissionsJSON {
+			if err := r.UpdateCustomRole(&domain.CustomRole{ID: role.ID, Name: role.Name, ColorHex: role.ColorHex, PermissionsJSON: merged}); err != nil {
+				log.Printf("ERROR: failed to persist migrated permissions for role %q: %v", role.Name, err)
+			} else {
+				log.Printf("Migrated permissions_json for system role %q", role.Name)
+			}
+		}
+	}
 }
 
 func (r *postgresRepository) migrateBotSettings() {
@@ -393,9 +447,20 @@ func (r *postgresRepository) GetPendingCommand(nodeID string) (string, error) {
 }
 
 func (r *postgresRepository) SetPendingCommand(nodeID, command string, messageID int64) error {
-	query := "UPDATE nodes SET pending_command = $1, pending_msg_id = $2, pipeline_status = 'Queued', status_message = '' WHERE id = $3"
-	_, err := r.db.Exec(query, command, messageID, nodeID)
-	return err
+	res, err := r.db.Exec("UPDATE nodes SET pending_command = $1, pending_msg_id = $2, pipeline_status = 'Queued', status_message = '' WHERE id = $3", command, messageID, nodeID)
+	if err != nil {
+		return err
+	}
+	// Command-flow consistency: never silently queue a command for a node that
+	// does not exist in the DB (the single source of truth).
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNodeNotFound
+	}
+	return nil
 }
 
 func (r *postgresRepository) ClearPendingCommand(nodeID string) error {

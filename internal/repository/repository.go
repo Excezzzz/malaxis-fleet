@@ -1,6 +1,15 @@
 package repository
 
-import "malaxis-fleet/internal/domain"
+import (
+	"errors"
+
+	"malaxis-fleet/internal/domain"
+)
+
+// ErrNodeNotFound is returned when a write targets a node id that does not
+// exist in the database. It keeps the command flow consistent: a command can
+// never be queued against a ghost node.
+var ErrNodeNotFound = errors.New("node not found")
 
 // Repository defines the interface for data access operations.
 type Repository interface {

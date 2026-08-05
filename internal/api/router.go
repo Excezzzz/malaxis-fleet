@@ -14,6 +14,7 @@ import (
 	"malaxis-fleet/internal/auth"
 	"malaxis-fleet/internal/backup"
 	"malaxis-fleet/internal/config"
+	"malaxis-fleet/internal/domain"
 	"malaxis-fleet/internal/repository"
 
 	"github.com/gorilla/mux"
@@ -105,8 +106,8 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// DELETE /api/web/devices/{id} - delete a node (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.DeleteNodeHandler)))).Methods("DELETE")
 
-	// POST /api/web/nodes/purge-offline - delete ghost nodes offline for N days (permission can_edit_sub)
-	webAPIRouter.Handle("/web/nodes/purge-offline", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.PurgeOfflineNodesHandler)))).Methods("POST")
+	// POST /api/web/nodes/purge-offline - delete ghost nodes offline for N days (permission can_purge_nodes)
+	webAPIRouter.Handle("/web/nodes/purge-offline", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermPurgeNodes)(http.HandlerFunc(api.PurgeOfflineNodesHandler)))).Methods("POST")
 
 	// GET /api/web/templates - list client deployment template files (permission can_edit_sub)
 	webAPIRouter.Handle("/web/templates", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.GetTemplatesHandler)))).Methods("GET")
@@ -114,37 +115,37 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// PUT /api/web/templates/{filename} - overwrite a client template file (permission can_edit_sub)
 	webAPIRouter.Handle("/web/templates/{filename}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateTemplateHandler)))).Methods("PUT")
 
-	// POST /api/web/nodes/update-client-files - queue update_client_files for all/one node (permission can_edit_sub)
-	webAPIRouter.Handle("/web/nodes/update-client-files", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
+	// POST /api/web/nodes/update-client-files - queue update_client_files for all/one node (permission can_update_client)
+	webAPIRouter.Handle("/web/nodes/update-client-files", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermUpdateClient)(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
 
-	// POST /api/web/nodes/mass-update-client - OTA alias: queue update_client_files for ALL nodes (permission can_edit_sub)
-	webAPIRouter.Handle("/web/nodes/mass-update-client", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
+	// POST /api/web/nodes/mass-update-client - OTA alias: queue update_client_files for ALL nodes (permission can_update_client)
+	webAPIRouter.Handle("/web/nodes/mass-update-client", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermUpdateClient)(http.HandlerFunc(api.UpdateClientFilesHandler)))).Methods("POST")
 	// POST /api/web/nodes/mass-update-sub - queue update_sub for ALL nodes (permission can_edit_sub)
 	webAPIRouter.Handle("/web/nodes/mass-update-sub", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateSubscriptionsHandler)))).Methods("POST")
 
-	// PUT /api/web/nodes/{id}/rename - rename a node (permission can_edit_sub)
-	webAPIRouter.Handle("/web/nodes/{id}/rename", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.RenameNodeHandler)))).Methods("PUT")
+	// PUT /api/web/nodes/{id}/rename - rename a node (permission can_rename_node)
+	webAPIRouter.Handle("/web/nodes/{id}/rename", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermRenameNode)(http.HandlerFunc(api.RenameNodeHandler)))).Methods("PUT")
 
-	// POST /api/web/nodes/{id}/terminate - queue self-destruct for a node (permission can_edit_sub)
-	webAPIRouter.Handle("/web/nodes/{id}/terminate", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.TerminateNodeHandler)))).Methods("POST")
+	// POST /api/web/nodes/{id}/terminate - queue self-destruct for a node (permission can_terminate_node)
+	webAPIRouter.Handle("/web/nodes/{id}/terminate", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermTerminateNode)(http.HandlerFunc(api.TerminateNodeHandler)))).Methods("POST")
 
 	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_url (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/mass-update-domain", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateDomainHandler)))).Methods("POST")
 
-	// GET /api/web/roles - list all roles (permission can_manage_users)
-	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.GetRolesHandler)))).Methods("GET")
+	// GET /api/web/roles - list all roles (Owner only)
+	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetRolesHandler)))).Methods("GET")
 
-	// POST /api/web/roles - create custom role (permission can_manage_users)
-	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.CreateCustomRoleHandler)))).Methods("POST")
+	// POST /api/web/roles - create custom role (Owner only)
+	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.CreateCustomRoleHandler)))).Methods("POST")
 
-	// PUT /api/web/roles/{id} - update custom role (permission can_manage_users)
-	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.UpdateCustomRoleHandler)))).Methods("PUT")
+	// PUT /api/web/roles/{id} - update custom role (Owner only)
+	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateCustomRoleHandler)))).Methods("PUT")
 
 	// DELETE /api/web/roles/{id} - delete custom role (Owner only)
 	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.DeleteCustomRoleHandler)))).Methods("DELETE")
 
-	// GET /api/web/users - list users (permission can_manage_users)
-	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_manage_users")(http.HandlerFunc(api.GetUsersHandler)))).Methods("GET")
+	// GET /api/web/users - list users (Owner only)
+	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetUsersHandler)))).Methods("GET")
 
 	// POST /api/web/users - create user (Owner only)
 	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.CreateUserHandler)))).Methods("POST")
@@ -155,14 +156,14 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// DELETE /api/web/users/{id} - delete user (Owner only)
 	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.DeleteUserHandler)))).Methods("DELETE")
 
-	// GET /api/web/audit - audit logs (permission can_view_audit)
-	webAPIRouter.Handle("/web/audit", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_audit")(http.HandlerFunc(api.GetAuditLogsHandler)))).Methods("GET")
+	// GET /api/web/audit - audit logs (permission can_view_audit_logs)
+	webAPIRouter.Handle("/web/audit", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewAuditLogs)(http.HandlerFunc(api.GetAuditLogsHandler)))).Methods("GET")
 
-	// GET /api/web/nodes/{id}/logs - node container logs (permission can_view_nodes)
-	webAPIRouter.Handle("/web/nodes/{id}/logs", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_nodes")(http.HandlerFunc(api.GetNodeLogsHandler)))).Methods("GET")
+	// GET /api/web/nodes/{id}/logs - node container logs (permission can_view_node_logs)
+	webAPIRouter.Handle("/web/nodes/{id}/logs", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewNodeLogs)(http.HandlerFunc(api.GetNodeLogsHandler)))).Methods("GET")
 
-	// GET /api/web/logs/master - master server logs (permission can_view_audit)
-	webAPIRouter.Handle("/web/logs/master", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_audit")(http.HandlerFunc(api.GetMasterLogsHandler)))).Methods("GET")
+	// GET /api/web/logs/master - master server logs (permission can_view_master_logs)
+	webAPIRouter.Handle("/web/logs/master", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewMasterLogs)(http.HandlerFunc(api.GetMasterLogsHandler)))).Methods("GET")
 
 	// GET /api/web/backup/download - backup download (permission can_export_backups)
 	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_export_backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
@@ -174,16 +175,22 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// PUT /api/web/nodes/{id}/clear-command - cancel a queued command (permission can_switch_vpn)
 	webAPIRouter.Handle("/web/nodes/{id}/clear-command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.ClearCommandHandler)))).Methods("PUT")
 
-	// Admin/Owner routes (alternative paths)
+	// Admin/Owner routes (alternative paths) - node management only
 	adminAPIRoutes := webAPIRouter.PathPrefix("/admin").Subrouter()
 	adminAPIRoutes.Use(auth.Middleware(cfg))
 	adminAPIRoutes.Use(auth.RequireAdminOrOwner(repo))
 	adminAPIRoutes.HandleFunc("/nodes", api.GetNodesHandler).Methods("GET")
 	adminAPIRoutes.HandleFunc("/nodes/{id}", api.UpdateNodeHandler).Methods("PUT")
 	adminAPIRoutes.HandleFunc("/nodes/{id}", api.DeleteNodeHandler).Methods("DELETE")
-	adminAPIRoutes.HandleFunc("/nodes/{id}/assign/{userId}", api.AssignNodeToUserHandler).Methods("POST")
-	adminAPIRoutes.HandleFunc("/users", api.GetUsersHandler).Methods("GET")
-	adminAPIRoutes.HandleFunc("/users/{id}/reset-password", api.ResetUserPasswordHandler).Methods("POST")
+
+	// Owner-only admin routes: user management and node->user assignment. The
+	// owner role is the ONLY role that can manage other users or roles.
+	ownerAdminRoutes := webAPIRouter.PathPrefix("/admin").Subrouter()
+	ownerAdminRoutes.Use(auth.Middleware(cfg))
+	ownerAdminRoutes.Use(auth.RequireOwner(repo))
+	ownerAdminRoutes.HandleFunc("/nodes/{id}/assign/{userId}", api.AssignNodeToUserHandler).Methods("POST")
+	ownerAdminRoutes.HandleFunc("/users", api.GetUsersHandler).Methods("GET")
+	ownerAdminRoutes.HandleFunc("/users/{id}/reset-password", api.ResetUserPasswordHandler).Methods("POST")
 
 	// Owner-only routes
 	ownerAPIRoutes := webAPIRouter.PathPrefix("/owner").Subrouter()

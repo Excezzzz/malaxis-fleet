@@ -97,18 +97,23 @@ export default {
     const canViewNodes = computed(() => hasPermission('can_view_nodes'));
     const canEditSub = computed(() => hasPermission('can_edit_sub'));
     const canSwitchVpn = computed(() => hasPermission('can_switch_vpn'));
-    const canManageUsers = computed(() => hasPermission('can_manage_users'));
-    const canViewAudit = computed(() => hasPermission('can_view_audit'));
+    const canRenameNode = computed(() => hasPermission('can_rename_node'));
+    const canTerminateNode = computed(() => hasPermission('can_terminate_node'));
+    const canPurgeNodes = computed(() => hasPermission('can_purge_nodes'));
+    const canUpdateClient = computed(() => hasPermission('can_update_client'));
+    const canViewNodeLogs = computed(() => hasPermission('can_view_node_logs'));
+    const canViewAuditLogs = computed(() => hasPermission('can_view_audit_logs'));
+    const canViewMasterLogs = computed(() => hasPermission('can_view_master_logs'));
     const isOwner = computed(() => role.value === 'owner' || username.value === 'admin');
-    const isReadOnly = computed(() => !canEditSub.value && !canSwitchVpn.value);
+    const isReadOnly = computed(() => !canEditSub.value && !canSwitchVpn.value && !canRenameNode.value && !canTerminateNode.value && !canPurgeNodes.value && !canUpdateClient.value && !canViewNodeLogs.value);
 
     const navItems = computed(() => {
       const items = [];
       if (canViewNodes.value) items.push({ view: 'Nodes', label: 'Nodes', icon: 'Server' });
-      if (canEditSub.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode2' });
-      if (canManageUsers.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
-      if (canManageUsers.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
-      if (canViewAudit.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'FileText' });
+      if (canEditSub.value || canUpdateClient.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode2' });
+      if (isOwner.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
+      if (isOwner.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
+      if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'FileText' });
       if (isOwner.value) items.push({ view: 'Settings', label: 'Settings', icon: 'Settings' });
       return items;
     });
@@ -183,7 +188,11 @@ export default {
       role: role.value,
     }));
 
-    provide('authCtx', { user, hasPermission, canEditSub, canSwitchVpn, canViewNodes, isReadOnly });
+    provide('authCtx', {
+      user, hasPermission, canEditSub, canSwitchVpn, canViewNodes, isReadOnly,
+      canRenameNode, canTerminateNode, canPurgeNodes, canUpdateClient,
+      canViewNodeLogs, canViewAuditLogs, canViewMasterLogs,
+    });
 
     return {
       isAuthenticated,
