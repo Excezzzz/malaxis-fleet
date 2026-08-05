@@ -36,7 +36,6 @@ type userState struct {
 
 type Bot struct {
 	api          *tgbotapi.BotAPI
-	apiStopped   bool
 	repo         repository.Repository
 	cfg          *config.Config
 	autoSync     *service.AutoSyncService
@@ -136,7 +135,6 @@ func (b *Bot) Start() error {
 
 	b.mu.Lock()
 	b.api = api
-	b.apiStopped = false
 	b.chatID = chatID
 	b.running = true
 	b.mu.Unlock()
@@ -144,21 +142,74 @@ func (b *Bot) Start() error {
 	b.backupTicker = time.NewTicker(24 * time.Hour)
 	go b.runBackupScheduler()
 
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
-	updates := b.api.GetUpdatesChan(u)
+	updates := make(chan tgbotapi.Update, 100)
+	go b.fetchUpdates(updates)
+	go b.pollUpdates(updates)
 
 	log.Println("Telegram bot started")
 
-	go b.pollUpdates(updates)
 	return nil
 }
 
-// pollUpdates consumes Telegram updates until the updates channel is closed
-// (Stop) or the bot is flagged as not running. STRICT SECURITY: every message
-// and callback that does not originate from the admin chat id (read from the
-// database) is ignored completely.
-func (b *Bot) pollUpdates(updates tgbotapi.UpdatesChannel) {
+// fetchUpdates polls the Telegram API for updates with an explicit offset and
+// forwards them into the updates channel. A 409 "Conflict: terminated by other
+// getUpdates request" means another process is polling with the same token
+// (or a webhook is set); instead of hammering the API we back off gracefully
+// and resume as soon as the conflicting consumer releases the poll.
+func (b *Bot) fetchUpdates(updates chan<- tgbotapi.Update) {
+	offset := 0
+	for {
+		select {
+		case <-b.stop:
+			return
+		default:
+		}
+
+		b.mu.Lock()
+		running := b.running
+		api := b.api
+		b.mu.Unlock()
+		if !running || api == nil {
+			return
+		}
+
+		cfg := tgbotapi.NewUpdate(offset)
+		cfg.Timeout = 60
+		got, err := api.GetUpdates(cfg)
+		if err != nil {
+			conflict := strings.Contains(err.Error(), "Conflict") || strings.Contains(err.Error(), "409")
+			backoff := 5 * time.Second
+			if conflict {
+				log.Printf("Bot: getUpdates conflict (another instance polling), retrying in 30s")
+				backoff = 30 * time.Second
+			} else {
+				log.Printf("Bot: getUpdates error: %v (retrying in %s)", err, backoff)
+			}
+			select {
+			case <-time.After(backoff):
+			case <-b.stop:
+				return
+			}
+			continue
+		}
+
+		for _, upd := range got {
+			if upd.UpdateID >= offset {
+				offset = upd.UpdateID + 1
+			}
+			select {
+			case updates <- upd:
+			case <-b.stop:
+				return
+			}
+		}
+	}
+}
+
+// pollUpdates consumes Telegram updates until the bot is flagged as not
+// running. STRICT SECURITY: every message and callback that does not originate
+// from the admin chat id (read from the database) is ignored completely.
+func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 	for update := range updates {
 		select {
 		case <-b.stop:
@@ -215,14 +266,6 @@ func (b *Bot) Stop() {
 	select {
 	case b.stop <- true:
 	default:
-	}
-	// tgbotapi's StopReceivingUpdates closes the updates channel but does NOT
-	// nil it out, so calling it twice (e.g. Reboot after a settings save when
-	// the bot is disabled) would panic with "close of closed channel". Guard
-	// with a per-api flag so a second Stop is a no-op.
-	if b.api != nil && !b.apiStopped {
-		b.apiStopped = true
-		b.api.StopReceivingUpdates()
 	}
 }
 
