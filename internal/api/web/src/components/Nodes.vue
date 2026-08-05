@@ -10,9 +10,9 @@
         </div>
         <select v-model="statusFilter" aria-label="Filter by status"
           class="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
-          <option value="all">All</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
+          <option value="all">All Nodes</option>
+          <option value="online">Online Only</option>
+          <option value="offline">Offline Only</option>
         </select>
         <button @click="refreshList" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
@@ -67,9 +67,12 @@
         </div>
       </transition>
       <button @click="fabOpen = !fabOpen"
-        class="w-14 h-14 flex items-center justify-center rounded-full bg-indigo-500 hover:bg-indigo-400 text-white shadow-xl shadow-indigo-500/30 transition-all duration-300"
-        title="Global actions">
-        <Plus :class="['w-7 h-7 transition-transform duration-300', fabOpen ? 'rotate-45' : '']" />
+        class="w-16 h-16 flex items-center justify-center bg-indigo-600/80 hover:bg-indigo-500 shadow-xl shadow-indigo-950/50 backdrop-blur-md text-white rounded-full border border-indigo-400/30 transition-all duration-300 hover:scale-105 active:scale-95"
+        title="Quick Fleet Actions" aria-label="Quick Fleet Actions">
+        <svg viewBox="0 0 24 24" fill="currentColor"
+          :class="['w-7 h-7 transition-transform duration-500 drop-shadow-[0_0_10px_rgba(129,140,248,0.9)]', fabOpen ? 'rotate-90' : '']">
+          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+        </svg>
       </button>
     </div>
 
@@ -97,7 +100,7 @@
 import { ref, computed, inject, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
 import NodeCard from './NodeCard.vue';
-import { Link, Trash2, RefreshCw, Search, Plus } from 'lucide-vue-next';
+import { Link, Trash2, RefreshCw, Search } from 'lucide-vue-next';
 
 const POLLING_INTERVAL = 5000; // 5 seconds
 const ONLINE_THRESHOLD_SECONDS = 90;
@@ -110,7 +113,6 @@ export default {
     Trash2,
     RefreshCw,
     Search,
-    Plus,
   },
   setup() {
     const authCtx = inject('authCtx', {});
@@ -272,11 +274,11 @@ return {
 <style scoped>
 .fab-enter-active,
 .fab-leave-active {
-  transition: all 0.2s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .fab-enter-from,
 .fab-leave-to {
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(16px) scale(0.95);
 }
 </style>
