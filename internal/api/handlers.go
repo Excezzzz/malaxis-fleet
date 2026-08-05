@@ -1724,7 +1724,14 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 // templateFiles is the whitelist of client template files editable via the web UI.
 var templateFiles = []string{"node_agent.py", "fleet-cli.sh", "requirements.txt", "Dockerfile.client", "entrypoint.sh"}
 
+// isTemplateFile reports whether name is one of the hardcoded whitelisted
+// client template files. Path traversal is impossible: the check is an exact
+// match and any name containing path separators, "." or ".." is rejected
+// outright (defense in depth, even though the exact-match already blocks it).
 func isTemplateFile(name string) bool {
+	if name == "" || strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+		return false
+	}
 	for _, n := range templateFiles {
 		if n == name {
 			return true
