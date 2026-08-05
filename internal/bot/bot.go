@@ -29,7 +29,7 @@ const onlineWindow = 90 * time.Second
 // (rename, sub URL, TERMINATE confirmation, mass sub URL) the conversation
 // moves into a state machine that consumes the next text message.
 type userState struct {
-	Step   string // "", "rename_node", "set_sub", "mass_sub", "terminate_confirm"
+	Step   string // "", "rename_node", "set_sub", "terminate_confirm"
 	NodeID string
 	Note   string
 }
@@ -416,7 +416,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 			tgbotapi.NewInlineKeyboardButtonData("🚀 Push Client Files (OTA)", "ota:all"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔄 Mass Update Subscriptions", "task:mass_sub"),
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh Subscriptions", "task:refresh_subs"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🧹 Purge Offline (>3d)", "purge:go"),
@@ -445,8 +445,6 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 		b.processRenameText(chatID, text)
 	case "set_sub":
 		b.processSetSubText(chatID, text)
-	case "mass_sub":
-		b.processMassSubText(chatID, text)
 	case "terminate_confirm":
 		b.processTerminateText(chatID, text)
 	default:
@@ -512,46 +510,6 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "✅ Subscription URL updated; node will refresh on next poll")
 }
 
-func (b *Bot) processMassSubText(chatID int64, text string) {
-	b.clearState(chatID)
-
-	subURL := strings.TrimSpace(text)
-	if subURL == "" {
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>🔄 Mass Update Subscriptions</b>\n\nURL cannot be empty. Send a URL or press Cancel.", b.cancelMarkup())
-		return
-	}
-
-	if err := b.repo.UpdateAllNodesSubURL(subURL); err != nil {
-		log.Printf("Bot: mass sub update failed: %v", err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to mass update subscription URLs.</b>", b.cancelMarkup())
-		return
-	}
-
-	nodes, err := b.repo.GetAllNodes()
-	if err != nil {
-		log.Printf("Bot: failed to list nodes for mass sub: %v", err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to queue commands.</b>", b.cancelMarkup())
-		return
-	}
-
-	messageID := time.Now().Unix()
-	command, _ := json.Marshal(map[string]string{"action": "update_sub", "sub_url": subURL})
-	queuedCount := 0
-	for _, node := range nodes {
-		if err := b.repo.SetPendingCommand(node.ID, string(command), messageID); err != nil {
-			log.Printf("Bot: failed to queue command for node %s: %v", node.ID, err)
-		} else {
-			queuedCount++
-		}
-	}
-
-	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, "all_nodes", "Mass updated subscription URL for all nodes (via Telegram bot)")
-	text2, markup := b.getMainMenuContent()
-	b.editMessage(chatID, b.getMainMenuID(chatID),
-		fmt.Sprintf("✅ Subscription URL updated for <b>%d</b> nodes, commands queued for <b>%d</b>.\n\n%s", len(nodes), queuedCount, text2),
-		&markup)
-}
-
 func (b *Bot) processTerminateText(chatID int64, text string) {
 	state := b.getState(chatID)
 	if strings.TrimSpace(text) != "TERMINATE" {
@@ -605,11 +563,8 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.handleNodeList(chatID, messageID)
 	case data == "ota:all":
 		b.handleOtaAll(chatID, messageID)
-	case data == "task:mass_sub":
-		b.setState(chatID, &userState{Step: "mass_sub"})
-		b.editMessage(chatID, messageID,
-			"<b>🔄 Mass Update Subscriptions</b>\n\nSend the new subscription URL that will be applied to <b>ALL</b> nodes:",
-			b.cancelMarkup())
+	case data == "task:refresh_subs":
+		b.handleRefreshAllSubs(chatID, messageID)
 	case data == "purge:go":
 		b.handlePurge(chatID, messageID)
 	case data == "backup:download":
@@ -854,6 +809,36 @@ func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 	}
 	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Deleted node "+name+" (via Telegram bot)")
 	b.handleNodeList(chatID, messageID)
+}
+
+// handleRefreshAllSubs mirrors the web UI "Refresh All Subscriptions" action:
+// it queues an update_sub command for EVERY node (each agent re-fetches and
+// re-applies its existing subscription URL). No URL input is requested.
+func (b *Bot) handleRefreshAllSubs(chatID int64, messageID int) {
+	nodes, err := b.repo.GetAllNodes()
+	if err != nil {
+		log.Printf("Bot: failed to list nodes for refresh subs: %v", err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to list nodes.</b>", b.cancelMarkup())
+		return
+	}
+
+	command, _ := json.Marshal(map[string]string{"action": "update_sub"})
+	cmdMessageID := time.Now().Unix()
+	queuedCount := 0
+	for _, node := range nodes {
+		if err := b.repo.SetPendingCommand(node.ID, string(command), cmdMessageID); err != nil {
+			log.Printf("Bot: failed to queue update_sub for node %s: %v", node.ID, err)
+		} else {
+			queuedCount++
+			b.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_sub")
+		}
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, "all_nodes", "Queued subscription refresh for "+strconv.Itoa(queuedCount)+" nodes (via Telegram bot)")
+	text, markup := b.getMainMenuContent()
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("🔄 All <b>%d</b> node(s) queued to refresh their subscriptions.\n\n%s", len(nodes), text),
+		&markup)
 }
 
 func (b *Bot) handleOtaAll(chatID int64, messageID int) {

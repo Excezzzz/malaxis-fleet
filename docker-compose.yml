@@ -5,8 +5,9 @@ services:
     build: .
     container_name: fleet-master
     restart: always
-    ports:
-      - "8000:8000"
+    # No host ports are published. The backend is reached ONLY through Caddy,
+    # (which terminates TLS and reverse-proxies over the shared "caddy" network),
+    # so nothing is exposed to the public internet.
     environment:
       SERVER_PORT: "8000"
       WEB_PORT: "8000"
@@ -18,6 +19,9 @@ services:
       - .env
     depends_on:
       - postgres
+    networks:
+      - default
+      - caddy
     logging:
       driver: "json-file"
       options:
@@ -28,6 +32,8 @@ services:
     image: postgres:16-alpine
     container_name: fleet-postgres
     restart: always
+    # PostgreSQL is NOT exposed to the host or the internet. The Go backend
+    # connects over the internal Docker network (fleet-postgres:5432) only.
     environment:
       POSTGRES_USER: fleet_internal
       POSTGRES_PASSWORD: fleet_internal_db_pass_2026
@@ -39,3 +45,7 @@ services:
       options:
         max-size: "5m"
         max-file: "2"
+
+networks:
+  caddy:
+    external: true
