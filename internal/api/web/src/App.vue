@@ -21,7 +21,7 @@
              class="flex items-center space-x-2 px-3 lg:px-4 py-2 rounded-full text-sm transition-colors whitespace-nowrap"
              :class="navLinkClasses(item.view)">
             <component :is="item.icon" class="w-4 h-4" />
-            <span class="hidden lg:inline">{{ item.label }}</span>
+            <span class="hidden lg:inline font-mono text-xs">[{{ item.label }}]</span>
           </a>
         </div>
 

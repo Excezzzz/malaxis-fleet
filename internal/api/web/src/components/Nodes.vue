@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
-      <h1 class="text-4xl font-bold tracking-tight">Nodes</h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Nodes<span class="font-mono text-indigo-400">]</span></h1>
       <div class="flex flex-wrap items-center gap-3">
         <div class="relative">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
@@ -16,7 +16,7 @@
         </select>
         <button @click="refreshList" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
-          <span>{{ refreshingList ? 'Refreshing...' : 'Refresh List' }}</span>
+          <span class="font-mono">{{ refreshingList ? '[Refreshing...]' : '[Refresh List]' }}</span>
         </button>
       </div>
     </div>
@@ -44,42 +44,43 @@
 
     <!-- Floating Action Button -->
     <div class="fixed bottom-8 right-8 z-50 flex flex-col-reverse items-end gap-3">
-      <transition name="fab">
+      <transition name="slide-up">
         <div v-if="fabOpen" class="flex flex-col items-end gap-3">
           <button v-if="canEditSub" @click="handlePurgeOffline"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300"
             title="Delete ghost nodes offline for more than 7 days">
             <Trash2 class="w-4 h-4" />
-            <span>Purge Offline</span>
+            <span class="font-mono">[Purge Offline]</span>
           </button>
           <button v-if="canEditSub" @click="handleRefreshAllSubs"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 text-sm font-semibold shadow-lg shadow-indigo-500/10 transition-all duration-300"
             title="Queue a subscription re-fetch for ALL nodes" :disabled="refreshingSubs">
             <RefreshCw :class="['w-4 h-4', refreshingSubs ? 'animate-spin' : '']" />
-            <span>{{ refreshingSubs ? 'Updating...' : 'Update All Devices' }}</span>
+            <span class="font-mono">{{ refreshingSubs ? '[Updating...]' : '[Update All Devices]' }}</span>
           </button>
           <button v-if="canEditSub" @click="showMassUpdateModal = true"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 text-sm font-semibold shadow-lg shadow-emerald-500/10 transition-all duration-300"
             title="Mass update the subscription domain for all nodes">
             <Link class="w-4 h-4" />
-            <span>Mass Update Sub</span>
+            <span class="font-mono">[Mass Update Domain]</span>
           </button>
         </div>
       </transition>
       <button @click="fabOpen = !fabOpen"
-        class="w-16 h-16 flex items-center justify-center bg-indigo-600/80 hover:bg-indigo-500 shadow-xl shadow-indigo-950/50 backdrop-blur-md text-white rounded-full border border-indigo-400/30 transition-all duration-300 hover:scale-105 active:scale-95"
+        class="bg-zinc-900/80 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 rounded-2xl px-4 py-2.5 text-xs font-mono font-bold text-indigo-400 shadow-2xl hover:border-indigo-500/30 transition-all flex items-center gap-2 cursor-pointer"
         title="Quick Fleet Actions" aria-label="Quick Fleet Actions">
         <svg viewBox="0 0 24 24" fill="currentColor"
-          :class="['w-7 h-7 transition-transform duration-500 drop-shadow-[0_0_10px_rgba(129,140,248,0.9)]', fabOpen ? 'rotate-90' : '']">
+          :class="['w-3.5 h-3.5 drop-shadow-[0_0_8px_rgba(129,140,248,0.9)] transition-transform duration-300', fabOpen ? 'rotate-90' : '']">
           <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
         </svg>
+        <span>[⌘ Commands]</span>
       </button>
     </div>
 
     <!-- Mass Update Subscription Domain Modal -->
     <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showMassUpdateModal = false">
       <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight">Mass Update Subscription Domain</h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Mass Update Subscription Domain<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-4">This will replace the domain portion of the subscription URL for ALL nodes while preserving each node&apos;s unique path and token.</p>
         <div class="space-y-4">
           <div>
@@ -272,13 +273,21 @@ return {
 </script>
 
 <style scoped>
-.fab-enter-active,
-.fab-leave-active {
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+.slide-up-enter-active {
+  transition: all 0.3s ease-out;
+  opacity: 1;
+  transform: translateY(0);
 }
-.fab-enter-from,
-.fab-leave-to {
+.slide-up-leave-active {
+  transition: all 0.2s ease-in;
+}
+.slide-up-enter-from {
   opacity: 0;
-  transform: translateY(16px) scale(0.95);
+  transform: translateY(16px);
+}
+.slide-up-leave-to {
+  opacity: 0;
+  transform: translateY(16px);
+  pointer-events: none;
 }
 </style>

@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold tracking-tight">Fleet Users</h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Fleet Users<span class="font-mono text-indigo-400">]</span></h1>
       <div class="flex space-x-4">
         <button @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
           <Users class="w-5 h-5" />
-          <span>Add New User</span>
+          <span class="font-mono text-sm">[Add New User]</span>
         </button>
       </div>
     </div>
@@ -54,7 +54,7 @@
     <!-- Add User Modal -->
     <div v-if="showAddUserModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showAddUserModal = false">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight">Add New User</h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Add New User<span class="font-mono text-indigo-400">]</span></h2>
         <form @submit.prevent="handleCreateUser">
           <div class="space-y-4">
             <div>
@@ -92,7 +92,7 @@
     <!-- Edit User Modal -->
     <div v-if="editingUser" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="editingUser = null">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight">Edit User: {{ editingUser.username }}</h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Edit User<span class="font-mono text-indigo-400">]</span>: {{ editingUser.username }}</h2>
         <form @submit.prevent="handleEditUser">
           <div class="space-y-4">
             <div>

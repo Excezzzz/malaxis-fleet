@@ -5,7 +5,7 @@
         <div class="mx-auto mb-4 w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-400/20 flex items-center justify-center">
           <Globe class="w-6 h-6 text-indigo-300" />
         </div>
-        <h2 class="text-3xl font-bold text-white tracking-tight">Welcome Back</h2>
+        <h2 class="text-3xl font-bold text-white tracking-tight"><span class="font-mono text-indigo-400">[</span>Welcome Back<span class="font-mono text-indigo-400">]</span></h2>
         <p class="mt-2 text-zinc-400">Sign in to manage your fleet</p>
       </div>
       <form class="space-y-6" @submit.prevent="handleLogin">

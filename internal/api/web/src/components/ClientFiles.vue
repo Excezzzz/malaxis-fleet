@@ -2,14 +2,14 @@
   <div>
     <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
       <div>
-        <h1 class="text-4xl font-bold tracking-tight">Client Files</h1>
+        <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Client Files<span class="font-mono text-indigo-400">]</span></h1>
         <p class="text-zinc-500 mt-1 text-sm">Deploy templates served to fleet agents at <span class="text-indigo-300 font-mono">/node_agent.py</span>, <span class="text-indigo-300 font-mono">/fleet-cli.sh</span> and friends. Edit a file, save it, then push to devices.</p>
       </div>
       <button @click="pushFiles" :disabled="pushing"
         :class="['flex items-center space-x-2 px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 border', pushing ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
         <Rocket v-if="!pushing" class="w-5 h-5" />
         <RefreshCw v-else class="w-5 h-5 animate-spin" />
-        <span>{{ pushing ? 'Queuing...' : 'Push Latest Client Files to Devices' }}</span>
+        <span class="font-mono text-sm">{{ pushing ? '[Queuing...]' : '[Push Latest Client Files to Devices]' }}</span>
       </button>
     </div>
 
@@ -44,7 +44,7 @@
               :class="['flex items-center space-x-2 px-4 py-1.5 rounded-xl text-sm font-semibold border transition-all duration-300', saving ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
               <Save v-if="!saving" class="w-4 h-4" />
               <RefreshCw v-else class="w-4 h-4 animate-spin" />
-              <span>{{ saving ? 'Saving...' : 'Save File' }}</span>
+              <span class="font-mono text-sm">{{ saving ? '[Saving...]' : '[Save File]' }}</span>
             </button>
           </div>
         </div>

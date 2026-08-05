@@ -1,10 +1,10 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold tracking-tight">Custom Roles & Permissions</h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Roles &amp; Permissions<span class="font-mono text-indigo-400">]</span></h1>
       <button @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
         <Plus class="w-5 h-5" />
-        <span>Create New Role</span>
+        <span class="font-mono text-sm">[Create New Role]</span>
       </button>
     </div>
 
@@ -58,7 +58,7 @@
     <!-- Create Role Modal -->
     <div v-if="showCreateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showCreateModal = false">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight">Create New Custom Role</h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Create New Custom Role<span class="font-mono text-indigo-400">]</span></h2>
 
         <form @submit.prevent="handleCreateRole">
           <div class="space-y-6">
@@ -100,7 +100,7 @@
     <!-- Edit Role Modal -->
     <div v-if="editingRole" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="editingRole = null">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6">Edit Role: {{ editingRole.name }}</h2>
+        <h2 class="text-2xl font-bold mb-6"><span class="font-mono text-indigo-400">[</span>Edit Role<span class="font-mono text-indigo-400">]</span>: {{ editingRole.name }}</h2>
 
         <form @submit.prevent="handleEditRole">
           <div class="space-y-6">
