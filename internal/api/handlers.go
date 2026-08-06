@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -434,6 +435,136 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Client Onboarding & Subscription Validation ---
 
+func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.enforcePermission(w, r, domain.PermSwitchVPN) {
+		return
+	}
+
+	vars := mux.Vars(r)
+	nodeID := vars["id"]
+
+	var req map[string]interface{}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if _, hasCmd := req["command"]; !hasCmd {
+		if _, hasAction := req["action"]; !hasAction {
+			http.Error(w, "Bad Request: command or action is required", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Security hardening: only whitelisted actions are accepted here. The
+	// agent's arbitrary shell/script execution (`exec`) and raw config write
+	// (`apply_config`, `install_xray`, `install_singbox`) are intentionally
+	// forbidden through the dashboard API; a can_switch_vpn credential must
+	// never translate into code execution on fleet nodes.
+	action, _ := req["action"].(string)
+	if action == "" {
+		if commandStr, ok := req["command"].(string); ok && strings.HasPrefix(strings.TrimSpace(commandStr), "switch:") {
+			action = "switch"
+		} else {
+			action = "unknown"
+		}
+	}
+	if req["command"] != nil {
+		if cmdStr, ok := req["command"].(string); ok && strings.HasPrefix(strings.TrimSpace(cmdStr), "switch:") {
+			action = "switch"
+		}
+	}
+	if action == "" || !allowedCommandActions[action] {
+		http.Error(w, "Bad Request: action not permitted", http.StatusBadRequest)
+		return
+	}
+
+	cmdJSON, err := json.Marshal(req)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	messageID := time.Now().Unix()
+	if err := a.repo.SetPendingCommand(nodeID, string(cmdJSON), messageID); err != nil {
+		log.Printf("ERROR: Failed to set pending command for node %s: %v", nodeID, err)
+		if errors.Is(err, repository.ErrNodeNotFound) {
+			http.Error(w, "Node not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	actionDisplay := action
+	if action == "" {
+		actionDisplay, _ = req["command"].(string)
+	}
+	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", actionDisplay)
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, nodeID, "Sent command: "+string(cmdJSON))
+
+	log.Printf("Command queued for node %s: %s", nodeID, string(cmdJSON))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "ok",
+		"message": "Command queued for node",
+	})
+}
+
+// allowedCommandActions lists the command actions that may be queued through
+// the dashboard's SendCommandHandler. Dangerous agent capabilities (arbitrary
+// shell execution, raw config file writes, engine installs) are excluded.
+var allowedCommandActions = map[string]bool{
+	"switch":              true,
+	"update_sub":          true,
+	"update_client_files": true,
+}
+
+// isOwnSubscriptionURL reports whether raw points at one of the fleet's own
+// domains, used by the public onboarding endpoint to prove the subscription
+// belongs to this server. IP-literals (loopback, metadata, private ranges) are
+// rejected outright to keep the onboarding path SSRF-free.
+func (a *API) isOwnSubscriptionURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return false
+	}
+	for _, d := range []string{a.config.ApiDomain, a.config.SubDomain, a.config.DashboardDomain} {
+		if d == "" {
+			continue
+		}
+		dl := strings.ToLower(d)
+		if host == dl || strings.HasSuffix(host, "."+dl) {
+			return true
+		}
+	}
+	return false
+}
+
+// validSubscriptionURL enforces scheme + no-userinfo rules on subscription
+// URLs supplied by authenticated admins (web / Telegram). URLs with embedded
+// credentials (user:pass@host) are rejected because tokens in the path/query
+// are the intended pattern and any accidental password-in-URL is refused.
+func validSubscriptionURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return false
+	}
+	return true
+}
+
 func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request) {
 	var req SubscriptionValidateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -446,8 +577,12 @@ func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Validate that the subscription URL contains our API domain
-	if !strings.Contains(req.SubscriptionURL, a.config.ApiDomain) && !strings.Contains(req.SubscriptionURL, a.config.SubDomain) {
+	// Validate that the subscription URL points at this server's own domain.
+	// The previous substring check could be tricked by embedding our domain
+	// inside an attacker-controlled host (e.g. api.yourdomain.com.evil.com),
+	// which is exactly the SSRF (server-side autosync http.Get) vector we
+	// block here: parse the real host and require an exact/suffix match.
+	if !a.isOwnSubscriptionURL(req.SubscriptionURL) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]string{
@@ -672,6 +807,11 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !validSubscriptionURL(req.SubURL) {
+		http.Error(w, "Bad Request: sub_url must be a valid http(s) URL", http.StatusBadRequest)
+		return
+	}
+
 	// Execute direct PostgreSQL UPDATE to ensure sub_url is properly committed
 	node, err := a.repo.GetNodeByID(nodeID)
 	if err != nil {
@@ -725,6 +865,11 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.SubURL == "" {
 		http.Error(w, "Bad Request: sub_url is required", http.StatusBadRequest)
+		return
+	}
+
+	if !validSubscriptionURL(req.SubURL) {
+		http.Error(w, "Bad Request: sub_url must be a valid http(s) URL", http.StatusBadRequest)
 		return
 	}
 
@@ -2312,65 +2457,6 @@ func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SendCommandHandler sends a command to a specific node's pending_command.
-// Accepts either the documented switch payload `{"command": "switch:zoom"}`
-// or a structured action payload `{"action": "switch", "outbound_tag": "zoom"}`.
-func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.enforcePermission(w, r, domain.PermSwitchVPN) {
-		return
-	}
-
-	vars := mux.Vars(r)
-	nodeID := vars["id"]
-
-	var req map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-		return
-	}
-
-	if _, hasCmd := req["command"]; !hasCmd {
-		if _, hasAction := req["action"]; !hasAction {
-			http.Error(w, "Bad Request: command or action is required", http.StatusBadRequest)
-			return
-		}
-	}
-
-	cmdJSON, err := json.Marshal(req)
-	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	messageID := time.Now().Unix()
-	if err := a.repo.SetPendingCommand(nodeID, string(cmdJSON), messageID); err != nil {
-		log.Printf("ERROR: Failed to set pending command for node %s: %v", nodeID, err)
-		if errors.Is(err, repository.ErrNodeNotFound) {
-			http.Error(w, "Node not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	action, _ := req["action"].(string)
-	if action == "" {
-		action, _ = req["command"].(string)
-	}
-	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", action)
-
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, nodeID, "Sent command: "+string(cmdJSON))
-
-	log.Printf("Command queued for node %s: %s", nodeID, string(cmdJSON))
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "ok",
-		"message": "Command queued for node",
-	})
-}
-
 // --- Log Fetching Handlers ---
 
 // GetNodeLogsHandler returns the latest docker log tail for a node's
@@ -2438,6 +2524,23 @@ func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
 	container := r.URL.Query().Get("container")
 	if container == "" {
 		container = "fleet-master"
+	}
+
+	// Security hardening: only a whitelisted set of master containers may be
+	// inspected. This keeps the `docker logs <container>` invocation (exec.Command
+	// with user-supplied args) from being used to read arbitrary container logs
+	// or, in a crafted case, reaching paths the Logs & Audit tab should not touch.
+	allowedMasterContainers := map[string]bool{
+		"fleet-master":   true,
+		"fleet-postgres": true,
+	}
+	if !allowedMasterContainers[container] {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"logs":  "",
+			"error": "invalid_container",
+		})
+		return
 	}
 
 	// For the master itself, prefer a configured log file when it exists.
