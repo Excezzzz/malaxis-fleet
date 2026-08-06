@@ -80,12 +80,14 @@ type CustomRoleRequest struct {
 	Name            string `json:"name"`
 	ColorHex        string `json:"color_hex"`
 	PermissionsJSON string `json:"permissions_json"`
+	Rank            int    `json:"rank"`
 }
 
 type UpdateCustomRoleRequest struct {
 	Name            string `json:"name"`
 	ColorHex        string `json:"color_hex"`
 	PermissionsJSON string `json:"permissions_json"`
+	Rank            int    `json:"rank"`
 }
 
 type UpdateUserRequest struct {
@@ -174,6 +176,18 @@ func (a *API) writeForbidden(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
 	json.NewEncoder(w).Encode(ErrResponse{Error: message})
+}
+
+// roleRank resolves the effective hierarchy rank of a role. It prefers the
+// configurable rank stored in the roles table (for custom and seeded roles)
+// and falls back to the built-in domain rank table for owners / hardcoded
+// roles that are matched by name but might not exist as rows.
+func (a *API) roleRank(roleName string) int {
+	role, err := a.repo.GetRoleByName(roleName)
+	if err == nil && role.Rank >= 1 && role.Rank <= 100 {
+		return role.Rank
+	}
+	return domain.RoleRank(roleName)
 }
 
 // parsePermissionsJSON parses a role's permissions_json in both supported
@@ -973,7 +987,13 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
+	actorUser, err := a.repo.GetUserByID(actorID)
+	if err != nil || actorUser == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(ErrResponse{Error: "Forbidden: User not found"})
+		return
+	}
 
 	var req CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1019,8 +1039,8 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	// STRICTLY LOWER than their own. Creating a user with an equal or higher
 	// rank (e.g. an admin creating another admin, or a client escalating to
 	// owner) is forbidden.
-	actorRank := domain.RoleRank(actorUser.Role)
-	if domain.RoleRank(req.Role) >= actorRank {
+	actorRank := a.roleRank(actorUser.Role)
+	if a.roleRank(req.Role) >= actorRank {
 		a.writeForbidden(w, "Forbidden: Cannot create users with equal or higher role rank")
 		return
 	}
@@ -1134,7 +1154,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	// ROLE HIERARCHY: an actor may only edit a target whose role rank is
 	// STRICTLY LOWER than their own. Editing an equal/higher rank (an admin
 	// demoting another admin, or anything touching the owner) is forbidden.
-	if domain.RoleRank(user.Role) >= domain.RoleRank(actorUser.Role) {
+	if a.roleRank(user.Role) >= a.roleRank(actorUser.Role) {
 		a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
 		return
 	}
@@ -1161,7 +1181,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Role != "" {
 		// An actor may not grant a target a role with an equal/higher rank
 		// than themselves, even when the target currently ranks lower.
-		if domain.RoleRank(req.Role) >= domain.RoleRank(actorUser.Role) {
+		if a.roleRank(req.Role) >= a.roleRank(actorUser.Role) {
 			a.writeForbidden(w, "Forbidden: Cannot assign a role with equal or higher role rank")
 			return
 		}
@@ -1259,7 +1279,7 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	// STRICTLY LOWER than their own. This protects the owner account and any
 	// equal-or-higher-rank colleague from lower-rank deletion.
 	actorUser, errAct := a.repo.GetUserByID(actorID)
-	if errAct == nil && domain.RoleRank(user.Role) >= domain.RoleRank(actorUser.Role) {
+	if errAct == nil && a.roleRank(user.Role) >= a.roleRank(actorUser.Role) {
 		a.writeForbidden(w, "Forbidden: Cannot delete users with equal or higher role rank")
 		return
 	}
@@ -1320,7 +1340,7 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 
 	// ROLE HIERARCHY: password resets count as modification. An actor may
 	// only reset passwords of users ranking strictly lower than themselves.
-	if domain.RoleRank(targetUser.Role) >= domain.RoleRank(actorUser.Role) {
+	if a.roleRank(targetUser.Role) >= a.roleRank(actorUser.Role) {
 		a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
 		return
 	}
@@ -1364,8 +1384,6 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ownerID, _ := r.Context().Value(auth.UserContextKey).(int64)
-
 	var req CustomRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request: Invalid JSON", http.StatusBadRequest)
@@ -1374,6 +1392,25 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" {
 		http.Error(w, "Bad Request: name is required", http.StatusBadRequest)
+		return
+	}
+
+	// ROLE RANK ENFORCEMENT: the actor may only create roles ranked STRICTLY
+	// LOWER than their own role. A custom role with a rank >= actor rank could
+	// be granted to peers, breaking the hierarchy.
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, err := a.repo.GetUserByID(actorID)
+	if err != nil {
+		a.writeForbidden(w, "Forbidden: User not found")
+		return
+	}
+	actorRank := a.roleRank(actorUser.Role)
+
+	if req.Rank < 1 {
+		req.Rank = domain.RoleRankViewer
+	}
+	if req.Rank >= 100 || req.Rank >= actorRank {
+		a.writeForbidden(w, "Forbidden: Role rank must be lower than your current rank ("+strconv.Itoa(actorRank)+")")
 		return
 	}
 
@@ -1393,8 +1430,9 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	role := &domain.CustomRole{
 		Name:            req.Name,
 		ColorHex:        req.ColorHex,
-		OwnerID:         strconv.FormatInt(ownerID, 10),
+		OwnerID:         strconv.FormatInt(actorID, 10),
 		PermissionsJSON: req.PermissionsJSON,
+		Rank:            req.Rank,
 		CreatedAt:       time.Now(),
 	}
 
@@ -1410,8 +1448,6 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	role.ID = id
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
 	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionCreateUser, role.Name, "Created custom role")
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1475,6 +1511,36 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ROLE RANK ENFORCEMENT:
+	//  - The owner role (rank 100) is completely immutable: nobody may
+	//    re-rank or otherwise modify it.
+	//  - An actor may only modify roles ranked STRICTLY LOWER than their own.
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, err := a.repo.GetUserByID(actorID)
+	if err != nil {
+		a.writeForbidden(w, "Forbidden: User not found")
+		return
+	}
+	actorRank := a.roleRank(actorUser.Role)
+
+	existingRank := existing.Rank
+	if existingRank < 1 {
+		existingRank = a.roleRank(existing.Name)
+	}
+
+	if existing.Name == domain.RoleOwner || existing.Rank >= domain.RoleRankOwner {
+		a.writeForbidden(w, "Forbidden: The owner role is immutable and cannot be modified")
+		return
+	}
+	if existingRank >= actorRank {
+		a.writeForbidden(w, "Forbidden: Cannot modify a role with an equal or higher rank than yours")
+		return
+	}
+	if req.Rank >= 100 || req.Rank >= actorRank {
+		a.writeForbidden(w, "Forbidden: Role rank must be lower than your current rank ("+strconv.Itoa(actorRank)+")")
+		return
+	}
+
 	// Escalation guard: an actor may never grant permissions they do not
 	// hold themselves (owner/admin bypass via enforcePermission).
 	if req.PermissionsJSON != "" && !a.rolePermissionsAllowed(w, r, req.PermissionsJSON) {
@@ -1490,6 +1556,9 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	if req.PermissionsJSON != "" {
 		existing.PermissionsJSON = req.PermissionsJSON
 	}
+	if req.Rank >= 1 {
+		existing.Rank = req.Rank
+	}
 
 	if err := a.repo.UpdateCustomRole(existing); err != nil {
 		if strings.Contains(err.Error(), "duplicate key") || strings.Contains(err.Error(), "23505") {
@@ -1501,8 +1570,6 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
 	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, existing.Name, "Updated custom role")
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1529,6 +1596,30 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ROLE RANK ENFORCEMENT: the owner role is immutable and may never be
+	// deleted or re-ranked. An actor may only delete roles ranked STRICTLY
+	// LOWER than their own.
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, err := a.repo.GetUserByID(actorID)
+	if err != nil {
+		a.writeForbidden(w, "Forbidden: User not found")
+		return
+	}
+	actorRank := a.roleRank(actorUser.Role)
+
+	roleRank := role.Rank
+	if roleRank < 1 {
+		roleRank = a.roleRank(role.Name)
+	}
+	if role.Name == domain.RoleOwner || role.Rank >= domain.RoleRankOwner {
+		a.writeForbidden(w, "Forbidden: The owner role is immutable and cannot be deleted")
+		return
+	}
+	if roleRank >= actorRank {
+		a.writeForbidden(w, "Forbidden: Cannot delete a role with an equal or higher rank than yours")
+		return
+	}
+
 	// Prevent deletion of system roles (owner_id = 'system')
 	if role.OwnerID == "system" {
 		http.Error(w, "Bad Request: Cannot delete system roles", http.StatusBadRequest)
@@ -1547,8 +1638,6 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
 	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteUser, role.Name, "Deleted custom role")
 
 	w.WriteHeader(http.StatusNoContent)

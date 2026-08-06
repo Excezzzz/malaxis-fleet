@@ -34,6 +34,9 @@
                     :style="{ backgroundColor: user.role_color || user.color_hex || '#374151', color: '#ffffff' }">
                 {{ user.role_name || user.role }}
               </span>
+              <span v-if="userRank(user) !== null" class="ml-2 px-2 py-1 inline-flex text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">
+                [ Rank: {{ userRank(user) }} ]
+              </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ new Date(user.created_at).toLocaleDateString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -126,9 +129,17 @@
 import { ref, computed, inject, onMounted } from 'vue';
 import { Users, Trash2, Plus, Edit, Lock } from 'lucide-vue-next';
 
-const ROLE_RANK = { owner: 100, admin: 80, client: 50, viewer: 10 };
+// Fallback rank table for built-in roles when the DB rank hasn't loaded yet.
+const ROLE_RANK = { owner: 100, admin: 80, client: 30, viewer: 10 };
 
-const roleRank = (role) => ROLE_RANK[role] || 50;
+const roleRank = (role, rolesList) => {
+  const normalized = (role || '').toLowerCase();
+  if (rolesList && rolesList.length) {
+    const match = rolesList.find(r => (r.name || '').toLowerCase() === normalized);
+    if (match && match.rank) return match.rank;
+  }
+  return ROLE_RANK[normalized] ?? 10;
+};
 
 export default {
   name: 'AdminUsers',
@@ -136,7 +147,6 @@ export default {
   setup() {
     const authCtxRaw = inject('authCtx', {});
     const actorRole = computed(() => authCtxRaw.user?.value?.role || '');
-    const actorRank = computed(() => roleRank(actorRole.value));
     const canCreateUsers = computed(() => authCtxRaw.canCreateUsers?.value ?? false);
     const canEditUsers = computed(() => authCtxRaw.canEditUsers?.value ?? false);
     const canDeleteUsers = computed(() => authCtxRaw.canDeleteUsers?.value ?? false);
@@ -149,6 +159,10 @@ export default {
     const newUser = ref({ username: '', password: '', role_id: '', color_hex: '#374151' });
     const editUserForm = ref({ role: '', password: '' });
 
+    // Actor's effective rank, resolved against the fetched roles list (which
+    // carries the configurable DB rank) with a built-in fallback.
+    const actorRank = computed(() => roleRank(actorRole.value, customRoles.value));
+
     // The owner role is reserved for the original admin account; it must never
     // appear in create/edit dropdowns.
     const allRoles = computed(() => {
@@ -158,20 +172,31 @@ export default {
     // Only roles ranked STRICTLY LOWER than the actor may be offered for
     // creation/assignment — mirrors the API's hierarchy enforcement.
     const availableRoles = computed(() => {
-      return (allRoles.value || []).filter(r => roleRank(r.name) < actorRank.value);
+      return (allRoles.value || []).filter(r => roleRank(r.name, customRoles.value) < actorRank.value);
     });
 
     const currentUser = ref(null);
     const createError = ref('');
 
+    // Rank for a given user row, resolved from the roles list when possible.
+    const userRank = (user) => {
+      const roleName = user.role || user.role_name || '';
+      if (!roleName) return null;
+      try {
+        return roleRank(roleName, customRoles.value);
+      } catch (_) {
+        return null;
+      }
+    };
+
     // A target row's actions are only rendered (a) when the actor holds the
     // matching permission AND (b) the target role rank is STRICTLY LOWER than
     // the actor's own rank.
     const canEditUserRow = (user) => {
-      return canEditUsers.value && roleRank(user.role || user.role_name) < actorRank.value;
+      return canEditUsers.value && roleRank(user.role || user.role_name, customRoles.value) < actorRank.value;
     };
     const canDeleteUserRow = (user) => {
-      return canDeleteUsers.value && roleRank(user.role || user.role_name) < actorRank.value;
+      return canDeleteUsers.value && roleRank(user.role || user.role_name, customRoles.value) < actorRank.value;
     };
 
     const openAddUserModal = () => {
@@ -352,6 +377,7 @@ export default {
       canCreateUsers,
       canEditUserRow,
       canDeleteUserRow,
+      userRank,
     };
   },
 };

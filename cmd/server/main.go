@@ -156,11 +156,25 @@ func seedDefaultRoles(repo repository.Repository) error {
 
 	now := time.Now()
 
+	ownerRole := &domain.CustomRole{
+		Name:            "owner",
+		ColorHex:        "#FF5733",
+		OwnerID:         "system",
+		PermissionsJSON: `{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}`,
+		Rank:            domain.RoleRankOwner,
+		CreatedAt:       now,
+	}
+	if _, err := repo.AddCustomRole(ownerRole); err != nil {
+		return err
+	}
+	log.Println("Seeded role: owner")
+
 	adminRole := &domain.CustomRole{
 		Name:            "admin",
 		ColorHex:        "#EF4444",
 		OwnerID:         "system",
 		PermissionsJSON: `{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}`,
+		Rank:            domain.RoleRankAdmin,
 		CreatedAt:       now,
 	}
 	if _, err := repo.AddCustomRole(adminRole); err != nil {
@@ -173,12 +187,26 @@ func seedDefaultRoles(repo repository.Repository) error {
 		ColorHex:        "#3B82F6",
 		OwnerID:         "system",
 		PermissionsJSON: `{"can_view_nodes":true}`,
+		Rank:            domain.RoleRankClient,
 		CreatedAt:       now,
 	}
 	if _, err := repo.AddCustomRole(clientRole); err != nil {
 		return err
 	}
 	log.Println("Seeded role: client")
+
+	viewerRole := &domain.CustomRole{
+		Name:            "viewer",
+		ColorHex:        "#6B7280",
+		OwnerID:         "system",
+		PermissionsJSON: `{"can_view_nodes":true}`,
+		Rank:            domain.RoleRankViewer,
+		CreatedAt:       now,
+	}
+	if _, err := repo.AddCustomRole(viewerRole); err != nil {
+		return err
+	}
+	log.Println("Seeded role: viewer")
 
 	return nil
 }

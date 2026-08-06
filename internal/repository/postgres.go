@@ -86,6 +86,7 @@ func (r *postgresRepository) Init() error {
 			color_hex VARCHAR(7) NOT NULL DEFAULT '#6B7280',
 			owner_id TEXT,
 			permissions_json TEXT NOT NULL DEFAULT '{}',
+			rank INT NOT NULL DEFAULT 10,
 			created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 		)`,
 		`CREATE TABLE IF NOT EXISTS audit_logs (
@@ -134,6 +135,35 @@ func (r *postgresRepository) Init() error {
 	r.db.Exec(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_owner_id_fkey`)
 	r.db.Exec(`ALTER TABLE roles ALTER COLUMN owner_id TYPE TEXT`)
 	r.db.Exec(`ALTER TABLE roles ALTER COLUMN owner_id DROP NOT NULL`)
+
+	// Migrate: Add configurable rank column (int hierarchy) if it doesn't exist
+	r.db.Exec(`ALTER TABLE roles ADD COLUMN IF NOT EXISTS rank INT NOT NULL DEFAULT 10`)
+	r.db.Exec(`ALTER TABLE roles ALTER COLUMN rank SET DEFAULT 10`)
+
+	// Backfill ranks for the built-in system roles. Idempotent: only roles
+	// found in the DB are touched, so existing deployments keep their data.
+	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'owner'`, domain.RoleRankOwner)
+	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'admin'`, domain.RoleRankAdmin)
+	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'client'`, domain.RoleRankClient)
+	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'viewer'`, domain.RoleRankViewer)
+	// Any non-system/custom role that still defaults to the client rank keeps
+	// its stored value; only NULL/zero ranks are normalized to the default.
+	r.db.Exec(`UPDATE roles SET rank = 10 WHERE rank IS NULL OR rank < 1 OR rank > 100`)
+
+	// Ensure the built-in system roles exist even on upgraded deployments whose
+	// roles table was seeded before the owner/viewer rows were introduced.
+	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+		SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 80, NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin')`)
+	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+		SELECT 'client', '#3B82F6', 'system', '{"can_view_nodes":true}', 30, NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'client')`)
+	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+		SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 100, NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'owner')`)
+	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+		SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer')`)
 
 	// Migrate: Copy old bot settings keys to new tg_ prefixed keys
 	r.migrateBotSettings()
@@ -186,7 +216,7 @@ func (r *postgresRepository) migrateSystemRolePermissions() {
 			merged = string(b)
 		}
 		if merged != role.PermissionsJSON {
-			if err := r.UpdateCustomRole(&domain.CustomRole{ID: role.ID, Name: role.Name, ColorHex: role.ColorHex, PermissionsJSON: merged}); err != nil {
+			if err := r.UpdateCustomRole(&domain.CustomRole{ID: role.ID, Name: role.Name, ColorHex: role.ColorHex, PermissionsJSON: merged, Rank: role.Rank}); err != nil {
 				log.Printf("ERROR: failed to persist migrated permissions for role %q: %v", role.Name, err)
 			} else {
 				log.Printf("Migrated permissions_json for system role %q", role.Name)
@@ -575,13 +605,13 @@ func (r *postgresRepository) CountUsersByRole(role string) (int, error) {
 
 func (r *postgresRepository) AddCustomRole(role *domain.CustomRole) (int64, error) {
 	var id int64
-	query := "INSERT INTO roles (name, color_hex, owner_id, permissions_json, created_at) VALUES ($1, $2, $3, $4, $5) RETURNING id"
-	err := r.db.QueryRow(query, role.Name, role.ColorHex, role.OwnerID, role.PermissionsJSON, role.CreatedAt).Scan(&id)
+	query := "INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
+	err := r.db.QueryRow(query, role.Name, role.ColorHex, role.OwnerID, role.PermissionsJSON, role.Rank, role.CreatedAt).Scan(&id)
 	return id, err
 }
 
 func (r *postgresRepository) GetCustomRolesByOwner(ownerID string) ([]domain.CustomRole, error) {
-	rows, err := r.db.Query("SELECT id, name, color_hex, owner_id, permissions_json, created_at FROM roles WHERE owner_id = $1 ORDER BY name", ownerID)
+	rows, err := r.db.Query("SELECT id, name, color_hex, owner_id, permissions_json, rank, created_at FROM roles WHERE owner_id = $1 ORDER BY name", ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -590,7 +620,7 @@ func (r *postgresRepository) GetCustomRolesByOwner(ownerID string) ([]domain.Cus
 	var roles []domain.CustomRole
 	for rows.Next() {
 		var c domain.CustomRole
-		if err := rows.Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.Rank, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		roles = append(roles, c)
@@ -600,8 +630,8 @@ func (r *postgresRepository) GetCustomRolesByOwner(ownerID string) ([]domain.Cus
 
 func (r *postgresRepository) GetRoleByName(name string) (*domain.CustomRole, error) {
 	var c domain.CustomRole
-	query := "SELECT id, name, color_hex, COALESCE(owner_id, ''), permissions_json, created_at FROM roles WHERE name = $1"
-	err := r.db.QueryRow(query, name).Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.CreatedAt)
+	query := "SELECT id, name, color_hex, COALESCE(owner_id, ''), permissions_json, rank, created_at FROM roles WHERE name = $1"
+	err := r.db.QueryRow(query, name).Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.Rank, &c.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +639,7 @@ func (r *postgresRepository) GetRoleByName(name string) (*domain.CustomRole, err
 }
 
 func (r *postgresRepository) GetAllRoles() ([]domain.CustomRole, error) {
-	rows, err := r.db.Query("SELECT id, name, color_hex, COALESCE(owner_id, ''), permissions_json, created_at FROM roles ORDER BY name")
+	rows, err := r.db.Query("SELECT id, name, color_hex, COALESCE(owner_id, ''), permissions_json, rank, created_at FROM roles ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
@@ -618,7 +648,7 @@ func (r *postgresRepository) GetAllRoles() ([]domain.CustomRole, error) {
 	var roles []domain.CustomRole
 	for rows.Next() {
 		var c domain.CustomRole
-		if err := rows.Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.Rank, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 		roles = append(roles, c)
@@ -628,8 +658,8 @@ func (r *postgresRepository) GetAllRoles() ([]domain.CustomRole, error) {
 
 func (r *postgresRepository) GetRoleByID(id int64) (*domain.CustomRole, error) {
 	var c domain.CustomRole
-	query := "SELECT id, name, color_hex, COALESCE(owner_id, ''), permissions_json, created_at FROM roles WHERE id = $1"
-	err := r.db.QueryRow(query, id).Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.CreatedAt)
+	query := "SELECT id, name, color_hex, COALESCE(owner_id, ''), permissions_json, rank, created_at FROM roles WHERE id = $1"
+	err := r.db.QueryRow(query, id).Scan(&c.ID, &c.Name, &c.ColorHex, &c.OwnerID, &c.PermissionsJSON, &c.Rank, &c.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -637,8 +667,8 @@ func (r *postgresRepository) GetRoleByID(id int64) (*domain.CustomRole, error) {
 }
 
 func (r *postgresRepository) UpdateCustomRole(role *domain.CustomRole) error {
-	query := "UPDATE roles SET name = $1, color_hex = $2, permissions_json = $3 WHERE id = $4"
-	_, err := r.db.Exec(query, role.Name, role.ColorHex, role.PermissionsJSON, role.ID)
+	query := "UPDATE roles SET name = $1, color_hex = $2, permissions_json = $3, rank = $4 WHERE id = $5"
+	_, err := r.db.Exec(query, role.Name, role.ColorHex, role.PermissionsJSON, role.Rank, role.ID)
 	return err
 }
 
