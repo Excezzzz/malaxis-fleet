@@ -4,51 +4,40 @@
       <Login @authenticated="login" />
     </div>
     <div v-else class="relative min-h-screen">
-      <nav class="fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto flex items-center justify-between gap-3 px-5 sm:px-6 py-3 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">
-        <div class="flex items-center space-x-3 shrink-0">
-          <div class="p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
-            <Globe class="w-5 h-5 text-indigo-300" />
+      <nav class="fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">
+        <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
+          <div class="p-1.5 sm:p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
+            <Globe class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-300" />
           </div>
           <div class="leading-tight">
-            <h1 class="text-base sm:text-lg font-bold tracking-tight">Malaxis Fleet</h1>
+            <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
             <span class="hidden sm:inline-block bg-red-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-red-950/50">v2.1-BETA</span>
           </div>
         </div>
 
-        <div class="hidden md:flex items-center gap-1">
+        <div class="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none md:justify-center">
           <a v-for="item in navItems" :key="item.view" @click.prevent="currentView = item.view" href="#"
              :title="item.label"
-             class="flex items-center space-x-2 px-3 lg:px-4 py-2 rounded-full text-sm transition-colors whitespace-nowrap"
+             class="flex items-center space-x-2 px-2.5 sm:px-3 lg:px-4 py-2 rounded-full text-sm transition-colors whitespace-nowrap shrink-0"
              :class="navLinkClasses(item.view)">
             <component :is="item.icon" class="w-4 h-4" />
             <span class="hidden lg:inline font-mono text-xs">[{{ item.label }}]</span>
           </a>
         </div>
 
-        <div class="flex items-center space-x-3 shrink-0">
-          <div v-if="username" class="hidden sm:flex flex-col text-right mr-4">
-            <span class="text-sm font-bold text-white">{{ username }}</span>
+        <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
+          <div v-if="username" class="hidden sm:flex flex-col text-right mr-2">
+            <span class="text-sm font-bold text-white whitespace-nowrap">{{ username }}</span>
             <span v-if="roleName" class="text-[10px] uppercase tracking-wider text-indigo-400">{{ roleName }}</span>
           </div>
-          <button @click="logout" class="flex items-center space-x-2 px-3 py-2 rounded-full text-sm text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors">
+          <button @click="logout" class="flex items-center space-x-1.5 px-2.5 sm:px-3 py-2 rounded-full text-sm text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors">
             <LogOut class="w-4 h-4" />
-            <span>Logout</span>
+            <span class="hidden min-[420px]:inline">Logout</span>
           </button>
         </div>
       </nav>
 
-      <div class="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[calc(100%-2rem)] max-w-md">
-        <div v-if="navItems.length > 0" class="flex items-center justify-around gap-1 rounded-full bg-zinc-900/80 backdrop-blur-xl border border-white/10 shadow-2xl shadow-black/40 p-1.5">
-          <a v-for="item in navItems" :key="item.view" @click.prevent="currentView = item.view" href="#"
-             :title="item.label"
-             class="flex items-center justify-center p-2.5 rounded-full text-sm transition-colors"
-             :class="navLinkClasses(item.view)">
-            <component :is="item.icon" class="w-5 h-5" />
-          </a>
-        </div>
-      </div>
-
-      <main class="w-full px-4 md:px-8 pt-28 pb-16">
+      <main class="w-full px-4 md:px-8 pt-24 sm:pt-28 pb-16">
         <div v-if="isReadOnly" class="mb-6 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
           <strong>Read-only mode:</strong> your role only has view access. Management actions are hidden.
         </div>

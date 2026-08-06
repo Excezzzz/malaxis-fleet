@@ -11,11 +11,11 @@
           <div class="flex items-center space-x-2 min-w-0">
             <h2 class="text-xl font-bold tracking-tight truncate">{{ node.name }}</h2>
             <button v-if="canRename" @click="showRenameModal = true" title="Rename node"
-              class="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
+              class="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors">
               <Pencil class="w-3.5 h-3.5" />
             </button>
             <button v-if="canDelete" @click="confirmDelete()" title="Delete node"
-              class="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors">
+              class="p-2 rounded-lg hover:bg-red-500/10 transition-colors">
               <svg class="w-4 h-4 text-zinc-500 hover:text-red-400 cursor-pointer transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
@@ -41,7 +41,7 @@
             <span class="text-zinc-500 text-xs uppercase">Sub URL</span>
             <template v-if="node.sub_url">
               <div class="flex items-center gap-2">
-                <span class="text-xs text-zinc-400 truncate max-w-[180px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
+                <span class="text-xs text-zinc-400 truncate max-w-[140px] sm:max-w-[180px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
                 <button @click="copySubUrl" title="Copy subscription URL"
                   class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors shrink-0">
                   <Copy class="w-3 h-3" />
@@ -82,25 +82,25 @@
         </div>
         <template v-if="canManage">
             <div class="flex flex-wrap gap-2">
-                <button v-if="canEditSubCard" @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canEditSubCard" @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Link class="w-4 h-4" />
                   <span class="font-mono text-sm">[Manage Sub URL]</span>
                 </button>
-                <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Shield class="w-4 h-4" />
                   <span class="font-mono text-sm">[Switch VPN]</span>
                 </button>
             </div>
             <div class="flex flex-wrap gap-2">
-                <button v-if="canViewNodeLogs" @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canViewNodeLogs" @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                     <ScrollText class="w-4 h-4" />
                     <span class="font-mono text-sm">[View Logs]</span>
                 </button>
-                <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Hourglass class="w-4 h-4" />
                   <span class="font-mono text-sm">[Task Queue ({{ pendingCommandCount }})]</span>
                 </button>
-                <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+                <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <RefreshCw class="w-4 h-4" />
                   <span class="font-mono text-sm">[Push Client Files]</span>
                 </button>
@@ -115,7 +115,7 @@
 
     <!-- Modals -->
     <div v-if="showRenameModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showRenameModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Rename Node<span class="font-mono text-indigo-400">]</span></h2>
         <input v-model="newNodeName" type="text" placeholder="My Device" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
         <div class="mt-8 flex justify-end space-x-4">
@@ -126,7 +126,7 @@
     </div>
 
     <div v-if="showDeleteModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showDeleteModal = false">
-      <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300"><span class="font-mono text-red-400">[</span>Delete Node<span class="font-mono text-red-400">]</span></h2>
         <p class="text-zinc-400 mb-6 text-sm">Choose how to remove <strong class="text-white">{{ node.name }}</strong> from the fleet.</p>
         <button v-if="canSoftDelete" @click="softDeleteNode" class="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-left mb-3">
@@ -155,7 +155,7 @@
     </div>
 
     <div v-if="showTaskQueueModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showTaskQueueModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Task Queue<span class="font-mono text-indigo-400">]</span></h2>
           <button type="button" @click="showTaskQueueModal = false" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>
@@ -180,7 +180,7 @@
     </div>
 
     <div v-if="showSubModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSubModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Manage Subscription URL<span class="font-mono text-indigo-400">]</span></h2>
         <input v-model="newSubUrl" type="text" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
         <div class="mt-8 flex justify-end space-x-4">
@@ -191,7 +191,7 @@
     </div>
 
     <div v-if="showSwitchModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSwitchModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-2 tracking-tight"><span class="font-mono text-indigo-400">[</span>Switch VPN Configuration<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-5">Currently: <strong>{{ node.active_server || 'None' }}</strong></p>
         <div class="grid grid-cols-2 gap-3 mb-4">
@@ -247,7 +247,7 @@
             </button>
           </div>
         </div>
-        <div class="bg-black p-4 rounded-lg font-mono text-xs text-white/80 h-96 overflow-y-auto whitespace-pre-wrap flex-grow" ref="logHost">
+        <div class="bg-black p-4 rounded-lg font-mono text-xs text-white/80 h-64 sm:h-96 min-h-0 overflow-y-auto whitespace-pre-wrap flex-1" ref="logHost">
           <div v-if="isLoadingLogs && !nodeLogs" class="flex items-center justify-center h-full text-zinc-400">Loading logs...</div>
           <pre v-else>{{ nodeLogs || 'No logs available yet. Press Refresh or wait for auto-refresh.' }}</pre>
         </div>
@@ -255,7 +255,7 @@
     </div>
 
     <div v-if="activeModal === 'status'" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="activeModal = ''">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Detailed Status<span class="font-mono text-indigo-400">]</span></h2>
           <button type="button" @click="activeModal = ''" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>

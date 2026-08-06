@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="flex justify-between items-center mb-8">
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-8">
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Logs &amp; Audit<span class="font-mono text-indigo-400">]</span></h1>
       <div v-if="activeTab === 'audit'" class="flex items-center space-x-3">
         <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
@@ -25,7 +25,7 @@
       {{ toast }}
     </div>
 
-    <div v-if="activeTab === 'audit'" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden">
+    <div v-if="activeTab === 'audit'" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-x-auto">
       <table class="min-w-full divide-y divide-white/5">
         <thead class="bg-white/[0.03]">
           <tr>

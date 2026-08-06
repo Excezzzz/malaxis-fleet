@@ -2,19 +2,19 @@
   <div>
     <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Nodes<span class="font-mono text-indigo-400">]</span></h1>
-      <div class="flex flex-wrap items-center gap-3">
-        <div class="relative">
+      <div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full lg:w-auto">
+        <div class="relative flex-1 min-w-[220px]">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
           <input v-model="searchQuery" type="text" placeholder="Search name, hostname, IP..." aria-label="Search nodes"
-            class="w-64 pl-10 pr-4 py-2 bg-zinc-900 border border-white/10 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors" />
+            class="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-white/10 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors" />
         </div>
         <select v-model="statusFilter" aria-label="Filter by status"
-          class="bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
+          class="w-full sm:w-auto bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
           <option value="all">All Nodes</option>
           <option value="online">Online Only</option>
           <option value="offline">Offline Only</option>
         </select>
-        <button @click="refreshList" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
+        <button @click="refreshList" class="flex items-center justify-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
           <span class="font-mono">{{ refreshingList ? '[Refreshing...]' : '[Refresh List]' }}</span>
         </button>
@@ -30,7 +30,7 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div v-if="filteredNodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 items-stretch">
+    <div v-if="filteredNodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch">
       <div v-for="node in filteredNodes" :key="node.id" class="h-full"><NodeCard :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" /></div>
     </div>
 
