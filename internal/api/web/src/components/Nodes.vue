@@ -42,6 +42,9 @@
       <p class="text-zinc-500 text-lg">No nodes found. Waiting for agents to poll...</p>
     </div>
 
+    <!-- FAB backdrop overlay (dims & dismisses when menu is open) -->
+    <div v-if="fabOpen" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" @click="fabOpen = false"></div>
+
     <!-- Floating Action Button -->
     <div class="fixed bottom-20 md:bottom-8 right-4 md:right-8 z-50 flex flex-col-reverse items-end gap-3">
       <transition name="slide-up">

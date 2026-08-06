@@ -217,9 +217,9 @@
           <button type="button" @click="closeLogs" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors shrink-0">Close</button>
         </div>
         <div class="flex flex-wrap gap-2 items-center text-sm mb-3">
-          <div class="flex flex-wrap rounded-lg bg-black/40 border border-white/10 overflow-hidden">
+          <div class="flex flex-wrap gap-1.5 p-1 bg-zinc-950/80 rounded-2xl border border-white/5">
             <button v-for="c in logContainers" :key="c" @click="selectContainer(c)"
-              :class="['px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap', logContainer === c ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
+              :class="['px-3.5 py-1.5 rounded-xl text-xs font-medium transition-all cursor-pointer', logContainer === c ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/50' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
               {{ c }}
             </button>
           </div>
