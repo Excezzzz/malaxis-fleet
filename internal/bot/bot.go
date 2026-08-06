@@ -650,6 +650,26 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.showNodeDetail(chatID, messageID, strings.TrimPrefix(data, "node:detail:"), "")
 	case strings.HasPrefix(data, "node:vpn:"):
 		b.handleVpnMenu(chatID, messageID, strings.TrimPrefix(data, "node:vpn:"))
+	case strings.HasPrefix(data, "node:logs:"):
+		b.handleLogsMenu(chatID, messageID, strings.TrimPrefix(data, "node:logs:"))
+	case strings.HasPrefix(data, "node:logs_refresh:"):
+		rest := strings.TrimPrefix(data, "node:logs_refresh:")
+		idx := strings.Index(rest, ":")
+		if idx < 0 {
+			return
+		}
+		b.showContainerLogs(chatID, messageID, rest[:idx], rest[idx+1:])
+	case strings.HasPrefix(data, "node:logs_show:"):
+		rest := strings.TrimPrefix(data, "node:logs_show:")
+		idx := strings.Index(rest, ":")
+		if idx < 0 {
+			return
+		}
+		b.showContainerLogs(chatID, messageID, rest[:idx], rest[idx+1:])
+	case strings.HasPrefix(data, "node:queue:"):
+		b.handleQueueMenu(chatID, messageID, strings.TrimPrefix(data, "node:queue:"))
+	case strings.HasPrefix(data, "node:queue_cancel:"):
+		b.handleQueueCancel(chatID, messageID, strings.TrimPrefix(data, "node:queue_cancel:"))
 	case strings.HasPrefix(data, "node:rename:"):
 		nodeID := strings.TrimPrefix(data, "node:rename:")
 		b.setState(chatID, &userState{Step: "rename_node", NodeID: nodeID})
@@ -746,46 +766,33 @@ func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 		return
 	}
 
-	icon := "🔴"
-	if time.Since(node.LastSeen) < onlineWindow {
-		icon = "🟢"
-	}
-
-	lastSeen := "never"
-	if !node.LastSeen.IsZero() {
-		d := time.Since(node.LastSeen)
-		if d < time.Minute {
-			lastSeen = "just now"
-		} else if d < time.Hour {
-			lastSeen = fmt.Sprintf("%d min ago", int(d.Minutes()))
-		} else if d < 24*time.Hour {
-			lastSeen = fmt.Sprintf("%d h ago", int(d.Hours()))
-		} else {
-			lastSeen = fmt.Sprintf("%d d ago", int(d.Hours()/24))
-		}
-	}
-
-	name := node.Name
-	if name == "" {
+	name := emptyDash(node.Name)
+	if node.Name == "" {
 		name = node.ID
 	}
 
+	pendingTask := "None"
+	taskCount := 0
+	if strings.TrimSpace(node.PendingCommand) != "" {
+		pendingTask = "<code>" + xmlEscape(node.PendingCommand) + "</code>"
+		taskCount = 1
+	}
+
+	vpn := "—"
+	if node.ActiveServer != "" {
+		vpn = emptyDash(node.ActiveServer)
+		if node.ActiveEngine != "" || node.ActiveProto != "" {
+			vpn += " (" + emptyDash(node.ActiveEngine) + "/" + emptyDash(node.ActiveProto) + ")"
+		}
+	}
+
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("%s <b>%s</b>\n\n", icon, name))
-	text.WriteString(fmt.Sprintf("🖥️ <b>IP:</b> %s\n", emptyDash(node.IPLan)))
-	text.WriteString(fmt.Sprintf("🏷️ <b>Hostname:</b> %s\n", emptyDash(node.Hostname)))
-	text.WriteString(fmt.Sprintf("🌐 <b>Active Server:</b> %s\n", emptyDash(node.ActiveServer)))
-	text.WriteString(fmt.Sprintf("⚙️ <b>Engine:</b> %s\n", emptyDash(node.ActiveEngine)))
-	text.WriteString(fmt.Sprintf("🔗 <b>Sub URL:</b> %s\n", emptyDash(node.SubURL)))
-	text.WriteString(fmt.Sprintf("🕒 <b>Last Seen:</b> %s\n", lastSeen))
-	if node.PendingCommand != "" {
-		text.WriteString(fmt.Sprintf("📥 <b>Queue:</b> <code>%s</code>\n", node.PendingCommand))
-	} else {
-		text.WriteString("📥 <b>Queue:</b> empty\n")
-	}
-	if node.PipelineStatus != "" {
-		text.WriteString(fmt.Sprintf("🔄 <b>Status:</b> %s\n", emptyDash(node.PipelineStatus)))
-	}
+	text.WriteString(fmt.Sprintf("🖥️ <b>Node:</b> %s\n", xmlEscape(name)))
+	text.WriteString(fmt.Sprintf("<b>IP:</b> %s | <b>Host:</b> %s\n", emptyDash(node.IPLan), emptyDash(node.Hostname)))
+	text.WriteString(fmt.Sprintf("<b>VPN:</b> %s\n", xmlEscape(vpn)))
+	text.WriteString(fmt.Sprintf("<b>Sub URL:</b> %s\n", emptyDash(node.SubURL)))
+	text.WriteString(fmt.Sprintf("<b>Status:</b> %s\n", emptyDash(node.StatusMessage)))
+	text.WriteString(fmt.Sprintf("<b>Pending Task:</b> %s\n", pendingTask))
 	if note != "" {
 		text.WriteString("\n<i>" + note + "</i>")
 	}
@@ -796,15 +803,139 @@ func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 			tgbotapi.NewInlineKeyboardButtonData("🔗 Set Sub URL", "node:sub:"+node.ID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✏️ Rename", "node:rename:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData("📜 View Logs", "node:logs:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("⏳ Task Queue (%d)", taskCount), "node:queue:"+node.ID),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Rename Node", "node:rename:"+node.ID),
 			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete Node", "node:delete:"+node.ID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh", "node:detail:"+node.ID),
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "nodes:list"),
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Nodes List", "nodes:list"),
 		),
 	)
 	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// handleLogsMenu shows the container-selection sub-tabs for a node's logs.
+func (b *Bot) handleLogsMenu(chatID int64, messageID int, nodeID string) {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("node-agent", "node:logs_show:"+nodeID+":node-agent"),
+			tgbotapi.NewInlineKeyboardButtonData("xray-node", "node:logs_show:"+nodeID+":xray-node"),
+			tgbotapi.NewInlineKeyboardButtonData("singbox-node", "node:logs_show:"+nodeID+":singbox-node"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+		),
+	)
+	text := fmt.Sprintf("📜 <b>Logs:</b> %s\n\nSelect a container:", xmlEscape(b.nodeLabel(nodeID)))
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// allowedLogContainers are the node containers selectable in the log viewer.
+var allowedLogContainers = map[string]bool{"node-agent": true, "xray-node": true, "singbox-node": true}
+
+// showContainerLogs displays the stored log tail for a node container. It
+// queues a fresh get_logs command (only when nothing else is pending) so the
+// agent uploads the newest tail on its next poll, then renders the most recent
+// stored output. Mirrors the web dashboard's log viewer.
+func (b *Bot) showContainerLogs(chatID int64, messageID int, nodeID, container string) {
+	if !allowedLogContainers[container] {
+		b.handleLogsMenu(chatID, messageID, nodeID)
+		return
+	}
+
+	if existing, err := b.repo.GetPendingCommand(nodeID); err == nil && strings.TrimSpace(existing) == "" {
+		command, _ := json.Marshal(map[string]interface{}{
+			"action":    "get_logs",
+			"container": container,
+			"req_id":    time.Now().UnixNano(),
+		})
+		messageIDTs := time.Now().Unix()
+		if err := b.repo.SetPendingCommand(nodeID, string(command), messageIDTs); err != nil {
+			log.Printf("Bot: failed to queue get_logs for node %s: %v", nodeID, err)
+		}
+	}
+
+	logs := "No logs stored for this container yet. The node will upload them on its next poll."
+	logsMap := map[string]string{}
+	if raw, err := b.repo.GetNodeLogs(nodeID); err == nil && strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &logsMap); err == nil {
+			if tail := logsMap[container]; strings.TrimSpace(tail) != "" {
+				logs = tail
+			}
+		}
+	}
+
+	// Trim to fit Telegram's 4096-char message limit.
+	const maxLogLen = 3600
+	if len(logs) > maxLogLen {
+		logs = logs[len(logs)-maxLogLen:]
+		logs = "...[truncated]...\n" + logs
+	}
+
+	text := fmt.Sprintf("📜 <b>Logs:</b> %s -> <b>%s</b>\n\n<code>%s</code>",
+		xmlEscape(b.nodeLabel(nodeID)), xmlEscape(container), xmlEscape(logs))
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh Logs", "node:logs_refresh:"+nodeID+":"+container),
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+		),
+	)
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// handleQueueMenu shows the node's pending task with a cancel action, or the
+// "no pending tasks" state when the queue is empty.
+func (b *Bot) handleQueueMenu(chatID int64, messageID int, nodeID string) {
+	pending, err := b.repo.GetPendingCommand(nodeID)
+	if err != nil {
+		log.Printf("Bot: failed to read pending command for node %s: %v", nodeID, err)
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to read task queue")
+		return
+	}
+
+	if strings.TrimSpace(pending) == "" {
+		markup := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+			),
+		)
+		text := fmt.Sprintf("⏳ <b>%s</b>\n\nNo pending tasks for this node.", xmlEscape(b.nodeLabel(nodeID)))
+		b.editMessage(chatID, messageID, text, &markup)
+		return
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("❌ Cancel Pending Task", "node:queue_cancel:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+		),
+	)
+	text := fmt.Sprintf("⏳ <b>Pending Task for %s:</b>\n\n<code>%s</code>",
+		xmlEscape(b.nodeLabel(nodeID)), xmlEscape(pending))
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// handleQueueCancel clears the node's pending command (executes clear-command
+// in PostgreSQL) and confirms the result on the message.
+func (b *Bot) handleQueueCancel(chatID int64, messageID int, nodeID string) {
+	if err := b.repo.ClearPendingCommand(nodeID); err != nil {
+		log.Printf("Bot: failed to clear pending command for node %s: %v", nodeID, err)
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to cancel pending task")
+		return
+	}
+	b.repo.UpdateNodePipelineStatus(nodeID, "Idle", "Command cancelled")
+	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, nodeID, "Cancelled pending task (via Telegram bot)")
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+		),
+	)
+	b.editMessage(chatID, messageID, "✅ <b>Pending task cancelled.</b>", &markup)
 }
 
 func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
@@ -1027,4 +1158,14 @@ func emptyDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// xmlEscape escapes HTML-significant characters so dynamic node/user-supplied
+// text is safe to render with Telegram's HTML parse mode.
+func xmlEscape(s string) string {
+	if s == "" {
+		return s
+	}
+	r := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "\"", "&quot;")
+	return r.Replace(s)
 }
