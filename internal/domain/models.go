@@ -2,12 +2,40 @@ package domain
 
 import "time"
 
-// Role constants for three-tier RBAC
+// Role constants for RBAC. Hierarchy ranks:
+//
+//	owner (100) > admin (80) > client / custom roles (50) > viewer (10)
 const (
 	RoleOwner  = "owner"
 	RoleAdmin  = "admin"
 	RoleClient = "client"
+	RoleViewer = "viewer"
 )
+
+// Role rank constants define the strict hierarchy used by user management.
+// A caller may only create/edit/delete users whose role rank is STRICTLY
+// LOWER than their own.
+const (
+	RoleRankOwner  = 100
+	RoleRankAdmin  = 80
+	RoleRankClient = 50
+	RoleRankViewer = 10
+)
+
+// RoleRank returns the numeric hierarchy rank of a role. Custom roles and
+// unknown roles default to the client rank (50).
+func RoleRank(role string) int {
+	switch role {
+	case RoleOwner:
+		return RoleRankOwner
+	case RoleAdmin:
+		return RoleRankAdmin
+	case RoleViewer:
+		return RoleRankViewer
+	default:
+		return RoleRankClient
+	}
+}
 
 // Permission constants for custom roles
 const (
@@ -18,13 +46,21 @@ const (
 	PermTerminateNode  = "can_terminate_node"
 	PermUpdateClient   = "can_update_client"
 	PermPurgeNodes     = "can_purge_nodes"
-	PermManageUsers    = "can_manage_users"
+	PermViewUsers      = "can_view_users"
+	PermCreateUsers    = "can_create_users"
+	PermEditUsers      = "can_edit_users"
+	PermDeleteUsers    = "can_delete_users"
+	PermViewRoles      = "can_view_roles"
 	PermManageRoles    = "can_manage_roles"
 	PermViewAudit      = "can_view_audit"
 	PermViewNodeLogs   = "can_view_node_logs"
 	PermViewMasterLogs = "can_view_master_logs"
 	PermViewAuditLogs  = "can_view_audit_logs"
 	PermExportBackups  = "can_export_backups"
+	// Deprecated: kept for backwards compatibility with roles seeded before
+	// the granular split. Migrated to PermViewUsers/CreateUsers/EditUsers/
+	// DeleteUsers.
+	PermManageUsers = "can_manage_users"
 )
 
 // AllPermissions is the complete set of permission keys granted implicitly to
@@ -32,9 +68,17 @@ const (
 var AllPermissions = []string{
 	PermViewNodes, PermSwitchVPN, PermEditSub, PermRenameNode,
 	PermTerminateNode, PermUpdateClient, PermPurgeNodes,
-	PermManageUsers, PermManageRoles,
+	PermViewUsers, PermCreateUsers, PermEditUsers, PermDeleteUsers,
+	PermViewRoles, PermManageRoles,
 	PermViewAudit, PermViewNodeLogs, PermViewMasterLogs, PermViewAuditLogs,
 	PermExportBackups,
+}
+
+// PermissionsGrantedBy maps a coarse/deprecated permission to the granular
+// keys it implicitly grants. Used so roles seeded with can_manage_users keep
+// working until they are migrated to the granular user permissions.
+var PermissionsGrantedBy = map[string][]string{
+	PermManageUsers: {PermViewUsers, PermCreateUsers, PermEditUsers, PermDeleteUsers},
 }
 
 // User represents an administrator in the system.

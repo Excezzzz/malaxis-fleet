@@ -3,7 +3,7 @@
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Fleet Users<span class="font-mono text-indigo-400">]</span></h1>
       <div class="flex space-x-4">
-        <button @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
+        <button v-if="canCreateUsers" @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
           <Users class="w-5 h-5" />
           <span class="font-mono text-sm">[Add New User]</span>
         </button>
@@ -38,10 +38,10 @@
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ new Date(user.created_at).toLocaleDateString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
               <div class="flex items-center justify-end space-x-3">
-                <button @click="openEditUser(user)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit User">
+                <button v-if="canEditUserRow(user)" @click="openEditUser(user)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit User">
                   <Edit class="w-5 h-5" />
                 </button>
-                <button @click="confirmDeleteUser(user)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete User">
+                <button v-if="canDeleteUserRow(user)" @click="confirmDeleteUser(user)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete User">
                   <Trash2 class="w-5 h-5" />
                 </button>
               </div>
@@ -123,13 +123,24 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, inject, onMounted } from 'vue';
 import { Users, Trash2, Plus, Edit, Lock } from 'lucide-vue-next';
+
+const ROLE_RANK = { owner: 100, admin: 80, client: 50, viewer: 10 };
+
+const roleRank = (role) => ROLE_RANK[role] || 50;
 
 export default {
   name: 'AdminUsers',
   components: { Users, Trash2, Plus, Edit, Lock },
   setup() {
+    const authCtxRaw = inject('authCtx', {});
+    const actorRole = computed(() => authCtxRaw.user?.value?.role || '');
+    const actorRank = computed(() => roleRank(actorRole.value));
+    const canCreateUsers = computed(() => authCtxRaw.canCreateUsers?.value ?? false);
+    const canEditUsers = computed(() => authCtxRaw.canEditUsers?.value ?? false);
+    const canDeleteUsers = computed(() => authCtxRaw.canDeleteUsers?.value ?? false);
+
     const users = ref([]);
     const customRoles = ref([]);
     const showAddUserModal = ref(false);
@@ -140,12 +151,28 @@ export default {
 
     // The owner role is reserved for the original admin account; it must never
     // appear in create/edit dropdowns.
-    const availableRoles = computed(() => {
+    const allRoles = computed(() => {
       return (customRoles.value || []).filter(r => r.name !== 'owner' && r.name !== 'Owner');
+    });
+
+    // Only roles ranked STRICTLY LOWER than the actor may be offered for
+    // creation/assignment — mirrors the API's hierarchy enforcement.
+    const availableRoles = computed(() => {
+      return (allRoles.value || []).filter(r => roleRank(r.name) < actorRank.value);
     });
 
     const currentUser = ref(null);
     const createError = ref('');
+
+    // A target row's actions are only rendered (a) when the actor holds the
+    // matching permission AND (b) the target role rank is STRICTLY LOWER than
+    // the actor's own rank.
+    const canEditUserRow = (user) => {
+      return canEditUsers.value && roleRank(user.role || user.role_name) < actorRank.value;
+    };
+    const canDeleteUserRow = (user) => {
+      return canDeleteUsers.value && roleRank(user.role || user.role_name) < actorRank.value;
+    };
 
     const openAddUserModal = () => {
       createError.value = '';
@@ -322,6 +349,9 @@ export default {
       handleEditUser,
       handleCreateUser,
       confirmDeleteUser,
+      canCreateUsers,
+      canEditUserRow,
+      canDeleteUserRow,
     };
   },
 };

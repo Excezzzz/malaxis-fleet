@@ -140,11 +140,20 @@ func RequireAdminOrOwner(repo repository.Repository) func(http.Handler) http.Han
 
 // HasPermission reports whether the granted permission list satisfies the
 // required permission. Enforcement is strict: the exact key must be present in
-// the role's permissions_json (no implicit grants for custom roles).
+// the role's permissions_json. For backwards compatibility, a coarse key that
+// grants granular sub-permissions (e.g. can_manage_users -> can_create_users)
+// also satisfies them.
 func HasPermission(granted []string, required string) bool {
 	for _, p := range granted {
 		if p == required {
 			return true
+		}
+		if sub, ok := domain.PermissionsGrantedBy[p]; ok {
+			for _, subPerm := range sub {
+				if subPerm == required {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -168,7 +177,7 @@ func RequirePermission(repo repository.Repository, permission string) func(http.
 			}
 
 			// Owner and admin have all permissions
-			if user.Role == domain.RoleOwner || user.Username == "admin" {
+			if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" {
 				next.ServeHTTP(w, r)
 				return
 			}

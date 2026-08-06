@@ -135,29 +135,29 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_url (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/mass-update-domain", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateDomainHandler)))).Methods("POST")
 
-	// GET /api/web/roles - list all roles (Owner only)
-	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetRolesHandler)))).Methods("GET")
+	// GET /api/web/roles - list all roles (permission can_view_roles)
+	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewRoles)(http.HandlerFunc(api.GetRolesHandler)))).Methods("GET")
 
-	// POST /api/web/roles - create custom role (Owner only)
-	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.CreateCustomRoleHandler)))).Methods("POST")
+	// POST /api/web/roles - create custom role (permission can_manage_roles)
+	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermManageRoles)(http.HandlerFunc(api.CreateCustomRoleHandler)))).Methods("POST")
 
-	// PUT /api/web/roles/{id} - update custom role (Owner only)
-	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateCustomRoleHandler)))).Methods("PUT")
+	// PUT /api/web/roles/{id} - update custom role (permission can_manage_roles)
+	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermManageRoles)(http.HandlerFunc(api.UpdateCustomRoleHandler)))).Methods("PUT")
 
-	// DELETE /api/web/roles/{id} - delete custom role (Owner only)
-	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.DeleteCustomRoleHandler)))).Methods("DELETE")
+	// DELETE /api/web/roles/{id} - delete custom role (permission can_manage_roles)
+	webAPIRouter.Handle("/web/roles/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermManageRoles)(http.HandlerFunc(api.DeleteCustomRoleHandler)))).Methods("DELETE")
 
-	// GET /api/web/users - list users (Owner only)
-	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetUsersHandler)))).Methods("GET")
+	// GET /api/web/users - list users (permission can_view_users)
+	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewUsers)(http.HandlerFunc(api.GetUsersHandler)))).Methods("GET")
 
-	// POST /api/web/users - create user (Owner only)
-	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.CreateUserHandler)))).Methods("POST")
+	// POST /api/web/users - create user (permission can_create_users)
+	webAPIRouter.Handle("/web/users", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermCreateUsers)(http.HandlerFunc(api.CreateUserHandler)))).Methods("POST")
 
-	// PUT /api/web/users/{id} - update user (Owner only)
-	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateUserHandler)))).Methods("PUT")
+	// PUT /api/web/users/{id} - update user (permission can_edit_users)
+	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermEditUsers)(http.HandlerFunc(api.UpdateUserHandler)))).Methods("PUT")
 
-	// DELETE /api/web/users/{id} - delete user (Owner only)
-	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.DeleteUserHandler)))).Methods("DELETE")
+	// DELETE /api/web/users/{id} - delete user (permission can_delete_users)
+	webAPIRouter.Handle("/web/users/{id}", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermDeleteUsers)(http.HandlerFunc(api.DeleteUserHandler)))).Methods("DELETE")
 
 	// GET /api/web/audit - audit logs (permission can_view_audit_logs)
 	webAPIRouter.Handle("/web/audit", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewAuditLogs)(http.HandlerFunc(api.GetAuditLogsHandler)))).Methods("GET")

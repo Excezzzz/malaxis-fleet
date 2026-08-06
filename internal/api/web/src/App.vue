@@ -102,6 +102,12 @@ export default {
     const canPurgeNodes = computed(() => hasPermission('can_purge_nodes'));
     const canUpdateClient = computed(() => hasPermission('can_update_client'));
     const canViewNodeLogs = computed(() => hasPermission('can_view_node_logs'));
+    const canViewUsers = computed(() => hasPermission('can_view_users'));
+    const canCreateUsers = computed(() => hasPermission('can_create_users'));
+    const canEditUsers = computed(() => hasPermission('can_edit_users'));
+    const canDeleteUsers = computed(() => hasPermission('can_delete_users'));
+    const canViewRoles = computed(() => hasPermission('can_view_roles'));
+    const canManageRoles = computed(() => hasPermission('can_manage_roles'));
     const canViewAuditLogs = computed(() => hasPermission('can_view_audit_logs'));
     const canViewMasterLogs = computed(() => hasPermission('can_view_master_logs'));
     const isOwner = computed(() => role.value === 'owner' || username.value === 'admin');
@@ -111,8 +117,8 @@ export default {
       const items = [];
       if (canViewNodes.value) items.push({ view: 'Nodes', label: 'Nodes', icon: 'Server' });
       if (canEditSub.value || canUpdateClient.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode2' });
-      if (isOwner.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
-      if (isOwner.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
+      if (canViewUsers.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
+      if (canViewRoles.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
       if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'FileText' });
       if (isOwner.value) items.push({ view: 'Settings', label: 'Settings', icon: 'Settings' });
       return items;
@@ -192,6 +198,8 @@ export default {
       user, hasPermission, canEditSub, canSwitchVpn, canViewNodes, isReadOnly,
       canRenameNode, canTerminateNode, canPurgeNodes, canUpdateClient,
       canViewNodeLogs, canViewAuditLogs, canViewMasterLogs,
+      canViewUsers, canCreateUsers, canEditUsers, canDeleteUsers,
+      canViewRoles, canManageRoles,
     });
 
     return {
