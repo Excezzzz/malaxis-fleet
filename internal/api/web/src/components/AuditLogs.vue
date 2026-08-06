@@ -21,7 +21,7 @@
       </button>
     </div>
 
-    <div v-if="toast" class="fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border bg-emerald-500/15 border-emerald-500/40 text-emerald-200">
+    <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border bg-emerald-500/15 border-emerald-500/40 text-emerald-200">
       {{ toast }}
     </div>
 

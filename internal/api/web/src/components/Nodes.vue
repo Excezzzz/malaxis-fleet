@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <div v-if="toast" :class="['fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
+    <div v-if="toast" :class="['fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
       {{ toast }}
     </div>
 
@@ -43,7 +43,7 @@
     </div>
 
     <!-- Floating Action Button -->
-    <div class="fixed bottom-8 right-8 z-50 flex flex-col-reverse items-end gap-3">
+    <div class="fixed bottom-20 md:bottom-8 right-4 md:right-8 z-50 flex flex-col-reverse items-end gap-3">
       <transition name="slide-up">
         <div v-if="fabOpen" class="flex flex-col items-end gap-3">
           <button v-if="canPurgeNodes" @click="handlePurgeOffline"
@@ -78,7 +78,7 @@
 
     <!-- Mass Update Subscription Domain Modal -->
     <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showMassUpdateModal = false">
-      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Mass Update Subscription Domain<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-4">This will replace the domain portion of the subscription URL for ALL nodes while preserving each node&apos;s unique path and token.</p>
         <div class="space-y-4">

@@ -108,14 +108,14 @@
             </template>
       </div>
 
-      <div v-if="toast" :class="['fixed bottom-6 right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
+      <div v-if="toast" :class="['fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-500/15 border-red-500/40 text-red-200']">
         {{ toast }}
       </div>
     </div>
 
     <!-- Modals -->
     <div v-if="showRenameModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showRenameModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Rename Node<span class="font-mono text-indigo-400">]</span></h2>
         <input v-model="newNodeName" type="text" placeholder="My Device" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
         <div class="mt-8 flex justify-end space-x-4">
@@ -126,7 +126,7 @@
     </div>
 
     <div v-if="showDeleteModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showDeleteModal = false">
-      <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300"><span class="font-mono text-red-400">[</span>Delete Node<span class="font-mono text-red-400">]</span></h2>
         <p class="text-zinc-400 mb-6 text-sm">Choose how to remove <strong class="text-white">{{ node.name }}</strong> from the fleet.</p>
         <button v-if="canSoftDelete" @click="softDeleteNode" class="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-left mb-3">
@@ -155,7 +155,7 @@
     </div>
 
     <div v-if="showTaskQueueModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showTaskQueueModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Task Queue<span class="font-mono text-indigo-400">]</span></h2>
           <button type="button" @click="showTaskQueueModal = false" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>
@@ -180,7 +180,7 @@
     </div>
 
     <div v-if="showSubModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSubModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Manage Subscription URL<span class="font-mono text-indigo-400">]</span></h2>
         <input v-model="newSubUrl" type="text" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
         <div class="mt-8 flex justify-end space-x-4">
@@ -191,7 +191,7 @@
     </div>
 
     <div v-if="showSwitchModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSwitchModal = false">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-2 tracking-tight"><span class="font-mono text-indigo-400">[</span>Switch VPN Configuration<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-5">Currently: <strong>{{ node.active_server || 'None' }}</strong></p>
         <div class="grid grid-cols-2 gap-3 mb-4">
@@ -211,19 +211,19 @@
     </div>
 
     <div v-if="showLogsModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="closeLogs">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 w-full max-w-5xl flex flex-col max-h-[90vh]">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Agent Logs: {{ node.name }}<span class="font-mono text-indigo-400">]</span></h2>
-          <button type="button" @click="closeLogs" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto flex flex-col">
+        <div class="flex items-start justify-between gap-3 mb-4">
+          <h2 class="text-xl sm:text-2xl font-bold tracking-tight min-w-0 truncate"><span class="font-mono text-indigo-400">[</span>Agent Logs: {{ node.name }}<span class="font-mono text-indigo-400">]</span></h2>
+          <button type="button" @click="closeLogs" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors shrink-0">Close</button>
         </div>
-        <div class="flex flex-wrap items-center gap-3 mb-3">
-          <div class="flex rounded-lg bg-black/40 border border-white/10 overflow-hidden">
+        <div class="flex flex-wrap gap-2 items-center text-sm mb-3">
+          <div class="flex flex-wrap rounded-lg bg-black/40 border border-white/10 overflow-hidden">
             <button v-for="c in logContainers" :key="c" @click="selectContainer(c)"
-              :class="['px-4 py-2 text-sm font-medium transition-colors', logContainer === c ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
+              :class="['px-3 py-2 text-sm font-medium transition-colors whitespace-nowrap', logContainer === c ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
               {{ c }}
             </button>
           </div>
-          <div class="flex items-center gap-2 ml-auto">
+          <div class="flex flex-wrap items-center gap-2 ml-auto">
             <label class="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
               <input type="checkbox" v-model="autoRefreshLogs" class="accent-indigo-500" />
               Auto-refresh
@@ -255,7 +255,7 @@
     </div>
 
     <div v-if="activeModal === 'status'" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="activeModal = ''">
-      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
+      <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Detailed Status<span class="font-mono text-indigo-400">]</span></h2>
           <button type="button" @click="activeModal = ''" class="px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors">Close</button>

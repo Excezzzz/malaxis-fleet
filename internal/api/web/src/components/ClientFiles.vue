@@ -18,7 +18,7 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div v-if="toast" class="fixed bottom-6 right-6 z-50 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
+    <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
       {{ toast }}
     </div>
 
@@ -35,9 +35,9 @@
       </div>
 
       <div class="lg:col-span-4 bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden flex flex-col">
-        <div class="flex items-center justify-between px-5 py-3 border-b border-white/5 bg-zinc-900/60">
-          <span class="font-mono text-sm text-indigo-300">{{ selected }}</span>
-          <div class="flex items-center space-x-3">
+        <div class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 border-b border-white/5 bg-zinc-900/60">
+          <span class="font-mono text-sm text-indigo-300 min-w-0 truncate">{{ selected }}</span>
+          <div class="flex flex-wrap items-center gap-3">
             <span class="text-xs text-zinc-500">{{ lines.length }} lines</span>
             <span class="text-xs" :class="dirty ? 'text-amber-300' : 'text-zinc-500'">{{ dirty ? 'Unsaved changes' : 'Saved' }}</span>
             <button @click="saveFile" :disabled="saving"

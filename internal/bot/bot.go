@@ -11,9 +11,12 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"malaxis-fleet/internal/audit"
 	"malaxis-fleet/internal/backup"
 	"malaxis-fleet/internal/config"
+	"malaxis-fleet/internal/domain"
 	"malaxis-fleet/internal/repository"
 	"malaxis-fleet/internal/service"
 
@@ -26,12 +29,18 @@ const onlineWindow = 90 * time.Second
 
 // userState is the in-memory text-input session for the admin. The bot shows
 // exactly ONE dynamic bot message; when a feature needs free-form text input
-// (rename, sub URL, TERMINATE confirmation, mass sub URL) the conversation
-// moves into a state machine that consumes the next text message.
+// (rename, sub URL, TERMINATE confirmation, mass sub URL, user/role creation)
+// the conversation moves into a state machine that consumes the next text
+// message. The Username/Password/RoleName fields carry the in-progress
+// create-user / create-role flows across multiple prompts.
 type userState struct {
-	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm"
+	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm", "add_user_creds", "add_user_role", "add_role_name", "add_role_rank"
 	NodeID string
 	Note   string
+	// User/role creation flow fields.
+	Username string
+	Password string
+	RoleName string
 }
 
 type Bot struct {
@@ -461,7 +470,7 @@ func (b *Bot) showMainMenuFresh(chatID int64) {
 }
 
 // getMainMenuContent builds the main menu: node online/offline counters and
-// the five fleet action buttons.
+// the fleet action buttons.
 func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	nodes, _ := b.repo.GetAllNodes()
 	onlineCount := 0
@@ -491,6 +500,10 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("📦 Download DB Backup", "backup:download"),
 		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("👥 Manage Users", "users:menu"),
+			tgbotapi.NewInlineKeyboardButtonData("🛡️ Manage Roles", "roles:menu"),
+		),
 	)
 	return text, markup
 }
@@ -514,6 +527,16 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 		b.processSetSubText(chatID, text)
 	case "terminate_confirm":
 		b.processTerminateText(chatID, text)
+	case "add_user_creds":
+		b.processAddUserCredsText(chatID, text)
+	case "add_user_role":
+		// Role selection happens via the inline keyboard; stray text is
+		// ignored and the role picker is re-shown.
+		b.showRoleSelection(chatID, b.getMainMenuID(chatID), state.Username, "Tap a role below to finish creating the user:")
+	case "add_role_name":
+		b.processAddRoleNameText(chatID, text)
+	case "add_role_rank":
+		b.processAddRoleRankText(chatID, text)
 	default:
 		b.clearState(chatID)
 		b.showMainMenu(chatID)
@@ -646,6 +669,22 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.handlePurge(chatID, messageID)
 	case data == "backup:download":
 		b.handleBackup(chatID, messageID)
+	case data == "users:menu":
+		b.handleUsersMenu(chatID, messageID)
+	case data == "users:add":
+		b.setState(chatID, &userState{Step: "add_user_creds"})
+		b.editMessage(chatID, messageID,
+			"<b>👥 Add User</b>\n\nSend username and password separated by space (e.g., <code>john secret123</code>).\n\nThe message will be deleted after processing.",
+			b.cancelMarkup())
+	case strings.HasPrefix(data, "user:create:"):
+		b.handleUserCreate(chatID, messageID, strings.TrimPrefix(data, "user:create:"))
+	case data == "roles:menu":
+		b.handleRolesMenu(chatID, messageID)
+	case data == "roles:add":
+		b.setState(chatID, &userState{Step: "add_role_name"})
+		b.editMessage(chatID, messageID,
+			"<b>🛡️ Add Role</b>\n\nSend the role name (e.g., <code>manager</code>):",
+			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:detail:"):
 		b.showNodeDetail(chatID, messageID, strings.TrimPrefix(data, "node:detail:"), "")
 	case strings.HasPrefix(data, "node:vpn:"):
@@ -1150,6 +1189,277 @@ func (b *Bot) sendBackupDocument(chatID int64, caption string) {
 	if _, err := b.api.Send(doc); err != nil {
 		log.Printf("Bot: failed to send backup document: %v", err)
 	}
+}
+
+// --- User & Role management ---
+
+// handleUsersMenu lists all fleet users with their role/rank and offers an
+// Add User button.
+func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
+	users, err := b.repo.GetAllUsers()
+	if err != nil {
+		log.Printf("Bot: failed to list users: %v", err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to list users.</b>", b.cancelMarkup())
+		return
+	}
+
+	roles, _ := b.repo.GetAllRoles()
+	rankByRole := map[string]int{}
+	for _, r := range roles {
+		if r.Rank > 0 {
+			rankByRole[r.Name] = r.Rank
+		}
+	}
+	rankOf := func(role string) int {
+		if r, ok := rankByRole[role]; ok {
+			return r
+		}
+		return domain.RoleRank(role)
+	}
+
+	var text strings.Builder
+	text.WriteString("<b>👥 Manage Users</b>\n\n")
+	if len(users) == 0 {
+		text.WriteString("No users yet.")
+	} else {
+		text.WriteString(fmt.Sprintf("%d user(s):\n", len(users)))
+		for _, u := range users {
+			roleName := u.RoleName
+			if roleName == "" {
+				roleName = u.Role
+			}
+			text.WriteString(fmt.Sprintf("• %s — <b>%s</b> [rank %d]\n",
+				xmlEscape(u.Username), xmlEscape(roleName), rankOf(u.Role)))
+		}
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ Add User", "users:add"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
+		),
+	)
+	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// processAddUserCredsText parses "username password" from the admin's reply,
+// validates that the username is free, then moves to the role-selection step.
+func (b *Bot) processAddUserCredsText(chatID int64, text string) {
+	parts := strings.Fields(strings.TrimSpace(text))
+	if len(parts) != 2 {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>👥 Add User</b>\n\nInvalid input. Send <b>username</b> and <b>password</b> separated by a space (e.g., <code>john secret123</code>):",
+			b.cancelMarkup())
+		return
+	}
+
+	username := parts[0]
+	password := parts[1]
+
+	if _, err := b.repo.GetUserByUsername(username); err == nil {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Username already exists.</b> Please send a different username and password:",
+			b.cancelMarkup())
+		return
+	}
+
+	b.setState(chatID, &userState{Step: "add_user_role", Username: username, Password: password})
+	b.showRoleSelection(chatID, b.getMainMenuID(chatID), username, "")
+}
+
+// showRoleSelection renders every non-owner role from the database as an
+// inline keyboard for the in-progress add-user flow.
+func (b *Bot) showRoleSelection(chatID int64, messageID int, username, note string) {
+	roles, err := b.repo.GetAllRoles()
+	if err != nil {
+		log.Printf("Bot: failed to list roles for user creation: %v", err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to load roles.</b>", b.cancelMarkup())
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	var row []tgbotapi.InlineKeyboardButton
+	for _, r := range roles {
+		if strings.EqualFold(r.Name, domain.RoleOwner) {
+			continue
+		}
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(r.Name, "user:create:"+strconv.FormatInt(r.ID, 10)))
+		if len(row) == 2 {
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
+			row = nil
+		}
+	}
+	if len(row) > 0 {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
+	}
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("❌ Cancel", "state:cancel"),
+	))
+
+	var text strings.Builder
+	text.WriteString("<b>👥 Add User</b>\n\nSelect a role for <b>" + xmlEscape(username) + "</b>:")
+	if note != "" {
+		text.WriteString("\n\n<i>" + note + "</i>")
+	}
+	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// handleUserCreate finishes the add-user flow: it resolves the chosen role,
+// hashes the stored password and persists the new fleet user.
+func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
+	state := b.getState(chatID)
+	if state == nil || state.Step != "add_user_role" || state.Username == "" || state.Password == "" {
+		b.clearState(chatID)
+		b.editMessage(chatID, messageID, "<b>⚠️ Add-user flow expired.</b> Please start again from the main menu.", b.cancelMarkup())
+		return
+	}
+
+	roleID, err := strconv.ParseInt(roleIDStr, 10, 64)
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ Invalid role.</b>", b.cancelMarkup())
+		return
+	}
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil || strings.EqualFold(role.Name, domain.RoleOwner) {
+		log.Printf("Bot: role %d not found for user creation: %v", roleID, err)
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(state.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("Bot: failed to hash password for user %q: %v", state.Username, err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to create user.</b>", b.cancelMarkup())
+		return
+	}
+
+	newUser := &domain.User{
+		Username:     state.Username,
+		PasswordHash: string(hashed),
+		Role:         role.Name,
+		CreatedAt:    time.Now(),
+		ColorHex:     role.ColorHex,
+	}
+	if _, err := b.repo.AddUser(newUser); err != nil {
+		log.Printf("Bot: failed to create user %q: %v", state.Username, err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to create user.</b> The username may already be taken.", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionCreateUser, state.Username, "Created user via Telegram bot with role "+role.Name)
+	b.clearState(chatID)
+
+	text, markup := b.getMainMenuContent()
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("✅ <b>User created!</b>\n\n<b>Username:</b> %s\n<b>Role:</b> %s\n\n%s",
+			xmlEscape(state.Username), xmlEscape(role.Name), text),
+		&markup)
+}
+
+// handleRolesMenu lists all defined roles (with their ranks) and offers an
+// Add Role button.
+func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
+	roles, err := b.repo.GetAllRoles()
+	if err != nil {
+		log.Printf("Bot: failed to list roles: %v", err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to list roles.</b>", b.cancelMarkup())
+		return
+	}
+
+	var text strings.Builder
+	text.WriteString("<b>🛡️ Manage Roles</b>\n\n")
+	if len(roles) == 0 {
+		text.WriteString("No roles defined.")
+	} else {
+		text.WriteString(fmt.Sprintf("%d role(s):\n", len(roles)))
+		for _, r := range roles {
+			text.WriteString(fmt.Sprintf("• <b>%s</b> — rank <code>%d</code>\n", xmlEscape(r.Name), r.Rank))
+		}
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ Add Role", "roles:add"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
+		),
+	)
+	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// processAddRoleNameText captures the new role's name and moves the flow on to
+// the rank prompt.
+func (b *Bot) processAddRoleNameText(chatID int64, text string) {
+	name := strings.TrimSpace(text)
+	if name == "" {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>🛡️ Add Role</b>\n\nRole name cannot be empty. Send the role name (e.g., <code>manager</code>):",
+			b.cancelMarkup())
+		return
+	}
+
+	lower := strings.ToLower(name)
+	if lower == "owner" || lower == "admin" || lower == "client" || lower == "viewer" {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Reserved role name.</b> Please choose a different role name:",
+			b.cancelMarkup())
+		return
+	}
+	if _, err := b.repo.GetRoleByName(name); err == nil {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Role name already exists.</b> Please choose a different name:",
+			b.cancelMarkup())
+		return
+	}
+
+	b.setState(chatID, &userState{Step: "add_role_rank", RoleName: name})
+	b.editMessage(chatID, b.getMainMenuID(chatID),
+		fmt.Sprintf("<b>🛡️ Add Role</b>\n\nRole name <b>%s</b> accepted.\n\nSend the role rank (<b>1-99</b>):", xmlEscape(name)),
+		b.cancelMarkup())
+}
+
+// processAddRoleRankText validates the 1-99 rank and creates the role with
+// empty (web-editable) permissions.
+func (b *Bot) processAddRoleRankText(chatID int64, text string) {
+	state := b.getState(chatID)
+
+	rank, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil || rank < 1 || rank > 99 {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>🛡️ Add Role</b>\n\nInvalid rank. Send a whole number between <b>1</b> and <b>99</b>:",
+			b.cancelMarkup())
+		return
+	}
+
+	if state == nil || state.RoleName == "" {
+		b.clearState(chatID)
+		b.handleRolesMenu(chatID, b.getMainMenuID(chatID))
+		return
+	}
+
+	role := &domain.CustomRole{
+		Name:            state.RoleName,
+		ColorHex:        "#6B7280",
+		OwnerID:         "telegram_bot",
+		PermissionsJSON: "[]",
+		Rank:            rank,
+		CreatedAt:       time.Now(),
+	}
+	if _, err := b.repo.AddCustomRole(role); err != nil {
+		log.Printf("Bot: failed to create role %q: %v", state.RoleName, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Failed to create role.</b> It may already exist.",
+			b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionCreateUser, role.Name, "Created role via Telegram bot (rank: "+strconv.Itoa(rank)+")")
+	b.clearState(chatID)
+	b.handleRolesMenu(chatID, b.getMainMenuID(chatID))
 }
 
 // emptyDash returns a placeholder for empty strings.
