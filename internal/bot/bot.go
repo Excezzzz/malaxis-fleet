@@ -29,7 +29,7 @@ const onlineWindow = 90 * time.Second
 // (rename, sub URL, TERMINATE confirmation, mass sub URL) the conversation
 // moves into a state machine that consumes the next text message.
 type userState struct {
-	Step   string // "", "rename_node", "set_sub", "terminate_confirm"
+	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm"
 	NodeID string
 	Note   string
 }
@@ -318,6 +318,47 @@ func (b *Bot) SendCriticalErrorAlert(errorMessage string) {
 	b.SendAdminMessage(text)
 }
 
+// NotifyNewNode sends an instant onboarding notification to the admin the
+// moment a brand-new device registers for the first time. The message carries
+// quick-setup inline buttons: set sub URL, balanced mode, or reject/delete.
+func (b *Bot) NotifyNewNode(id, name, ipLan string) {
+	b.mu.Lock()
+	api := b.api
+	chatID := b.chatID
+	b.mu.Unlock()
+
+	if api == nil {
+		return
+	}
+
+	name = emptyDash(name)
+	ipLan = emptyDash(ipLan)
+
+	text := fmt.Sprintf("<b>🖥️ NEW DEVICE CONNECTED!</b>\n\n"+
+		"<b>Name:</b> %s\n"+
+		"<b>LAN IP:</b> %s\n"+
+		"<b>Node ID:</b> <code>%s</code>\n\n"+
+		"Status: <b>Registered &amp; Waiting for Configuration.</b>",
+		name, ipLan, id)
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔗 Set Sub URL", "node:set_sub:"+id),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("⚖️ Set Balanced", "node:switch:"+id+":balanced"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Reject & Delete", "node:delete:"+id),
+		),
+	)
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+	msg.ReplyMarkup = &markup
+	if _, err := api.Send(msg); err != nil {
+		log.Printf("Bot: failed to send new-node onboarding notification: %v", err)
+	}
+}
+
 // --- State helpers ---
 
 func (b *Bot) getState(chatID int64) *userState {
@@ -469,7 +510,7 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 	switch state.Step {
 	case "rename_node":
 		b.processRenameText(chatID, text)
-	case "set_sub":
+	case "set_sub", "set_sub_url":
 		b.processSetSubText(chatID, text)
 	case "terminate_confirm":
 		b.processTerminateText(chatID, text)
@@ -533,7 +574,17 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateDevice, state.NodeID, "Updated subscription URL to "+subURL+" (via Telegram bot)")
-	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "✅ Subscription URL updated; node will refresh on next poll")
+
+	// Onboarding-style success: keep the message compact and offer a path back
+	// to the full node detail view.
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("💻 View Node Details", "node:detail:"+state.NodeID),
+		),
+	)
+	b.editMessage(chatID, b.getMainMenuID(chatID),
+		fmt.Sprintf("<b>✅ Subscription URL Set!</b>\n\nDevice <b>%s</b> is now fetching configs...", b.nodeLabel(state.NodeID)),
+		&markup)
 }
 
 func (b *Bot) processTerminateText(chatID int64, text string) {
@@ -610,6 +661,14 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.setState(chatID, &userState{Step: "set_sub", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
 			fmt.Sprintf("<b>🔗 Set Sub URL</b>\n\nSend the new subscription URL for node <b>%s</b>:", b.nodeLabel(nodeID)),
+			b.cancelMarkup())
+	case strings.HasPrefix(data, "node:set_sub:"):
+		// Onboarding quick-action: prompt for the subscription URL inside the
+		// notification message itself.
+		nodeID := strings.TrimPrefix(data, "node:set_sub:")
+		b.setState(chatID, &userState{Step: "set_sub_url", NodeID: nodeID})
+		b.editMessage(chatID, messageID,
+			fmt.Sprintf("<b>🔗 Set Sub URL</b>\n\nPlease reply/send the Subscription URL for <b>%s</b>:", b.nodeLabel(nodeID)),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:delete:"):
 		b.handleDeleteMenu(chatID, messageID, strings.TrimPrefix(data, "node:delete:"))
@@ -833,8 +892,10 @@ func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to delete node")
 		return
 	}
-	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Deleted node "+name+" (via Telegram bot)")
-	b.handleNodeList(chatID, messageID)
+	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Rejected and deleted node "+name+" (via Telegram bot)")
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("❌ Node <b>%s</b> rejected and deleted.", name),
+		b.cancelMarkup())
 }
 
 // handleRefreshAllSubs mirrors the web UI "Refresh All Subscriptions" action:

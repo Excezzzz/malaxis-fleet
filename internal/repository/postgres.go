@@ -285,7 +285,7 @@ func (r *postgresRepository) AddNode(node *domain.Node) error {
 	return err
 }
 
-func (r *postgresRepository) UpsertNode(node *domain.Node) (string, error) {
+func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error) {
 	// Dedup ghost nodes: if another node with the same hostname exists under a
 	// different id (reinstall creates a fresh node_id), remove the stale one —
 	// but only if it has been offline for a while, so a live duplicate is kept.
@@ -304,6 +304,15 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, error) {
 		}
 	}
 
+	// Detect whether this is a genuinely new device FIRST time we've ever seen
+	// it. Hardware-hash adoption above collapses reinstalls onto their original
+	// row, so a reconnecting device is NOT reported as new.
+	var isNew bool
+	err := r.db.QueryRow(`SELECT NOT EXISTS (SELECT 1 FROM nodes WHERE id = $1)`, node.ID).Scan(&isNew)
+	if err != nil {
+		return node.ID, false, err
+	}
+
 	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, hardware_hash, last_seen)
 		VALUES ($1, $2, $3, $4, $5, $6, NOW())
 		ON CONFLICT (id) DO UPDATE SET
@@ -316,8 +325,8 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, error) {
 			END,
 			hostname = COALESCE(EXCLUDED.hostname, nodes.hostname),
 			hardware_hash = COALESCE(EXCLUDED.hardware_hash, nodes.hardware_hash)`
-	_, err := r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, node.SubURL, node.HardwareHash)
-	return node.ID, err
+	_, err = r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, node.SubURL, node.HardwareHash)
+	return node.ID, isNew, err
 }
 
 func (r *postgresRepository) RenameNode(id, name string) error {
