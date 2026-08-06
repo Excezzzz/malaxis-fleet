@@ -4,7 +4,39 @@
       <Login @authenticated="login" />
     </div>
     <div v-else class="relative min-h-screen">
-      <nav class="fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">
+      <!-- Mobile top bar: logo / user badge / logout -->
+      <header class="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-zinc-950/90 backdrop-blur-xl border-b border-white/10">
+        <div class="flex items-center space-x-2 shrink-0 min-w-0">
+          <div class="p-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/20 shrink-0">
+            <Globe class="w-4 h-4 text-indigo-300" />
+          </div>
+          <h1 class="text-sm font-bold tracking-tight whitespace-nowrap truncate">Malaxis Fleet</h1>
+        </div>
+        <div class="flex items-center space-x-2 shrink-0">
+          <div v-if="username" class="flex flex-col text-right min-w-0">
+            <span class="text-xs font-bold text-white whitespace-nowrap truncate">{{ username }}</span>
+            <span v-if="roleName" :class="['text-[10px] uppercase tracking-wider truncate', roleName.toLowerCase() === 'owner' ? 'text-red-400' : 'text-indigo-400']">{{ roleName }}</span>
+            <span v-else class="text-[10px] uppercase tracking-wider truncate text-zinc-500">user</span>
+          </div>
+          <button @click="logout" class="flex items-center justify-center w-9 h-9 rounded-full text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors" title="Logout">
+            <LogOut class="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      <!-- Mobile bottom bar: navigation tabs -->
+      <nav class="fixed bottom-0 left-0 w-full z-50 md:hidden bg-zinc-950/95 backdrop-blur-xl border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
+        <div class="flex items-stretch gap-1 overflow-x-auto px-2 py-2 scrollbar-none">
+          <a v-for="item in navItems" :key="item.view" @click.prevent="currentView = item.view" href="#"
+             :title="item.label"
+             :class="['flex flex-col items-center justify-center gap-0.5 px-4 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-colors', navLinkClasses(item.view)]">
+            <component :is="item.icon" class="w-5 h-5" />
+            <span class="text-[10px] font-mono">{{ item.label }}</span>
+          </a>
+        </div>
+      </nav>
+
+      <nav class="hidden md:flex fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">
         <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
           <div class="p-1.5 sm:p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
             <Globe class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-300" />
@@ -37,7 +69,7 @@
         </div>
       </nav>
 
-      <main class="w-full px-4 md:px-8 pt-24 sm:pt-28 pb-16">
+      <main class="w-full px-4 md:px-8 pt-16 md:pt-28 pb-24 md:pb-16">
         <div v-if="isReadOnly" class="mb-6 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
           <strong>Read-only mode:</strong> your role only has view access. Management actions are hidden.
         </div>
