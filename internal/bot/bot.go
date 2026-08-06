@@ -29,18 +29,21 @@ const onlineWindow = 90 * time.Second
 
 // userState is the in-memory text-input session for the admin. The bot shows
 // exactly ONE dynamic bot message; when a feature needs free-form text input
-// (rename, sub URL, TERMINATE confirmation, mass sub URL, user/role creation)
+// (sub URL, rename, TERMINATE, password, role rank/name, create-user creds, ...)
 // the conversation moves into a state machine that consumes the next text
-// message. The Username/Password/RoleName fields carry the in-progress
-// create-user / create-role flows across multiple prompts.
+// message: prompt -> capture -> process -> delete -> return to the menu. The
+// Username/Password/RoleName fields carry in-progress create flows and
+// TargetID/TargetRoleID identify the DB row for the active CRUD operation.
 type userState struct {
-	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm", "add_user_creds", "add_user_role", "add_role_name", "add_role_rank"
+	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm", "add_user_creds", "add_user_role", "add_role_name", "add_role_rank", "user_pw", "role_rename", "role_rank"
 	NodeID string
 	Note   string
 	// User/role creation flow fields.
-	Username string
-	Password string
-	RoleName string
+	Username     string
+	Password     string
+	RoleName     string
+	TargetID     int64 // target user or role id for in-progress CRUD operations
+	TargetRoleID int64 // target role id for the in-progress change-user-role flow
 }
 
 type Bot struct {
@@ -537,6 +540,12 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 		b.processAddRoleNameText(chatID, text)
 	case "add_role_rank":
 		b.processAddRoleRankText(chatID, text)
+	case "user_pw":
+		b.processChangeUserPwText(chatID, text)
+	case "role_rename":
+		b.processRenameRoleText(chatID, text)
+	case "role_rank":
+		b.processChangeRoleRankText(chatID, text)
 	default:
 		b.clearState(chatID)
 		b.showMainMenu(chatID)
@@ -678,6 +687,36 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "user:create:"):
 		b.handleUserCreate(chatID, messageID, strings.TrimPrefix(data, "user:create:"))
+	case strings.HasPrefix(data, "user:detail:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "user:detail:"), 10, 64); err == nil {
+			b.showUserDetail(chatID, messageID, id, "")
+		}
+	case strings.HasPrefix(data, "user:role:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "user:role:"), 10, 64); err == nil {
+			b.showUserRolePicker(chatID, messageID, id)
+		}
+	case strings.HasPrefix(data, "user:setrole:"):
+		rest := strings.TrimPrefix(data, "user:setrole:")
+		idx := strings.Index(rest, ":")
+		if idx >= 0 {
+			if uid, err1 := strconv.ParseInt(rest[:idx], 10, 64); err1 == nil {
+				if rid, err2 := strconv.ParseInt(rest[idx+1:], 10, 64); err2 == nil {
+					b.handleUserChangeRole(chatID, messageID, uid, rid)
+				}
+			}
+		}
+	case strings.HasPrefix(data, "user:pw:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "user:pw:"), 10, 64); err == nil {
+			b.handleUserPwRequest(chatID, messageID, id)
+		}
+	case strings.HasPrefix(data, "user:del:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "user:del:"), 10, 64); err == nil {
+			b.handleUserDeleteRequest(chatID, messageID, id)
+		}
+	case strings.HasPrefix(data, "user:delconfirm:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "user:delconfirm:"), 10, 64); err == nil {
+			b.handleUserDeleteConfirm(chatID, messageID, id)
+		}
 	case data == "roles:menu":
 		b.handleRolesMenu(chatID, messageID)
 	case data == "roles:add":
@@ -685,6 +724,26 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.editMessage(chatID, messageID,
 			"<b>🛡️ Add Role</b>\n\nSend the role name (e.g., <code>manager</code>):",
 			b.cancelMarkup())
+	case strings.HasPrefix(data, "role:detail:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "role:detail:"), 10, 64); err == nil {
+			b.showRoleDetail(chatID, messageID, id, "")
+		}
+	case strings.HasPrefix(data, "role:rename:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "role:rename:"), 10, 64); err == nil {
+			b.handleRoleRenameRequest(chatID, messageID, id)
+		}
+	case strings.HasPrefix(data, "role:rank:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "role:rank:"), 10, 64); err == nil {
+			b.handleRoleRankRequest(chatID, messageID, id)
+		}
+	case strings.HasPrefix(data, "role:del:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "role:del:"), 10, 64); err == nil {
+			b.handleRoleDeleteRequest(chatID, messageID, id)
+		}
+	case strings.HasPrefix(data, "role:delconfirm:"):
+		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "role:delconfirm:"), 10, 64); err == nil {
+			b.handleRoleDeleteConfirm(chatID, messageID, id)
+		}
 	case strings.HasPrefix(data, "node:detail:"):
 		b.showNodeDetail(chatID, messageID, strings.TrimPrefix(data, "node:detail:"), "")
 	case strings.HasPrefix(data, "node:vpn:"):
@@ -1203,37 +1262,26 @@ func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
 		return
 	}
 
-	roles, _ := b.repo.GetAllRoles()
-	rankByRole := map[string]int{}
-	for _, r := range roles {
-		if r.Rank > 0 {
-			rankByRole[r.Name] = r.Rank
-		}
-	}
-	rankOf := func(role string) int {
-		if r, ok := rankByRole[role]; ok {
-			return r
-		}
-		return domain.RoleRank(role)
-	}
-
 	var text strings.Builder
 	text.WriteString("<b>👥 Manage Users</b>\n\n")
 	if len(users) == 0 {
 		text.WriteString("No users yet.")
 	} else {
-		text.WriteString(fmt.Sprintf("%d user(s):\n", len(users)))
-		for _, u := range users {
-			roleName := u.RoleName
-			if roleName == "" {
-				roleName = u.Role
-			}
-			text.WriteString(fmt.Sprintf("• %s — <b>%s</b> [rank %d]\n",
-				xmlEscape(u.Username), xmlEscape(roleName), rankOf(u.Role)))
-		}
+		text.WriteString(fmt.Sprintf("%d user(s). Tap a user to manage:\n", len(users)))
 	}
 
-	markup := tgbotapi.NewInlineKeyboardMarkup(
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(users)+2)
+	for _, u := range users {
+		roleName := u.RoleName
+		if roleName == "" {
+			roleName = u.Role
+		}
+		label := fmt.Sprintf("👤 %s", xmlEscape(u.Username))
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(label, "user:detail:"+strconv.FormatInt(u.ID, 10)),
+		))
+	}
+	rows = append(rows,
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("➕ Add User", "users:add"),
 		),
@@ -1241,7 +1289,252 @@ func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
 		),
 	)
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// roleRankOf resolves the numeric rank of a role name, preferring the custom
+// roles table and falling back to the built-in domain rank table.
+func (b *Bot) roleRankOf(role string) int {
+	roles, err := b.repo.GetAllRoles()
+	if err == nil {
+		for _, r := range roles {
+			if r.Rank > 0 && strings.EqualFold(r.Name, role) {
+				return r.Rank
+			}
+		}
+	}
+	return domain.RoleRank(role)
+}
+
+// showUserDetail renders a single user with its role/rank and the full set of
+// management actions: change role, change password, delete user.
+func (b *Bot) showUserDetail(chatID int64, messageID int, userID int64, note string) {
+	user, err := b.repo.GetUserByID(userID)
+	if err != nil {
+		log.Printf("Bot: user %d not found: %v", userID, err)
+		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	roleName := user.RoleName
+	if roleName == "" {
+		roleName = user.Role
+	}
+
+	var text strings.Builder
+	text.WriteString("<b>👤 User Details</b>\n\n")
+	text.WriteString(fmt.Sprintf("<b>Username:</b> %s\n", xmlEscape(user.Username)))
+	text.WriteString(fmt.Sprintf("<b>Role:</b> %s [rank <code>%d</code>]\n", xmlEscape(roleName), b.roleRankOf(user.Role)))
+	text.WriteString(fmt.Sprintf("<b>Created:</b> %s", user.CreatedAt.Format("2006-01-02 15:04")))
+	if note != "" {
+		text.WriteString("\n\n✅ <i>" + note + "</i>")
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔄 Change Role", "user:role:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData("🔑 Change Password", "user:pw:"+strconv.FormatInt(user.ID, 10)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete User", "user:del:"+strconv.FormatInt(user.ID, 10)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Users", "users:menu"),
+		),
+	)
+	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// showUserRolePicker renders every non-owner role as a target for reassigning
+// the user's role.
+func (b *Bot) showUserRolePicker(chatID int64, messageID int, userID int64) {
+	user, err := b.repo.GetUserByID(userID)
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	roles, err := b.repo.GetAllRoles()
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ Failed to load roles.</b>", b.cancelMarkup())
+		return
+	}
+
+	var rows [][]tgbotapi.InlineKeyboardButton
+	var row []tgbotapi.InlineKeyboardButton
+	for _, r := range roles {
+		if strings.EqualFold(r.Name, domain.RoleOwner) {
+			continue
+		}
+		rank := r.Rank
+		if rank < 1 {
+			rank = domain.RoleRank(r.Name)
+		}
+		row = append(row, tgbotapi.NewInlineKeyboardButtonData(
+			fmt.Sprintf("%s [%d]", r.Name, rank),
+			fmt.Sprintf("user:setrole:%d:%d", user.ID, r.ID),
+		))
+		if len(row) == 2 {
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
+			row = nil
+		}
+	}
+	if len(row) > 0 {
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
+	}
+	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+		tgbotapi.NewInlineKeyboardButtonData("❌ Cancel", "user:detail:"+strconv.FormatInt(user.ID, 10)),
+	))
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("<b>🔄 Change Role</b>\n\nSelect the new role for <b>%s</b>:", xmlEscape(user.Username)),
+		&markup)
+}
+
+// handleUserChangeRole assigns a new role to an existing user, mirroring the
+// web API's rank guards: the owner role is never assignable and the bot only
+// ever reassigns strictly lower-ranked roles.
+func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID int64) {
+	user, err := b.repo.GetUserByID(userID)
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil {
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+	if strings.EqualFold(role.Name, domain.RoleOwner) {
+		b.editMessage(chatID, messageID, "<b>❌ The owner role cannot be assigned to a user.</b>", b.cancelMarkup())
+		return
+	}
+	if strings.EqualFold(user.Username, "admin") || strings.EqualFold(user.Role, domain.RoleOwner) {
+		b.editMessage(chatID, messageID, "<b>❌ The owner account cannot be reassigned.</b>", b.cancelMarkup())
+		return
+	}
+
+	oldRole := user.RoleName
+	if oldRole == "" {
+		oldRole = user.Role
+	}
+	if strings.EqualFold(oldRole, role.Name) {
+		b.editMessage(chatID, messageID, "<b>ℹ️ User already has this role.</b>", b.cancelMarkup())
+		return
+	}
+
+	user.Role = role.Name
+	user.RoleName = role.Name
+	user.ColorHex = role.ColorHex
+	if err := b.repo.UpdateUser(user); err != nil {
+		log.Printf("Bot: failed to update role for user %d: %v", userID, err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to update role.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionUpdateUser, user.Username, "Changed role from "+oldRole+" to "+role.Name+" (via Telegram bot)")
+	b.showUserDetail(chatID, messageID, userID, "Role changed to "+role.Name)
+}
+
+// handleUserPwRequest opens the password-change prompt; the next text message
+// becomes the new password (and is deleted after processing).
+func (b *Bot) handleUserPwRequest(chatID int64, messageID int, userID int64) {
+	user, err := b.repo.GetUserByID(userID)
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+	b.setState(chatID, &userState{Step: "user_pw", TargetID: userID})
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("<b>🔑 Change Password</b>\n\nSend the new password for <b>%s</b>:\n\nThe message will be deleted after processing.", xmlEscape(user.Username)),
+		b.cancelMarkup())
+}
+
+// processChangeUserPwText captures the new password, hashes it and updates the
+// target user.
+func (b *Bot) processChangeUserPwText(chatID int64, text string) {
+	state := b.getState(chatID)
+	b.clearState(chatID)
+
+	password := strings.TrimSpace(text)
+	if password == "" {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>🔑 Change Password</b>\n\nPassword cannot be empty. Send a password or press Cancel:",
+			b.cancelMarkup())
+		return
+	}
+
+	user, err := b.repo.GetUserByID(state.TargetID)
+	if err != nil {
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("Bot: failed to hash new password for user %d: %v", state.TargetID, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update password.</b>", b.cancelMarkup())
+		return
+	}
+
+	if err := b.repo.UpdateUserPassword(state.TargetID, string(hashed)); err != nil {
+		log.Printf("Bot: failed to update password for user %d: %v", state.TargetID, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update password.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionUpdateUser, user.Username, "Changed password (via Telegram bot)")
+	b.showUserDetail(chatID, b.getMainMenuID(chatID), state.TargetID, "Password updated")
+}
+
+// handleUserDeleteRequest asks for explicit confirmation before deleting a
+// user; the owner account and admin are always protected.
+func (b *Bot) handleUserDeleteRequest(chatID int64, messageID int, userID int64) {
+	user, err := b.repo.GetUserByID(userID)
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+	if strings.EqualFold(user.Username, "admin") || strings.EqualFold(user.Role, domain.RoleOwner) {
+		b.editMessage(chatID, messageID, "<b>❌ The owner account cannot be deleted.</b>", b.cancelMarkup())
+		return
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑️ Yes, Delete", "user:delconfirm:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData("↩️ Cancel", "user:detail:"+strconv.FormatInt(user.ID, 10)),
+		),
+	)
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("<b>🗑️ Delete User</b>\n\nAre you sure you want to permanently delete <b>%s</b>? This cannot be undone.", xmlEscape(user.Username)),
+		&markup)
+}
+
+// handleUserDeleteConfirm performs the actual user deletion.
+func (b *Bot) handleUserDeleteConfirm(chatID int64, messageID int, userID int64) {
+	user, err := b.repo.GetUserByID(userID)
+	if err != nil {
+		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		return
+	}
+	if strings.EqualFold(user.Username, "admin") || strings.EqualFold(user.Role, domain.RoleOwner) {
+		b.editMessage(chatID, messageID, "<b>❌ The owner account cannot be deleted.</b>", b.cancelMarkup())
+		return
+	}
+
+	username := user.Username
+	if err := b.repo.DeleteUser(userID); err != nil {
+		log.Printf("Bot: failed to delete user %d: %v", userID, err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to delete user.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionDeleteUser, username, "Deleted user via Telegram bot")
+	b.handleUsersMenu(chatID, messageID)
 }
 
 // processAddUserCredsText parses "username password" from the admin's reply,
@@ -1374,13 +1667,21 @@ func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
 	if len(roles) == 0 {
 		text.WriteString("No roles defined.")
 	} else {
-		text.WriteString(fmt.Sprintf("%d role(s):\n", len(roles)))
-		for _, r := range roles {
-			text.WriteString(fmt.Sprintf("• <b>%s</b> — rank <code>%d</code>\n", xmlEscape(r.Name), r.Rank))
-		}
+		text.WriteString(fmt.Sprintf("%d role(s). Tap a role to manage:\n", len(roles)))
 	}
 
-	markup := tgbotapi.NewInlineKeyboardMarkup(
+	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(roles)+2)
+	for _, r := range roles {
+		rank := r.Rank
+		if rank < 1 {
+			rank = domain.RoleRank(r.Name)
+		}
+		label := fmt.Sprintf("🛡️ %s [rank %d]", xmlEscape(r.Name), rank)
+		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(label, "role:detail:"+strconv.FormatInt(r.ID, 10)),
+		))
+	}
+	rows = append(rows,
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("➕ Add Role", "roles:add"),
 		),
@@ -1388,7 +1689,231 @@ func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
 		),
 	)
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// showRoleDetail renders a single role with its rank, user count and the full
+// set of management actions: rename, change rank, delete.
+func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note string) {
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil {
+		log.Printf("Bot: role %d not found: %v", roleID, err)
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	rank := role.Rank
+	if rank < 1 {
+		rank = domain.RoleRank(role.Name)
+	}
+	userCount, _ := b.repo.CountUsersByRoleName(role.Name)
+
+	var text strings.Builder
+	text.WriteString("<b>🛡️ Role Details</b>\n\n")
+	text.WriteString(fmt.Sprintf("<b>Name:</b> %s\n", xmlEscape(role.Name)))
+	text.WriteString(fmt.Sprintf("<b>Rank:</b> <code>%d</code>\n", rank))
+	text.WriteString(fmt.Sprintf("<b>Users assigned:</b> %d\n", userCount))
+	if role.OwnerID == "system" {
+		text.WriteString("<b>Type:</b> system role")
+	}
+	if note != "" {
+		text.WriteString("\n\n✅ <i>" + note + "</i>")
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✏️ Rename Role", "role:rename:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData("🔢 Change Rank", "role:rank:"+strconv.FormatInt(role.ID, 10)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete Role", "role:del:"+strconv.FormatInt(role.ID, 10)),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Roles", "roles:menu"),
+		),
+	)
+	b.editMessage(chatID, messageID, text.String(), &markup)
+}
+
+// handleRoleRenameRequest opens the rename prompt; the next text message
+// becomes the role's new name, guarded against reserved/duplicate names.
+func (b *Bot) handleRoleRenameRequest(chatID int64, messageID int, roleID int64) {
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil {
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+	if role.OwnerID == "system" {
+		b.editMessage(chatID, messageID, "<b>❌ System roles cannot be renamed.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.setState(chatID, &userState{Step: "role_rename", TargetID: roleID})
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("<b>✏️ Rename Role</b>\n\nSend the new name for role <b>%s</b>\n(owner, admin, client, viewer are reserved):", xmlEscape(role.Name)),
+		b.cancelMarkup())
+}
+
+// processRenameRoleText validates and applies the new role name.
+func (b *Bot) processRenameRoleText(chatID int64, text string) {
+	state := b.getState(chatID)
+	b.clearState(chatID)
+
+	name := strings.TrimSpace(text)
+	if name == "" {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>✏️ Rename Role</b>\n\nRole name cannot be empty. Send a name or press Cancel:",
+			b.cancelMarkup())
+		return
+	}
+
+	lower := strings.ToLower(name)
+	if lower == "owner" || lower == "admin" || lower == "client" || lower == "viewer" {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Reserved role name.</b> Please choose a different name:",
+			b.cancelMarkup())
+		return
+	}
+	if _, err := b.repo.GetRoleByName(name); err == nil {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Role name already exists.</b> Please choose a different name:",
+			b.cancelMarkup())
+		return
+	}
+
+	role, err := b.repo.GetRoleByID(state.TargetID)
+	if err != nil || role == nil || role.OwnerID == "system" {
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	oldName := role.Name
+	role.Name = name
+	if err := b.repo.UpdateCustomRole(role); err != nil {
+		log.Printf("Bot: failed to rename role %d: %v", state.TargetID, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to rename role.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, role.Name, "Renamed role from "+oldName+" to "+name+" (via Telegram bot)")
+	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, "Renamed to "+role.Name)
+}
+
+// handleRoleRankRequest opens the rank prompt; the next text message becomes
+// the role's new rank (1-99).
+func (b *Bot) handleRoleRankRequest(chatID int64, messageID int, roleID int64) {
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil {
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+	if role.OwnerID == "system" {
+		b.editMessage(chatID, messageID, "<b>❌ System role ranks are fixed.</b>", b.cancelMarkup())
+		return
+	}
+	if role.Name == domain.RoleOwner {
+		b.editMessage(chatID, messageID, "<b>❌ The owner role rank is immutable.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.setState(chatID, &userState{Step: "role_rank", TargetID: roleID})
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("<b>🔢 Change Rank</b>\n\nSend the new rank (<b>1-99</b>) for role <b>%s</b>:", xmlEscape(role.Name)),
+		b.cancelMarkup())
+}
+
+// processChangeRoleRankText validates and applies the new role rank.
+func (b *Bot) processChangeRoleRankText(chatID int64, text string) {
+	state := b.getState(chatID)
+	b.clearState(chatID)
+
+	rank, err := strconv.Atoi(strings.TrimSpace(text))
+	if err != nil || rank < 1 || rank > 99 {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>🔢 Change Rank</b>\n\nInvalid rank. Send a whole number between <b>1</b> and <b>99</b>:",
+			b.cancelMarkup())
+		return
+	}
+
+	role, err := b.repo.GetRoleByID(state.TargetID)
+	if err != nil || role == nil || role.OwnerID == "system" {
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+
+	oldRank := role.Rank
+	role.Rank = rank
+	if err := b.repo.UpdateCustomRole(role); err != nil {
+		log.Printf("Bot: failed to change rank for role %d: %v", state.TargetID, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update rank.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, role.Name, "Changed rank from "+strconv.Itoa(oldRank)+" to "+strconv.Itoa(rank)+" (via Telegram bot)")
+	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, "Rank updated to "+strconv.Itoa(rank))
+}
+
+// handleRoleDeleteRequest asks for explicit confirmation. System roles and the
+// owner role are never deletable; roles that still have assigned users also
+// cannot be deleted.
+func (b *Bot) handleRoleDeleteRequest(chatID int64, messageID int, roleID int64) {
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil {
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+	if role.OwnerID == "system" || role.Name == domain.RoleOwner {
+		b.editMessage(chatID, messageID, "<b>❌ System and owner roles cannot be deleted.</b>", b.cancelMarkup())
+		return
+	}
+
+	userCount, err := b.repo.CountUsersByRoleName(role.Name)
+	if err == nil && userCount > 0 {
+		b.editMessage(chatID, messageID,
+			fmt.Sprintf("<b>❌ Role <b>%s</b> is assigned to %d user(s). Reassign or delete them first.</b>", xmlEscape(role.Name), userCount),
+			b.cancelMarkup())
+		return
+	}
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🗑️ Yes, Delete", "role:delconfirm:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData("↩️ Cancel", "role:detail:"+strconv.FormatInt(role.ID, 10)),
+		),
+	)
+	b.editMessage(chatID, messageID,
+		fmt.Sprintf("<b>🗑️ Delete Role</b>\n\nAre you sure you want to permanently delete role <b>%s</b>? This cannot be undone.", xmlEscape(role.Name)),
+		&markup)
+}
+
+// handleRoleDeleteConfirm performs the actual role deletion.
+func (b *Bot) handleRoleDeleteConfirm(chatID int64, messageID int, roleID int64) {
+	role, err := b.repo.GetRoleByID(roleID)
+	if err != nil || role == nil {
+		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		return
+	}
+	if role.OwnerID == "system" || role.Name == domain.RoleOwner {
+		b.editMessage(chatID, messageID, "<b>❌ System roles cannot be deleted.</b>", b.cancelMarkup())
+		return
+	}
+
+	userCount, _ := b.repo.CountUsersByRoleName(role.Name)
+	if userCount > 0 {
+		b.editMessage(chatID, messageID, "<b>❌ Role still has assigned users.</b>", b.cancelMarkup())
+		return
+	}
+
+	if err := b.repo.DeleteCustomRole(roleID); err != nil {
+		log.Printf("Bot: failed to delete role %d: %v", roleID, err)
+		b.editMessage(chatID, messageID, "<b>❌ Failed to delete role.</b>", b.cancelMarkup())
+		return
+	}
+
+	b.audit.Log("telegram_bot", audit.ActionDeleteUser, role.Name, "Deleted role via Telegram bot")
+	b.handleRolesMenu(chatID, messageID)
 }
 
 // processAddRoleNameText captures the new role's name and moves the flow on to
