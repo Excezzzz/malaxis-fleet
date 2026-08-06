@@ -78,12 +78,17 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
-              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label v-for="perm in Object.keys(PERMISSION_LABELS)" :key="perm" class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="newRole.permissions" :value="perm"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">{{ PERMISSION_LABELS[perm] }}</span>
-                </label>
+              <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
+                <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center space-x-3">
+                      <input type="checkbox" v-model="newRole.permissions" :value="perm"
+                             class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                      <span class="text-sm text-zinc-300">{{ label }}</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -120,12 +125,17 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
-              <div class="space-y-3 bg-white/5 border border-white/10 rounded-xl p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                <label v-for="perm in Object.keys(PERMISSION_LABELS)" :key="perm" class="flex items-center space-x-3">
-                  <input type="checkbox" v-model="editForm.permissions" :value="perm"
-                         class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                  <span class="text-sm text-zinc-300">{{ PERMISSION_LABELS[perm] }}</span>
-                </label>
+              <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
+                <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center space-x-3">
+                      <input type="checkbox" v-model="editForm.permissions" :value="perm"
+                             class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
+                      <span class="text-sm text-zinc-300">{{ label }}</span>
+                    </label>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -143,30 +153,58 @@
 
 <script>
 import { ref, onMounted } from 'vue';
-import { Plus, Trash2, Shield, Edit } from 'lucide-vue-next';
+import { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup } from 'lucide-vue-next';
 
-const PERMISSION_LABELS = {
-  can_view_nodes: 'View Nodes',
-  can_switch_vpn: 'Switch VPN',
-  can_edit_sub: 'Edit Subscription URL',
-  can_rename_node: 'Rename Nodes',
-  can_terminate_node: 'Terminate Nodes',
-  can_update_client: 'Update Client Files (OTA)',
-  can_purge_nodes: 'Purge Offline Nodes',
-  can_manage_users: 'Manage Users',
-  can_manage_roles: 'Manage Roles',
-  can_view_audit: 'View Audit Logs (legacy)',
-  can_view_node_logs: 'View Node Logs',
-  can_view_master_logs: 'View Master Server Logs',
-  can_view_audit_logs: 'View Audit Trail',
-  can_export_backups: 'Export Backups',
-};
+const PERMISSION_SECTIONS = [
+  {
+    title: 'Nodes',
+    icon: 'Server',
+    perms: [
+      ['can_view_nodes', 'View Nodes'],
+      ['can_switch_vpn', 'Switch VPN'],
+      ['can_edit_sub', 'Manage Sub URL'],
+      ['can_rename_node', 'Rename Nodes'],
+      ['can_terminate_node', 'Terminate & Self-Destruct'],
+      ['can_view_node_logs', 'View Node Logs'],
+      ['can_update_client', 'Push Client Files (OTA)'],
+      ['can_purge_nodes', 'Purge Offline Nodes'],
+    ],
+  },
+  {
+    title: 'Users',
+    icon: 'Users',
+    perms: [
+      ['can_view_users', 'View Fleet Users'],
+      ['can_create_users', 'Add New Users'],
+      ['can_edit_users', 'Edit Users'],
+      ['can_delete_users', 'Delete Users'],
+    ],
+  },
+  {
+    title: 'Roles',
+    icon: 'Shield',
+    perms: [
+      ['can_view_roles', 'View Roles & Permissions'],
+      ['can_manage_roles', 'Create / Edit / Delete Roles'],
+    ],
+  },
+  {
+    title: 'Logs & Backups',
+    icon: 'ScrollText',
+    perms: [
+      ['can_view_audit_logs', 'View Audit Trail'],
+      ['can_view_master_logs', 'View Master Server Logs'],
+      ['can_export_backups', 'Export Backups (ZIP)'],
+    ],
+  },
+];
 
+const PERMISSION_LABELS = Object.fromEntries(PERMISSION_SECTIONS.flatMap(s => s.perms));
 const ALL_PERMS = Object.keys(PERMISSION_LABELS);
 
 export default {
   name: 'RoleManager',
-  components: { Plus, Trash2, Shield, Edit },
+  components: { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup },
   setup() {
     const customRoles = ref([]);
     const showCreateModal = ref(false);
@@ -289,6 +327,7 @@ export default {
       parsePermissions,
       permLabel,
       PERMISSION_LABELS,
+      PERMISSION_SECTIONS,
       handleCreateRole,
       openEditModal,
       handleEditRole,

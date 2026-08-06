@@ -128,7 +128,7 @@ func (a *API) enforcePermission(w http.ResponseWriter, r *http.Request, permissi
 	}
 
 	// Owner (and the original admin account) implicitly holds every permission.
-	if user.Role == domain.RoleOwner || user.Username == "admin" {
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" {
 		return true
 	}
 
@@ -167,6 +167,13 @@ func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
 
 	http.Error(w, "Forbidden: Only the owner can perform this action", http.StatusForbidden)
 	return false
+}
+
+// writeForbidden writes a JSON 403 response with the given error message.
+func (a *API) writeForbidden(w http.ResponseWriter, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	json.NewEncoder(w).Encode(ErrResponse{Error: message})
 }
 
 // parsePermissionsJSON parses a role's permissions_json in both supported
@@ -936,7 +943,7 @@ func (a *API) GetAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetUsersHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermViewUsers) {
 		return
 	}
 
@@ -961,7 +968,7 @@ type CreateUserRequest struct {
 }
 
 func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermCreateUsers) {
 		return
 	}
 
@@ -983,17 +990,6 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(ErrResponse{Error: "username and password are required"})
 		return
-	}
-
-	if actorUser.Role != domain.RoleOwner && (req.Role == domain.RoleOwner || req.Role == domain.RoleAdmin) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(ErrResponse{Error: "Only the Owner can create admin or owner accounts"})
-		return
-	}
-
-	if actorUser.Role != domain.RoleOwner {
-		req.Role = domain.RoleClient
 	}
 
 	if req.Role == "" && req.RoleID != nil {
@@ -1019,7 +1015,17 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		req.Role = domain.RoleClient
 	}
 
-	// The owner role is reserved for the original seeded admin user. Nobody
+	// ROLE HIERARCHY: an actor may only create users whose role rank is
+	// STRICTLY LOWER than their own. Creating a user with an equal or higher
+	// rank (e.g. an admin creating another admin, or a client escalating to
+	// owner) is forbidden.
+	actorRank := domain.RoleRank(actorUser.Role)
+	if domain.RoleRank(req.Role) >= actorRank {
+		a.writeForbidden(w, "Forbidden: Cannot create users with equal or higher role rank")
+		return
+	}
+
+	// The owner role is reserved for the original seeded admin account. Nobody
 	// (not even the owner) may create additional owner accounts.
 	if req.Role == domain.RoleOwner {
 		w.Header().Set("Content-Type", "application/json")
@@ -1070,7 +1076,7 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermEditUsers) {
 		return
 	}
 
@@ -1089,10 +1095,20 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 
+	// Nobody may modify their own active session role or lower their own
+	// privileges through the management endpoint.
 	if actorID == id {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrResponse{Error: "Cannot modify your own account through this endpoint"})
+		return
+	}
+
+	actorUser, errGet := a.repo.GetUserByID(actorID)
+	if errGet != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(ErrResponse{Error: "Forbidden: User not found"})
 		return
 	}
 
@@ -1115,11 +1131,19 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ROLE HIERARCHY: an actor may only edit a target whose role rank is
+	// STRICTLY LOWER than their own. Editing an equal/higher rank (an admin
+	// demoting another admin, or anything touching the owner) is forbidden.
+	if domain.RoleRank(user.Role) >= domain.RoleRank(actorUser.Role) {
+		a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
+		return
+	}
+
 	if req.RoleID != nil {
 		if rid := toInt64(req.RoleID); rid != nil {
 			roleLookup, err := a.repo.GetRoleByID(*rid)
 			if err == nil {
-				user.Role = roleLookup.Name
+				req.Role = roleLookup.Name
 				if req.ColorHex == "" {
 					user.ColorHex = roleLookup.ColorHex
 				}
@@ -1127,7 +1151,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		} else if roleName, ok := req.RoleID.(string); ok && roleName != "" {
 			roleLookup, err := a.repo.GetRoleByName(roleName)
 			if err == nil {
-				user.Role = roleLookup.Name
+				req.Role = roleLookup.Name
 				if req.ColorHex == "" {
 					user.ColorHex = roleLookup.ColorHex
 				}
@@ -1135,6 +1159,12 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.Role != "" {
+		// An actor may not grant a target a role with an equal/higher rank
+		// than themselves, even when the target currently ranks lower.
+		if domain.RoleRank(req.Role) >= domain.RoleRank(actorUser.Role) {
+			a.writeForbidden(w, "Forbidden: Cannot assign a role with equal or higher role rank")
+			return
+		}
 		user.Role = req.Role
 	}
 	if req.ColorHex != "" {
@@ -1144,12 +1174,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	// Owner role protection: the original admin account (seeded by
 	// UpsertAdminUser) is the sole owner and cannot be demoted; no other user
 	// may ever be assigned the owner role.
-	if user.Username == "admin" || user.ID == 1 {
-		if user.Role != domain.RoleOwner {
-			log.Printf("[UpdateUser] blocked demotion of original admin %q (role %q)", user.Username, user.Role)
-			user.Role = domain.RoleOwner
-		}
-	} else if user.Role == domain.RoleOwner {
+	if user.Role == domain.RoleOwner {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(ErrResponse{Error: "The owner role is reserved for the original admin account"})
@@ -1191,15 +1216,14 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		updatedUser.PasswordHash = ""
 	}
 
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateUser, updatedUser.Username, "Role updated to: "+updatedUser.Role)
+	a.auditLogger.LogFromRequest(r, user.Username, audit.ActionUpdateUser, updatedUser.Username, "Role updated to: "+updatedUser.Role)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updatedUser)
 }
 
 func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermDeleteUsers) {
 		return
 	}
 
@@ -1215,6 +1239,7 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 
+	// Nobody may delete their own account through the management endpoint.
 	if actorID == id {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -1227,6 +1252,15 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ErrResponse{Error: "User not found"})
+		return
+	}
+
+	// ROLE HIERARCHY: an actor may only delete a user whose role rank is
+	// STRICTLY LOWER than their own. This protects the owner account and any
+	// equal-or-higher-rank colleague from lower-rank deletion.
+	actorUser, errAct := a.repo.GetUserByID(actorID)
+	if errAct == nil && domain.RoleRank(user.Role) >= domain.RoleRank(actorUser.Role) {
+		a.writeForbidden(w, "Forbidden: Cannot delete users with equal or higher role rank")
 		return
 	}
 
@@ -1245,14 +1279,14 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorUser, _ := a.repo.GetUserByID(actorID)
+	actorUser, _ = a.repo.GetUserByID(actorID)
 	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteUser, user.Username, "User deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermEditUsers) {
 		return
 	}
 
@@ -1261,6 +1295,33 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+
+	// Nobody may reset their own password through the management endpoint.
+	if actorID == id {
+		a.writeForbidden(w, "Forbidden: Cannot modify your own account through this endpoint")
+		return
+	}
+
+	actorUser, err := a.repo.GetUserByID(actorID)
+	if err != nil {
+		a.writeForbidden(w, "Forbidden: User not found")
+		return
+	}
+
+	targetUser, err := a.repo.GetUserByID(id)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// ROLE HIERARCHY: password resets count as modification. An actor may
+	// only reset passwords of users ranking strictly lower than themselves.
+	if domain.RoleRank(targetUser.Role) >= domain.RoleRank(actorUser.Role) {
+		a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
 		return
 	}
 
@@ -1286,14 +1347,11 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	targetUser, _ := a.repo.GetUserByID(id)
 	targetName := idStr
 	if targetUser != nil {
 		targetName = targetUser.Username
 	}
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdatePassword, targetName, "Password reset by owner")
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdatePassword, targetName, "Password reset by "+actorUser.Role)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -1302,7 +1360,7 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 // --- Custom Roles Handlers ---
 
 func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermManageRoles) {
 		return
 	}
 
@@ -1318,6 +1376,13 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Bad Request: name is required", http.StatusBadRequest)
 		return
 	}
+
+	// Escalation guard: an actor may never grant permissions they do not
+	// hold themselves (owner/admin bypass via enforcePermission).
+	if !a.rolePermissionsAllowed(w, r, req.PermissionsJSON) {
+		return
+	}
+
 	if req.ColorHex == "" {
 		req.ColorHex = "#6B7280"
 	}
@@ -1355,13 +1420,11 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetCustomRolesHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermViewRoles) {
 		return
 	}
 
-	ownerID, _ := r.Context().Value(auth.UserContextKey).(int64)
-
-	roles, err := a.repo.GetCustomRolesByOwner(strconv.FormatInt(ownerID, 10))
+	roles, err := a.repo.GetAllRoles()
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
@@ -1372,7 +1435,7 @@ func (a *API) GetCustomRolesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) GetRolesHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermViewRoles) {
 		return
 	}
 
@@ -1388,7 +1451,7 @@ func (a *API) GetRolesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermManageRoles) {
 		return
 	}
 
@@ -1409,6 +1472,12 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	var req UpdateCustomRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request: Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Escalation guard: an actor may never grant permissions they do not
+	// hold themselves (owner/admin bypass via enforcePermission).
+	if req.PermissionsJSON != "" && !a.rolePermissionsAllowed(w, r, req.PermissionsJSON) {
 		return
 	}
 
@@ -1441,7 +1510,7 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.requireOwner(w, r) {
+	if !a.enforcePermission(w, r, domain.PermManageRoles) {
 		return
 	}
 
@@ -1483,6 +1552,42 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteUser, role.Name, "Deleted custom role")
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// rolePermissionsAllowed verifies that none of the granted permissions in
+// permissionsJSON exceed the actor's own granted permissions. Used to prevent
+// role-creation privilege escalation: a manager may only hand out permissions
+// they hold themselves.
+func (a *API) rolePermissionsAllowed(w http.ResponseWriter, r *http.Request, permissionsJSON string) bool {
+	if permissionsJSON == "" {
+		return true
+	}
+
+	actorID, ok := r.Context().Value(auth.UserContextKey).(int64)
+	if !ok || actorID == 0 {
+		a.writeForbidden(w, "Forbidden: User not found")
+		return false
+	}
+	actorUser, err := a.repo.GetUserByID(actorID)
+	if err != nil {
+		a.writeForbidden(w, "Forbidden: User not found")
+		return false
+	}
+
+	// Owner and admin implicitly hold every permission.
+	if actorUser.Role == domain.RoleOwner || actorUser.Username == "admin" {
+		return true
+	}
+
+	actorPerms := a.permissionsForUser(actorUser)
+	want := a.parsePermissionsJSON(permissionsJSON)
+	for _, p := range want {
+		if !auth.HasPermission(actorPerms, p) {
+			a.writeForbidden(w, "Forbidden: Cannot grant permission you do not hold: "+p)
+			return false
+		}
+	}
+	return true
 }
 
 // --- Bot Settings Handlers ---

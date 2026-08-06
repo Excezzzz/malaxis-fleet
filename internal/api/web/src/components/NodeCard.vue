@@ -100,6 +100,10 @@
                   <Hourglass class="w-4 h-4" />
                   <span class="font-mono text-sm">[Task Queue ({{ pendingCommandCount }})]</span>
                 </button>
+                <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 rounded-xl transition-colors">
+                  <RefreshCw class="w-4 h-4" />
+                  <span class="font-mono text-sm">[Push Client Files]</span>
+                </button>
             </div>
             </template>
       </div>
@@ -125,13 +129,13 @@
       <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300"><span class="font-mono text-red-400">[</span>Delete Node<span class="font-mono text-red-400">]</span></h2>
         <p class="text-zinc-400 mb-6 text-sm">Choose how to remove <strong class="text-white">{{ node.name }}</strong> from the fleet.</p>
-        <button @click="softDeleteNode" class="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-left mb-3">
+        <button v-if="canSoftDelete" @click="softDeleteNode" class="w-full flex items-center justify-between px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors text-left mb-3">
           <span>
             <span class="block font-semibold text-white">Soft Delete</span>
             <span class="block text-xs text-zinc-400 mt-1">Remove from dashboard. The client device keeps running and will re-register on its next poll.</span>
           </span>
         </button>
-        <div class="rounded-xl border border-red-500/30 bg-red-900/10 p-4">
+        <div v-if="canTerminate" class="rounded-xl border border-red-500/30 bg-red-900/10 p-4">
           <button @click="deleteChoice = 'terminate'" class="w-full flex items-center justify-between text-left">
             <span>
               <span class="block font-semibold text-red-300">Terminate & Self-Destruct</span>
@@ -145,7 +149,7 @@
         </div>
         <div class="mt-8 flex justify-end space-x-4">
           <button type="button" @click="showDeleteModal = false; deleteChoice = ''; terminateConfirm = ''" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
-          <button v-if="deleteChoice === 'terminate'" type="button" @click="terminateNode" :disabled="terminateConfirm !== 'TERMINATE'" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Terminate</button>
+          <button v-if="deleteChoice === 'terminate' && canTerminate" type="button" @click="terminateNode" :disabled="terminateConfirm !== 'TERMINATE'" class="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-200 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">Terminate</button>
         </div>
       </div>
     </div>
@@ -297,10 +301,13 @@ export default {
 
     const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
     const canRename = computed(() => isOwner.value || hasPermission('can_rename_node'));
-    const canDelete = computed(() => isOwner.value || hasPermission('can_edit_sub'));
+    const canSoftDelete = computed(() => isOwner.value || hasPermission('can_edit_sub'));
+    const canDelete = computed(() => isOwner.value || hasPermission('can_terminate_node') || hasPermission('can_edit_sub'));
     const canEditSubCard = computed(() => isOwner.value || hasPermission('can_edit_sub'));
     const canSwitch = computed(() => isOwner.value || hasPermission('can_switch_vpn'));
     const canViewNodeLogs = computed(() => isOwner.value || hasPermission('can_view_node_logs'));
+    const canTerminate = computed(() => isOwner.value || hasPermission('can_terminate_node'));
+    const canUpdateClient = computed(() => isOwner.value || hasPermission('can_update_client'));
     const canManage = computed(() => isOwner.value || hasPermission('can_edit_sub') || hasPermission('can_switch_vpn') || hasPermission('can_rename_node') || hasPermission('can_terminate_node') || hasPermission('can_purge_nodes') || hasPermission('can_update_client') || hasPermission('can_view_node_logs'));
 
     const showSubModal = ref(false);
@@ -417,6 +424,18 @@ export default {
       } catch (e) {
         console.error('Error updating sub URL:', e);
         showToast('Failed to update subscription URL.', 'error');
+      }
+    };
+
+    const pushClientFiles = async () => {
+      if (!confirm(`Queue "update_client_files" for "${props.node.name}"?\n\nThe agent will download the latest templates and gracefully restart.`)) return;
+      try {
+        await axios.post('/api/web/nodes/update-client-files', { node_id: props.node.id });
+        emit('node-updated');
+        showToast('Client files update queued for this node.');
+      } catch (e) {
+        console.error('Error pushing client files:', e);
+        showToast('Failed to queue client files update.', 'error');
       }
     };
 
@@ -591,6 +610,7 @@ export default {
     return {
       isOnline, isTerminated, isTaskQueued, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, statusBgClass, pendingTaskLabel, pendingCommandCount,
       showSubModal, newSubUrl, updateSubUrl,
+      pushClientFiles,
       copySubUrl, softDeleteNode, confirmDelete,
       showDeleteModal, deleteChoice,
       showTaskQueueModal,
@@ -602,6 +622,7 @@ export default {
       showLogsModal, nodeLogs, isLoadingLogs, openLogs, closeLogs, fetchLogs, selectContainer,
       logContainers, logContainer, autoRefreshLogs, logRefreshInterval, copyLogs,
       user, isOwner, canManage, canRename, canDelete, canEditSubCard, canSwitch, canViewNodeLogs,
+      canTerminate, canUpdateClient, canSoftDelete,
       isReadOnly, toast, toastType, logHost,
     };
   },
