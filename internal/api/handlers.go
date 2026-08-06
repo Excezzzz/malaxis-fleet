@@ -2342,5 +2342,16 @@ func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 		HardwareHash: req.HardwareHash,
 		SubURL:       req.SubURL,
 	}
-	return a.repo.UpsertNode(node)
+	canonicalID, isNew, err := a.repo.UpsertNode(node)
+	if err != nil {
+		return canonicalID, err
+	}
+
+	// FIRST-TIME registration: fire an instant Telegram onboarding notification
+	// so the admin can set the subscription URL / balanced mode / reject the
+	// device right from the chat.
+	if isNew && a.botManager != nil {
+		a.botManager.NotifyNewNode(canonicalID, req.Hostname, req.IPLan)
+	}
+	return canonicalID, nil
 }

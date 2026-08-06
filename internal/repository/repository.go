@@ -23,7 +23,10 @@ type Repository interface {
 	GetAllNodes() ([]domain.Node, error)
 	GetNodesByUserID(userID int64) ([]domain.Node, error)
 	AddNode(node *domain.Node) error
-	UpsertNode(node *domain.Node) (string, error)
+	// UpsertNode upserts the node and returns the canonical id together with a
+	// bool reporting whether this registration created a BRAND NEW node row
+	// (used by the backend to fire instant Telegram onboarding notifications).
+	UpsertNode(node *domain.Node) (string, bool, error)
 	RenameNode(id, name string) error
 	SetNodeHardwareHash(id, hardwareHash string) error
 	UpdateNode(node *domain.Node) error

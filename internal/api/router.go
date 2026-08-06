@@ -25,6 +25,9 @@ import (
 type BotManager interface {
 	Reboot() error
 	SendAdminMessage(text string)
+	// NotifyNewNode pushes an instant onboarding notification for a freshly
+	// registered device with quick-setup inline action buttons.
+	NotifyNewNode(id, name, ipLan string)
 }
 
 // API holds the dependencies for the API handlers.
