@@ -22,8 +22,8 @@
       {{ toast }}
     </div>
 
-    <div v-if="files.length" class="grid grid-cols-1 lg:grid-cols-5 gap-6">
-      <div class="lg:col-span-1 space-y-2">
+    <div v-if="files.length" class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <div class="lg:col-span-1 space-y-2 w-full">
         <button v-for="f in files" :key="f.name" @click="selectFile(f.name)"
           :class="['w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all duration-300 text-left', selected === f.name ? 'bg-zinc-800/60 border-indigo-500/40 text-white' : 'bg-zinc-900/40 border-white/5 text-zinc-400 hover:border-indigo-500/30 hover:text-white']">
           <span class="flex items-center space-x-2 truncate">
@@ -49,7 +49,7 @@
           </div>
         </div>
         <textarea v-model="content" spellcheck="false"
-          class="p-5 flex-1 min-h-[70vh] bg-transparent text-xs leading-relaxed font-mono text-zinc-300 resize-none focus:outline-none"
+          class="p-5 flex-1 min-h-[70vh] bg-transparent text-xs leading-relaxed font-mono text-zinc-300 resize-none focus:outline-none overflow-x-auto whitespace-pre"
           @input="markDirty"></textarea>
       </div>
     </div>

@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="flex justify-between items-center mb-8">
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-8">
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Roles &amp; Permissions<span class="font-mono text-indigo-400">]</span></h1>
       <button v-if="canManageRoles" @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
         <Plus class="w-5 h-5" />
@@ -9,12 +9,12 @@
     </div>
 
     <!-- Existing Roles -->
-    <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <div v-for="role in customRoles" :key="role.id" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-lg shadow-black/10 hover:border-indigo-500/20 transition-colors">
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center space-x-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span class="w-5 h-5 rounded-full" :style="{ backgroundColor: role.color_hex }"></span>
-              <h3 class="text-xl font-bold text-white">{{ role.name }}</h3>
+              <h3 class="text-xl font-bold text-white break-all">{{ role.name }}</h3>
               <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">Rank 100 · Immutable</span>
               <span v-else class="px-2 py-1 text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ Rank: {{ role.rank ?? 10 }} ]</span>
             </div>

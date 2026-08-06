@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="flex justify-between items-center mb-8">
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-8">
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Fleet Users<span class="font-mono text-indigo-400">]</span></h1>
       <div class="flex space-x-4">
         <button v-if="canCreateUsers" @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
@@ -10,7 +10,7 @@
       </div>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden">
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-x-auto">
       <table class="min-w-full divide-y divide-white/5">
         <thead class="bg-white/[0.03]">
           <tr>
@@ -56,7 +56,7 @@
 
     <!-- Add User Modal -->
     <div v-if="showAddUserModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showAddUserModal = false">
-      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Add New User<span class="font-mono text-indigo-400">]</span></h2>
         <form @submit.prevent="handleCreateUser">
           <div class="space-y-4">
@@ -94,7 +94,7 @@
 
     <!-- Edit User Modal -->
     <div v-if="editingUser" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="editingUser = null">
-      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-md max-h-[90vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Edit User<span class="font-mono text-indigo-400">]</span>: {{ editingUser.username }}</h2>
         <form @submit.prevent="handleEditUser">
           <div class="space-y-4">
