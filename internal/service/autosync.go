@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -134,6 +135,22 @@ func (s *AutoSyncService) syncNode(n *domain.Node) {
 }
 
 func fetchSubOutbounds(subURL string) ([]domain.Outbound, error) {
+	// Security hardening: the master server performs this request for the
+	// node, so it must never follow user-controlled URLs into internal
+	// networks / cloud-metadata. Restrict the scheme to http(s) and reject
+	// loopback + private + link-local literals outright.
+	parsed, err := url.Parse(subURL)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+		return nil, fmt.Errorf("invalid subscription URL scheme")
+	}
+	host := parsed.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("invalid subscription URL host")
+	}
+	if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()) {
+		return nil, fmt.Errorf("subscription URL must not point at a private/loopback address")
+	}
+
 	resp, err := http.Get(subURL)
 	if err != nil {
 		return nil, err
