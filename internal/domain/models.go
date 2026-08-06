@@ -4,7 +4,7 @@ import "time"
 
 // Role constants for RBAC. Hierarchy ranks:
 //
-//	owner (100) > admin (80) > client / custom roles (50) > viewer (10)
+//	owner (100) > admin (80) > client / custom roles (30) > viewer (10)
 const (
 	RoleOwner  = "owner"
 	RoleAdmin  = "admin"
@@ -18,7 +18,7 @@ const (
 const (
 	RoleRankOwner  = 100
 	RoleRankAdmin  = 80
-	RoleRankClient = 50
+	RoleRankClient = 30
 	RoleRankViewer = 10
 )
 
@@ -101,6 +101,7 @@ type CustomRole struct {
 	ColorHex        string    `json:"color_hex" db:"color_hex"`
 	OwnerID         string    `json:"owner_id" db:"owner_id"`
 	PermissionsJSON string    `json:"permissions_json" db:"permissions_json"`
+	Rank            int       `json:"rank" db:"rank"`
 	CreatedAt       time.Time `json:"created_at" db:"created_at"`
 }
 

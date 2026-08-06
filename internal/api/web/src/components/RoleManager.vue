@@ -2,7 +2,7 @@
   <div>
     <div class="flex justify-between items-center mb-8">
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Roles &amp; Permissions<span class="font-mono text-indigo-400">]</span></h1>
-      <button @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
+      <button v-if="canManageRoles" @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
         <Plus class="w-5 h-5" />
         <span class="font-mono text-sm">[Create New Role]</span>
       </button>
@@ -15,12 +15,14 @@
             <div class="flex items-center space-x-3">
               <span class="w-5 h-5 rounded-full" :style="{ backgroundColor: role.color_hex }"></span>
               <h3 class="text-xl font-bold text-white">{{ role.name }}</h3>
+              <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">Rank 100 · Immutable</span>
+              <span v-else class="px-2 py-1 text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ Rank: {{ role.rank ?? 10 }} ]</span>
             </div>
             <div class="flex space-x-2">
-              <button @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit Role">
+              <button v-if="canManageRole(role)" @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit Role">
                 <Edit class="w-5 h-5" />
               </button>
-              <button @click="deleteRole(role)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete Role">
+              <button v-if="canDeleteRole(role)" @click="deleteRole(role)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete Role">
                 <Trash2 class="w-5 h-5" />
               </button>
             </div>
@@ -77,6 +79,12 @@
               </div>
             </div>
             <div>
+              <label for="role_rank" class="block text-sm font-medium text-zinc-400 mb-1">Role Rank</label>
+              <input v-model.number="newRole.rank" type="number" id="role_rank" min="1" :max="maxRank" required
+                     class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50">
+              <p class="mt-1 text-xs text-zinc-500">Must be lower than your current rank ({{ actorRank }}). Higher rank = more authority.</p>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
               <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
@@ -124,6 +132,14 @@
               </div>
             </div>
             <div>
+              <label for="edit_role_rank" class="block text-sm font-medium text-zinc-400 mb-1">Role Rank</label>
+              <input v-model.number="editForm.rank" type="number" id="edit_role_rank" min="1" :max="maxRank"
+                     :disabled="isImmutableRole(editingRole)" required
+                     class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed">
+              <p v-if="isImmutableRole(editingRole)" class="mt-1 text-xs text-zinc-500">The owner role is immutable and cannot be re-ranked.</p>
+              <p v-else class="mt-1 text-xs text-zinc-500">Must be lower than your current rank ({{ actorRank }}). Higher rank = more authority.</p>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
               <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
@@ -152,8 +168,13 @@
 </template>
 
 <script>
-import { ref, onMounted } from 'vue';
+import { ref, computed, inject, onMounted } from 'vue';
 import { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup } from 'lucide-vue-next';
+
+const ROLE_RANK = { owner: 100, admin: 80, client: 30, viewer: 10 };
+
+// Built-in role names that may never be created, edited or deleted through the UI.
+const SYSTEM_ROLE_NAMES = ['owner', 'admin', 'client', 'viewer'];
 
 const PERMISSION_SECTIONS = [
   {
@@ -206,11 +227,40 @@ export default {
   name: 'RoleManager',
   components: { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup },
   setup() {
+    const authCtx = inject('authCtx', {});
+    const actorRole = computed(() => authCtx.user?.value?.role || '');
+    const canManageRoles = computed(() => authCtx.canManageRoles?.value ?? false);
+
     const customRoles = ref([]);
     const showCreateModal = ref(false);
     const editingRole = ref(null);
-    const newRole = ref({ name: '', color_hex: '#FF5733', permissions: [] });
-    const editForm = ref({ name: '', color_hex: '#FF5733', permissions: [] });
+    const newRole = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: [] });
+    const editForm = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: [] });
+
+    // Actor's effective rank: prefer the DB-stored rank for the actor's role
+    // if available, falling back to the built-in table.
+    const actorRank = computed(() => {
+      const name = actorRole.value;
+      const match = (customRoles.value || []).find(r => r.name === name);
+      if (match && match.rank) return match.rank;
+      return ROLE_RANK[name] ?? 10;
+    });
+    const maxRank = computed(() => Math.max(1, actorRank.value - 1));
+
+    const isImmutableRole = (role) => role && (role.rank === 100 || role.name === 'owner');
+
+    const canManageRole = (role) => {
+      if (!canManageRoles.value) return false;
+      if (isImmutableRole(role)) return false;
+      return (role.rank ?? ROLE_RANK[role.name] ?? 10) < actorRank.value;
+    };
+
+    const canDeleteRole = (role) => {
+      if (!canManageRoles.value) return false;
+      if (isImmutableRole(role)) return false;
+      if (SYSTEM_ROLE_NAMES.includes(role.name)) return false;
+      return (role.rank ?? ROLE_RANK[role.name] ?? 10) < actorRank.value;
+    };
 
     const fetchCustomRoles = async () => {
       try {
@@ -243,6 +293,7 @@ export default {
         const roleData = {
           name: newRole.value.name,
           color_hex: newRole.value.color_hex,
+          rank: newRole.value.rank,
           permissions_json: JSON.stringify(permsObj),
         };
         const response = await fetch('/api/web/roles', {
@@ -250,15 +301,22 @@ export default {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(roleData),
         });
-        if (!response.ok) throw new Error('Failed to create role');
+        if (!response.ok) {
+          let errMsg = 'Failed to create role';
+          try {
+            const errData = await response.json();
+            if (errData.error) errMsg = errData.error;
+          } catch (_) {}
+          throw new Error(errMsg);
+        }
 
-        newRole.value = { name: '', color_hex: '#FF5733', permissions: [] };
+        newRole.value = { name: '', color_hex: '#FF5733', rank: 10, permissions: [] };
         showCreateModal.value = false;
         await fetchCustomRoles();
         alert('Custom role created successfully!');
       } catch (error) {
         console.error('Error creating role:', error);
-        alert('Could not create role.');
+        alert(error.message || 'Could not create role.');
       }
     };
 
@@ -268,6 +326,7 @@ export default {
         id: role.id,
         name: role.name,
         color_hex: role.color_hex,
+        rank: role.rank ?? ROLE_RANK[role.name] ?? 10,
         permissions: [...parsePermissions(role.permissions_json)],
       };
     };
@@ -279,6 +338,7 @@ export default {
         const roleData = {
           name: editForm.value.name,
           color_hex: editForm.value.color_hex,
+          rank: editForm.value.rank,
           permissions_json: JSON.stringify(permsObj),
         };
         const response = await fetch(`/api/web/roles/${editForm.value.id}`, {
@@ -286,14 +346,21 @@ export default {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(roleData),
         });
-        if (!response.ok) throw new Error('Failed to update role');
+        if (!response.ok) {
+          let errMsg = 'Failed to update role';
+          try {
+            const errData = await response.json();
+            if (errData.error) errMsg = errData.error;
+          } catch (_) {}
+          throw new Error(errMsg);
+        }
 
         editingRole.value = null;
         await fetchCustomRoles();
         alert('Custom role updated successfully!');
       } catch (error) {
         console.error('Error updating role:', error);
-        alert('Could not update role.');
+        alert(error.message || 'Could not update role.');
       }
     };
 
@@ -328,6 +395,11 @@ export default {
       permLabel,
       PERMISSION_LABELS,
       PERMISSION_SECTIONS,
+      actorRank,
+      maxRank,
+      isImmutableRole,
+      canManageRole,
+      canDeleteRole,
       handleCreateRole,
       openEditModal,
       handleEditRole,
