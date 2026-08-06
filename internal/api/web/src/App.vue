@@ -5,7 +5,7 @@
     </div>
     <div v-else class="relative min-h-screen">
       <!-- Mobile top bar: logo / user badge / logout -->
-      <header class="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-zinc-950/90 backdrop-blur-xl border-b border-white/10">
+      <header class="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-zinc-900/60 backdrop-blur-xl border-b border-white/10">
         <div class="flex items-center space-x-2 shrink-0 min-w-0">
           <div class="p-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/20 shrink-0">
             <Globe class="w-4 h-4 text-indigo-300" />
@@ -24,14 +24,15 @@
         </div>
       </header>
 
-      <!-- Mobile bottom bar: navigation tabs -->
-      <nav class="fixed bottom-0 left-0 w-full z-50 md:hidden bg-zinc-950/95 backdrop-blur-xl border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
-        <div class="flex items-stretch gap-1 overflow-x-auto px-2 py-2 scrollbar-none">
+      <!-- Mobile bottom bar: navigation tabs (glass, icons only) -->
+      <nav class="fixed bottom-0 left-0 w-full z-50 md:hidden bg-zinc-900/60 backdrop-blur-xl border-t border-white/10 pb-[env(safe-area-inset-bottom)]">
+        <div class="flex justify-around items-center w-full px-2 py-3">
           <a v-for="item in navItems" :key="item.view" @click.prevent="currentView = item.view" href="#"
              :title="item.label"
-             :class="['flex flex-col items-center justify-center gap-0.5 px-4 py-1.5 rounded-xl whitespace-nowrap shrink-0 transition-colors', navLinkClasses(item.view)]">
-            <component :is="item.icon" class="w-5 h-5" />
-            <span class="text-[10px] font-mono">{{ item.label }}</span>
+             :class="['relative flex items-center justify-center w-12 h-12 rounded-2xl transition-colors', currentView === item.view ? 'text-indigo-400' : 'text-zinc-500 hover:text-zinc-300']">
+            <component :is="item.icon" class="w-6 h-6" />
+            <span v-if="currentView === item.view"
+              class="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_8px_2px_rgba(129,140,248,0.6)]"></span>
           </a>
         </div>
       </nav>
@@ -81,7 +82,7 @@
 
 <script>
 import { ref, computed, onMounted, provide } from 'vue';
-import { Globe, Server, Users, FileText, Shield, LogOut, FileCode2, Settings } from 'lucide-vue-next';
+import { Globe, Server, Users, Shield, LogOut, FileCode, Terminal, Settings } from 'lucide-vue-next';
 import Login from './components/Login.vue';
 import Nodes from './components/Nodes.vue';
 import ClientFiles from './components/ClientFiles.vue';
@@ -93,7 +94,7 @@ import SettingsView from './components/Settings.vue';
 export default {
   name: 'App',
   components: {
-    Globe, Server, Users, FileText, Shield, LogOut, FileCode2, Settings,
+    Globe, Server, Users, Shield, LogOut, FileCode, Terminal, Settings,
     Login,
     Nodes,
     ClientFiles,
@@ -137,10 +138,10 @@ export default {
     const navItems = computed(() => {
       const items = [];
       if (canViewNodes.value) items.push({ view: 'Nodes', label: 'Nodes', icon: 'Server' });
-      if (canEditSub.value || canUpdateClient.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode2' });
+      if (canEditSub.value || canUpdateClient.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode' });
       if (canViewUsers.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
       if (canViewRoles.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
-      if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'FileText' });
+      if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'Terminal' });
       if (isOwner.value) items.push({ view: 'Settings', label: 'Settings', icon: 'Settings' });
       return items;
     });
