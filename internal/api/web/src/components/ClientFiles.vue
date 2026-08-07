@@ -7,9 +7,9 @@
       </div>
       <button @click="pushFiles" :disabled="pushing"
         :class="['flex items-center space-x-2 px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 border', pushing ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
-        <Rocket v-if="!pushing" class="w-5 h-5" />
-        <RefreshCw v-else class="w-5 h-5 animate-spin" />
-        <span class="font-mono text-sm">{{ pushing ? `[${t('client_push_queued')}]` : `[${t('client_push')}]` }}</span>
+        <Rocket v-if="!pushing" class="w-5 h-5 shrink-0" />
+        <RefreshCw v-else class="w-5 h-5 shrink-0 animate-spin" />
+        <span class="font-mono text-sm truncate min-w-0">{{ pushing ? `[${t('client_push_queued')}]` : `[${t('client_push')}]` }}</span>
       </button>
     </div>
 
@@ -32,9 +32,9 @@
         </div>
         <button @click="copyInstallCommand" :disabled="!installCommand"
           class="w-full mt-2.5 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-          <Copy v-if="!copied" class="w-4 h-4" />
-          <Check v-else class="w-4 h-4" />
-          <span>{{ copied ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
+          <Copy v-if="!copied" class="w-4 h-4 shrink-0" />
+          <Check v-else class="w-4 h-4 shrink-0" />
+          <span class="truncate min-w-0">{{ copied ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
         </button>
       </div>
     </div>
@@ -65,7 +65,7 @@
               :class="['flex items-center space-x-2 px-4 py-1.5 rounded-xl text-sm font-semibold border transition-all duration-300', saving ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
               <Save v-if="!saving" class="w-4 h-4" />
               <RefreshCw v-else class="w-4 h-4 animate-spin" />
-              <span class="font-mono text-sm">{{ saving ? `[${t('client_saving')}]` : `[${t('client_save')}]` }}</span>
+              <span class="font-mono text-sm truncate min-w-0">{{ saving ? `[${t('client_saving')}]` : `[${t('client_save')}]` }}</span>
             </button>
           </div>
         </div>

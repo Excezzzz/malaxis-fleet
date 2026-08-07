@@ -82,7 +82,7 @@
 
         <div class="flex space-x-4">
           <button @click="saveBackupSettings" :disabled="savingBackup" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md disabled:opacity-50">
-            <span class="font-mono text-sm">[{{ t('save') }}]</span>
+            <span class="font-mono text-sm truncate min-w-0">[{{ t('save') }}]</span>
           </button>
         </div>
 
@@ -166,7 +166,7 @@
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_backup') }}<span class="font-mono text-indigo-400">]</span></h2>
       <p class="text-zinc-400 mb-4">{{ t('settings_backup_hint') }}</p>
       <button @click="downloadBackup" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md">
-        <span class="font-mono text-sm">[{{ t('settings_backup_btn') }}]</span>
+        <span class="font-mono text-sm truncate min-w-0">[{{ t('settings_backup_btn') }}]</span>
       </button>
     </div>
   </div>

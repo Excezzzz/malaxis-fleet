@@ -5,7 +5,7 @@
       <div class="flex space-x-4">
         <button v-if="canCreateUsers" @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
           <Users class="w-5 h-5" />
-          <span class="font-mono text-sm">[{{ t('add_user') }}]</span>
+          <span class="font-mono text-sm truncate min-w-0">[{{ t('add_user') }}]</span>
         </button>
       </div>
     </div>

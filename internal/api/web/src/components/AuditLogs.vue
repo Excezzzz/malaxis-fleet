@@ -5,7 +5,7 @@
       <div v-if="activeTab === 'audit'" class="flex items-center space-x-3">
         <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
           <Download class="w-5 h-5" />
-          <span class="font-mono text-sm">[{{ t('audit_export') }}]</span>
+          <span class="font-mono text-sm truncate min-w-0">[{{ t('audit_export') }}]</span>
         </button>
       </div>
     </div>
@@ -60,11 +60,11 @@
         <div class="flex items-center gap-3">
           <button @click="fetchMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
             <RefreshCw :class="['w-4 h-4', isLoadingMasterLogs ? 'animate-spin' : '']" />
-            <span class="font-mono text-sm">[{{ t('logs_refresh') }}]</span>
+            <span class="font-mono text-sm truncate min-w-0">[{{ t('logs_refresh') }}]</span>
           </button>
           <button @click="copyMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
             <Copy class="w-4 h-4" />
-            <span class="font-mono text-sm">[{{ t('logs_copy') }}]</span>
+            <span class="font-mono text-sm truncate min-w-0">[{{ t('logs_copy') }}]</span>
           </button>
         </div>
       </div>

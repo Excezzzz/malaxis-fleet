@@ -4,7 +4,7 @@
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('roles_title') }}<span class="font-mono text-indigo-400">]</span></h1>
       <button v-if="canManageRoles" @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
         <Plus class="w-5 h-5" />
-        <span class="font-mono text-sm">[{{ t('add_role') }}]</span>
+        <span class="font-mono text-sm truncate min-w-0">[{{ t('add_role') }}]</span>
       </button>
     </div>
 
