@@ -90,6 +90,37 @@ echo "Downloading fleet-cli utility..."
 curl -sSL https://__JOIN_DOMAIN__/fleet-cli -o fleet-cli.sh
 chmod +x fleet-cli.sh
 
+# --- Docker availability check ---
+if ! command -v docker &> /dev/null; then
+    echo "ERROR: Docker is not installed. Install Docker, then re-run this script."
+    exit 1
+fi
+
+# --- Interactive setup ---
+# This script runs via `curl ... | bash`, so stdin carries the script itself
+# rather than terminal input. Interactive prompts must therefore read from
+# /dev/tty. When no TTY is available (e.g. non-interactive provisioning), the
+# prompts silently fall back to their defaults.
+if ! exec 3</dev/tty 2>/dev/null; then
+    exec 3</dev/null
+fi
+
+echo ""
+read -p "Enter Subscription URL (or press Enter to skip): " SUB_URL <&3 || true
+SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
+
+if [ -n "$SUB_URL" ]; then
+    # Pre-seed the agent's persistent state so the first container boot
+    # fetches and benchmarks servers immediately.
+    echo "{\"sub_url\":\"$SUB_URL\"}" > configs/agent_state.json
+    echo "Subscription URL saved to configs/agent_state.json."
+else
+    echo "Skipping subscription URL configuration."
+fi
+
+read -p "Install systemd service for auto-start on boot? [Y/n]: " INSTALL_SYSTEMD <&3 || true
+INSTALL_SYSTEMD=$(echo "$INSTALL_SYSTEMD" | tr '[:upper:]' '[:lower:]')
+
 echo "Building agent image and starting services..."
 docker compose up -d --build || docker-compose up -d --build
 
@@ -98,12 +129,18 @@ echo "Preparing singbox-node container..."
 docker compose create singbox-node 2>/dev/null || true
 
 # Optional: install systemd service for auto-start at boot (Linux only)
-if command -v systemctl &> /dev/null; then
-    echo "Installing systemd service..."
-    curl -sSL https://__JOIN_DOMAIN__/fleet-agent.service -o /etc/systemd/system/fleet-agent.service
-    systemctl daemon-reload
-    systemctl enable fleet-agent.service
-    echo "systemd service installed and enabled."
+if [ -z "$INSTALL_SYSTEMD" ] || [ "$INSTALL_SYSTEMD" = "y" ] || [ "$INSTALL_SYSTEMD" = "yes" ]; then
+    if command -v systemctl &> /dev/null; then
+        echo "Installing systemd service..."
+        curl -sSL https://__JOIN_DOMAIN__/fleet-agent.service -o /etc/systemd/system/fleet-agent.service
+        systemctl daemon-reload
+        systemctl enable --now fleet-agent
+        echo "systemd service installed and enabled."
+    else
+        echo "systemctl not found; systemd service not installed."
+    fi
+else
+    echo "Skipping systemd service installation."
 fi
 
 echo ""
