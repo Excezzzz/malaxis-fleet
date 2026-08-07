@@ -58,6 +58,7 @@ server.exe
 # === IDE / OS ===
 .idea/
 .vscode/
+.continue/
 *.suo
 *.swp
 .DS_Store
