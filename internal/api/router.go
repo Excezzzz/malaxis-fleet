@@ -115,6 +115,9 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// GET /api/web/templates - list client deployment template files (permission can_edit_sub)
 	webAPIRouter.Handle("/web/templates", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.GetTemplatesHandler)))).Methods("GET")
 
+	// GET /api/web/install-command - tokenized node onboarding command (permission can_update_client)
+	webAPIRouter.Handle("/web/install-command", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermUpdateClient)(http.HandlerFunc(api.InstallCommandHandler)))).Methods("GET")
+
 	// PUT /api/web/templates/{filename} - overwrite a client template file (permission can_edit_sub)
 	webAPIRouter.Handle("/web/templates/{filename}", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.UpdateTemplateHandler)))).Methods("PUT")
 
