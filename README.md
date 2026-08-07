@@ -158,7 +158,10 @@ SUB_DOMAIN="sub.yourdomain.com"
 
 `.env` is git-ignored and must never be committed. Use `.env.example` as the
 template only. Every value above is consumed at runtime by the control plane
-and substituted into the client deployment assets served to nodes.
+and substituted into the client deployment assets served to nodes. The
+`SECRET_TOKEN` doubles as the payload-delivery key: the bootstrap script and
+all client templates are only served to requests carrying
+`?t=<SECRET_TOKEN>`, and the token is injected into the script at serve time.
 
 ### 2. Deploy
 
@@ -188,10 +191,13 @@ first login.
 
 ### Joining a fleet
 
-On any host with Docker installed, run the one-line bootstrap:
+On any host with Docker installed, run the one-line bootstrap. The fleet
+secret (`SECRET_TOKEN` from the server's `.env`) is required: it is passed as
+a query parameter and gates every payload download, so unauthenticated
+requests to `join`/`sub` never return anything useful:
 
 ```bash
-curl -sSL https://join.yourdomain.com | bash
+curl -sSL 'https://join.yourdomain.com/?t=YOUR_SECRET_TOKEN' | bash
 ```
 
 The script downloads the agent and engine assets, verifies Docker, and then
@@ -286,6 +292,19 @@ cannot grant permissions the actor does not hold.
   hardware-fingerprinted node identity to prevent spoofing.
 - Login is rate-limited per IP; SQL is fully parameterized.
 - Telegram bot actions are gated on the authoritative admin chat ID.
+
+### Stealth behavior
+
+The public surface is deliberately uninformative to unauthenticated visitors:
+
+- The join/bootstrap script, client templates, engine configs, and the agent
+  source are served only to requests carrying `?t=<SECRET_TOKEN>`; all other
+  requests receive a stock nginx-style 404 page.
+- `GET /api/health` returns only `{"status":"ok"}` and discloses no
+  application identity, database, or bot state.
+- The unauthenticated login page and document title carry no product
+  branding, and the management UI (including branding) renders only after a
+  successful session is established.
 
 ## Telegram Bot Reference
 

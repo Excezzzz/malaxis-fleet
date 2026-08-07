@@ -248,7 +248,7 @@ update_client_files() {
         cp "$STATE_FILE" /tmp/agent_state_backup.json 2>/dev/null || true
     fi
 
-    curl -sSL https://__SUB_DOMAIN__/docker-compose.yml -o "$DOCKER_COMPOSE_FILE" 2>/dev/null || true
+    curl -sSL "https://__SUB_DOMAIN__/docker-compose.yml?t=__SECRET_TOKEN__" -o "$DOCKER_COMPOSE_FILE" 2>/dev/null || true
 
     if [ -f /tmp/agent_state_backup.json ]; then
         mv /tmp/agent_state_backup.json "$STATE_FILE" 2>/dev/null || true

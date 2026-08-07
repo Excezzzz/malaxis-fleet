@@ -1988,6 +1988,10 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"tg_bot_token":              botToken,
 		"tg_admin_chat_id":          botChatID,
 		"low_ram_mode":              lowRAMMode,
+		"join_domain":               a.config.JoinDomain,
+		"api_domain":                a.config.ApiDomain,
+		"sub_domain":                a.config.SubDomain,
+		"dashboard_domain":          a.config.DashboardDomain,
 	})
 }
 
@@ -2010,18 +2014,11 @@ func (a *API) DownloadBackupHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Public Handlers ---
 
+// HealthHandler answers with a deliberately generic probe-friendly response.
+// No application identity, database status, or bot state is disclosed.
 func (a *API) HealthHandler(w http.ResponseWriter, r *http.Request) {
-	enabled, _ := a.repo.GetSetting("tg_bot_enabled")
-	botStatus := "disabled"
-	if enabled == "true" {
-		botStatus = "configured"
-	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"status":   "healthy",
-		"database": "connected",
-		"bot":      botStatus,
-	})
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 // serveDockerCompose serves the docker-compose.yml template with the active SECRET_TOKEN injected.
@@ -2224,12 +2221,13 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	baseURL := "https://" + a.config.SubDomain
+	token := a.config.FleetSecret
 	command, _ := json.Marshal(map[string]string{
 		"action":         "update_client_files",
-		"agent_url":      baseURL + "/node_agent.py",
-		"cli_url":        baseURL + "/fleet-cli.sh",
-		"req_url":        baseURL + "/requirements.txt",
-		"entrypoint_url": baseURL + "/entrypoint.sh",
+		"agent_url":      baseURL + "/node_agent.py?t=" + token,
+		"cli_url":        baseURL + "/fleet-cli.sh?t=" + token,
+		"req_url":        baseURL + "/requirements.txt?t=" + token,
+		"entrypoint_url": baseURL + "/entrypoint.sh?t=" + token,
 	})
 
 	var nodes []domain.Node

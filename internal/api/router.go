@@ -70,7 +70,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	agentAPI.Handle("/report", api.AgentTokenMiddleware(http.HandlerFunc(api.ReportHandler))).Methods("POST")
 	agentAPI.Handle("/nodes/rename", api.AgentTokenMiddleware(http.HandlerFunc(api.AgentRenameNodeHandler))).Methods("PUT")
 	agentAPI.HandleFunc("/health", api.HealthHandler).Methods("GET")
-	agentAPI.HandleFunc("/agent/latest", api.serveNodeAgent).Methods("GET")
+	agentAPI.HandleFunc("/agent/latest", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
 
 	// Subscription validation endpoint for client onboarding
 	agentAPI.HandleFunc("/subscription/validate", api.ValidateSubscriptionHandler).Methods("POST")
@@ -240,18 +240,20 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 		})
 	}
 
-	// --- Public Bootstrap Routes ---
-	joinRouter.HandleFunc("/", api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript")).Methods("GET")
-	joinRouter.HandleFunc("/fleet-cli", api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript")).Methods("GET")
-	joinRouter.HandleFunc("/fleet-agent.service", api.serveFile(deployFS, "deploy/fleet-agent.service", "text/plain")).Methods("GET")
-	subRouter.HandleFunc("/docker-compose.yml", api.serveDockerCompose).Methods("GET")
-	subRouter.HandleFunc("/Dockerfile.client", api.serveTemplateFile("Dockerfile.client", "text/plain")).Methods("GET")
-	subRouter.HandleFunc("/requirements.txt", api.serveTemplateFile("requirements.txt", "text/plain")).Methods("GET")
-	subRouter.HandleFunc("/entrypoint.sh", api.serveTemplateFile("entrypoint.sh", "application/x-shellscript")).Methods("GET")
-	subRouter.HandleFunc("/node_agent.py", api.serveNodeAgent).Methods("GET")
-	subRouter.HandleFunc("/fleet-cli.sh", api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript")).Methods("GET")
-	subRouter.HandleFunc("/configs/xray_config.json", api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json")).Methods("GET")
-	subRouter.HandleFunc("/configs/singbox_config.json", api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json")).Methods("GET")
+	// --- Public Bootstrap Routes (token-gated payload delivery) ---
+	// All payload endpoints require ?t=<SECRET_TOKEN>; unauthenticated
+	// requests receive a generic nginx 404 page.
+	joinRouter.HandleFunc("/", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
+	joinRouter.HandleFunc("/fleet-cli", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
+	joinRouter.HandleFunc("/fleet-agent.service", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/fleet-agent.service", "text/plain"))).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/docker-compose.yml", payloadTokenGuard(cfg, http.HandlerFunc(api.serveDockerCompose)).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/Dockerfile.client", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("Dockerfile.client", "text/plain"))).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/requirements.txt", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("requirements.txt", "text/plain"))).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/entrypoint.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("entrypoint.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/node_agent.py", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/fleet-cli.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/configs/xray_config.json", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json"))).ServeHTTP).Methods("GET")
+	subRouter.HandleFunc("/configs/singbox_config.json", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json"))).ServeHTTP).Methods("GET")
 }
 
 // applyDomainPlaceholders substitutes the client-facing domain placeholders
@@ -265,7 +267,38 @@ func (a *API) applyDomainPlaceholders(content string) string {
 	content = strings.ReplaceAll(content, "__SUB_DOMAIN__", a.config.SubDomain)
 	content = strings.ReplaceAll(content, "__JOIN_DOMAIN__", a.config.JoinDomain)
 	content = strings.ReplaceAll(content, "__DASH_DOMAIN__", a.config.DashboardDomain)
+	// The fleet secret is injected so bootstrap scripts can authenticate their
+	// subsequent payload downloads with ?t=<SECRET_TOKEN>.
+	content = strings.ReplaceAll(content, "__SECRET_TOKEN__", a.config.FleetSecret)
 	return content
+}
+
+// fakeNginx404 is served for unauthenticated payload requests. It is
+// byte-identical to a stock nginx 404 page so active probes cannot tell the
+// payload endpoints apart from any other dead path on the host.
+const fakeNginx404 = `<html>
+<head><title>404 Not Found</title></head>
+<body>
+<center><h1>404 Not Found</h1></center>
+<hr><center>nginx/1.24.0</center>
+</body>
+</html>
+`
+
+// payloadTokenGuard requires the ?t=<SECRET_TOKEN> query parameter on payload
+// delivery routes (join bootstrap script, client templates, engine configs).
+// Requests without a matching token receive the generic nginx 404 above and
+// never reach the payload handler.
+func payloadTokenGuard(cfg *config.Config, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if cfg.FleetSecret != "" && r.URL.Query().Get("t") == cfg.FleetSecret {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(fakeNginx404))
+	})
 }
 
 // serveFile is a helper to serve an embedded file.
