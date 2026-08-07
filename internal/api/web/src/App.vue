@@ -236,7 +236,7 @@ export default {
       if (canViewUsers.value) items.push({ view: 'AdminUsers', label: t('nav_users'), icon: 'Users' });
       if (canViewRoles.value) items.push({ view: 'RoleManager', label: t('nav_roles'), icon: 'Shield' });
       if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: t('nav_logs'), icon: 'Terminal' });
-      if (isOwner.value) items.push({ view: 'Settings', label: t('nav_settings'), icon: 'Settings' });
+      items.push({ view: 'Settings', label: t('nav_settings'), icon: 'Settings' });
       return items;
     });
 
@@ -337,6 +337,7 @@ export default {
       canViewNodeLogs, canViewAuditLogs, canViewMasterLogs,
       canViewUsers, canCreateUsers, canEditUsers, canDeleteUsers,
       canViewRoles, canManageRoles,
+      isOwner,
     });
 
     return {
