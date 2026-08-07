@@ -118,6 +118,17 @@ double-counting and state confusion.
 - **Task queuing** — per-node commands queue with live pipeline status
   (`queued / running / done / failed`).
 
+### Stealth Mode & Active Probing Defense
+
+- 🥷 **Stealth Mode & Active Probing Defense** — The web dashboard is fully
+  camouflaged. Unauthenticated visitors see a generic, unnamed "System Sign
+  In" page with no branding, preventing automated DPI scanners or government
+  firewalls from identifying the VPN panel.
+- 🔐 **Tokenized Payload Delivery** — Client installation scripts
+  (`node_agent.py`, `join.sh`) cannot be downloaded without a dynamically
+  generated `SECRET_TOKEN`, protecting the infrastructure from unauthorized
+  access and reverse engineering.
+
 ## Server Administration Guide
 
 ### Prerequisites
