@@ -39,6 +39,10 @@
             <span class="font-mono text-sm" v-if="testing">[Testing...]</span>
             <span class="font-mono text-sm" v-else>[Test Connection]</span>
           </button>
+          <button @click="restoreAvatar" :disabled="avatarResetting" class="px-4 py-2 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+            <span class="font-mono text-sm" v-if="avatarResetting">[Restoring...]</span>
+            <span class="font-mono text-sm" v-else>[🎨 Restore Bot Avatar]</span>
+          </button>
         </div>
 
         <div v-if="testResult" class="text-sm" :class="testResult.success ? 'text-green-400' : 'text-red-400'">
@@ -50,6 +54,10 @@
           {{ saveMessage.text }}
         </div>
       </div>
+    </div>
+
+    <div v-if="avatarToast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
+      {{ avatarToast }}
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6">
@@ -73,8 +81,11 @@ export default {
     const adminChatId = ref('');
     const saving = ref(false);
     const testing = ref(false);
+    const avatarResetting = ref(false);
     const testResult = ref(null);
     const saveMessage = ref(null);
+    const avatarToast = ref('');
+    let avatarToastTimer = null;
 
     const fetchSettings = async () => {
       try {
@@ -138,6 +149,21 @@ export default {
       }
     };
 
+    const restoreAvatar = async () => {
+      avatarResetting.value = true;
+      try {
+        const resp = await fetch('/api/web/settings/bot/reset-avatar', { method: 'POST' });
+        if (!resp.ok) throw new Error((await resp.text()) || 'Failed to restore avatar');
+        avatarToast.value = 'Bot profile photo updated!';
+      } catch (e) {
+        avatarToast.value = 'Could not restore avatar: ' + e.message;
+      } finally {
+        avatarResetting.value = false;
+        clearTimeout(avatarToastTimer);
+        avatarToastTimer = setTimeout(() => { avatarToast.value = ''; }, 4000);
+      }
+    };
+
     const downloadBackup = async () => {
       try {
         const resp = await fetch('/api/web/backup/download');
@@ -160,8 +186,8 @@ export default {
     });
 
     return {
-      botEnabled, botToken, adminChatId, saving, testing, testResult, saveMessage,
-      saveBotSettings, testConnection, downloadBackup,
+      botEnabled, botToken, adminChatId, saving, testing, avatarResetting, testResult, saveMessage, avatarToast,
+      saveBotSettings, testConnection, restoreAvatar, downloadBackup,
     };
   },
 };

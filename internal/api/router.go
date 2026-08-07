@@ -28,6 +28,8 @@ type BotManager interface {
 	// NotifyNewNode pushes an instant onboarding notification for a freshly
 	// registered device with quick-setup inline action buttons.
 	NotifyNewNode(id, name, ipLan string)
+	// SetDefaultAvatar re-uploads the embedded default profile photo.
+	SetDefaultAvatar() error
 }
 
 // API holds the dependencies for the API handlers.
@@ -221,6 +223,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// Bot settings update + test from web UI
 	webAPIRouter.Handle("/web/settings/bot", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateBotSettingsHandler)))).Methods("PUT")
 	webAPIRouter.Handle("/web/settings/bot/test", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.TestTelegramBotHandler)))).Methods("POST")
+	webAPIRouter.Handle("/web/settings/bot/reset-avatar", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.ResetBotAvatarHandler)))).Methods("POST")
 
 	// Serve the embedded Vue.js dashboard (skip in Low-RAM mode)
 	if !cfg.LowRAMMode {
