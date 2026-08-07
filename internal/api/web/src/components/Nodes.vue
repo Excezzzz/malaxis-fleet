@@ -43,7 +43,7 @@
     </div>
 
     <!-- FAB backdrop overlay (dims & dismisses when menu is open) -->
-    <div v-if="fabOpen" class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" @click="fabOpen = false"></div>
+    <div v-if="fabOpen" :class="['fixed inset-0 z-40', fabBackdrop]" @click="fabOpen = false"></div>
 
     <!-- Floating Action Button -->
     <div class="fixed bottom-20 md:bottom-8 right-4 md:right-8 z-50 flex flex-col-reverse items-end gap-3">
@@ -80,7 +80,7 @@
     </div>
 
     <!-- Mass Update Subscription Domain Modal -->
-    <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showMassUpdateModal = false">
+    <div v-if="showMassUpdateModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showMassUpdateModal = false">
       <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('nodes_mass_domain') }}<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-4">{{ t('nodes_mass_domain_hint') }}</p>
@@ -120,6 +120,9 @@ export default {
   setup() {
     const authCtx = inject('authCtx', {});
     const t = inject('t') || ((k) => k);
+    const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
+    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/25 backdrop-blur-sm' : 'bg-black/70 backdrop-blur-md');
+    const fabBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/20' : 'bg-black/60 backdrop-blur-sm');
     const canEditSub = computed(() => authCtx.canEditSub?.value ?? false);
     const canPurgeNodes = computed(() => authCtx.canPurgeNodes?.value ?? false);
     const nodes = ref([]);
