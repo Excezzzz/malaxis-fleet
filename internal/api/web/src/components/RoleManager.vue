@@ -1,10 +1,10 @@
 <template>
   <div>
     <div class="flex flex-wrap justify-between items-center gap-3 mb-8">
-      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Roles &amp; Permissions<span class="font-mono text-indigo-400">]</span></h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('roles_title') }}<span class="font-mono text-indigo-400">]</span></h1>
       <button v-if="canManageRoles" @click="showCreateModal = true" class="flex items-center space-x-2 px-4 py-2 bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">
         <Plus class="w-5 h-5" />
-        <span class="font-mono text-sm">[Create New Role]</span>
+        <span class="font-mono text-sm">[{{ t('add_role') }}]</span>
       </button>
     </div>
 
@@ -60,7 +60,7 @@
     <!-- Create Role Modal -->
     <div v-if="showCreateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showCreateModal = false">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Create New Custom Role<span class="font-mono text-indigo-400">]</span></h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ editingRole ? t('edit_role') : t('add_role') }}<span class="font-mono text-indigo-400">]</span></h2>
 
         <form @submit.prevent="handleCreateRole">
           <div class="space-y-6">
@@ -229,6 +229,7 @@ export default {
   components: { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup },
   setup() {
     const authCtx = inject('authCtx', {});
+    const t = inject('t') || ((k) => k);
     const actorRole = computed(() => authCtx.user?.value?.role || '');
     const canManageRoles = computed(() => authCtx.canManageRoles?.value ?? false);
 
@@ -417,6 +418,7 @@ export default {
       openEditModal,
       handleEditRole,
       deleteRole,
+      t,
     };
   },
 };

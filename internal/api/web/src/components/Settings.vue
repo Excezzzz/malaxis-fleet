@@ -1,17 +1,17 @@
 <template>
   <div>
     <div class="flex justify-between items-center mb-8">
-      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Settings<span class="font-mono text-indigo-400">]</span></h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('settings_title') }}<span class="font-mono text-indigo-400">]</span></h1>
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
-      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>Telegram Bot Settings<span class="font-mono text-indigo-400">]</span></h2>
+      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_bot') }}<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm font-medium text-zinc-300">Telegram Bot</p>
-            <p class="text-xs text-zinc-500">{{ botEnabled ? 'Bot is active' : 'Bot is disabled' }}</p>
+            <p class="text-sm font-medium text-zinc-300">{{ t('settings_telegram_bot') }}</p>
+            <p class="text-xs text-zinc-500">{{ botEnabled ? t('settings_bot_active') : t('settings_bot_disabled') }}</p>
           </div>
           <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-500' : 'bg-zinc-700'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="botEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
@@ -19,35 +19,35 @@
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-zinc-400 mb-1">Bot Token</label>
+          <label class="block text-sm font-medium text-zinc-400 mb-1">{{ t('settings_bot_token') }}</label>
           <input v-model="botToken" type="password" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
                  class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 font-mono text-sm">
         </div>
 
         <div>
-          <label class="block text-sm font-medium text-zinc-400 mb-1">Admin Chat ID</label>
+          <label class="block text-sm font-medium text-zinc-400 mb-1">{{ t('settings_admin_chat') }}</label>
           <input v-model="adminChatId" type="number" placeholder="987654321"
                  class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
         </div>
 
         <div class="flex space-x-4">
           <button @click="saveBotSettings" :disabled="saving" class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
-            <span class="font-mono text-sm" v-if="saving">[Saving...]</span>
-            <span class="font-mono text-sm" v-else>[Save Bot Settings]</span>
+            <span class="font-mono text-sm" v-if="saving">[{{ t('settings_saving_bot') }}]</span>
+            <span class="font-mono text-sm" v-else>[{{ t('settings_save_bot') }}]</span>
           </button>
           <button @click="testConnection" :disabled="testing" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-200 rounded-xl transition-colors disabled:opacity-50">
-            <span class="font-mono text-sm" v-if="testing">[Testing...]</span>
-            <span class="font-mono text-sm" v-else>[Test Connection]</span>
+            <span class="font-mono text-sm" v-if="testing">[{{ t('settings_testing') }}]</span>
+            <span class="font-mono text-sm" v-else>[{{ t('settings_test') }}]</span>
           </button>
           <button @click="restoreAvatar" :disabled="avatarResetting" class="px-4 py-2 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
-            <span class="font-mono text-sm" v-if="avatarResetting">[Restoring...]</span>
-            <span class="font-mono text-sm" v-else>[🎨 Restore Bot Avatar]</span>
+            <span class="font-mono text-sm" v-if="avatarResetting">[{{ t('settings_restoring') }}]</span>
+            <span class="font-mono text-sm" v-else>[{{ t('settings_restore_avatar') }}]</span>
           </button>
         </div>
 
         <div v-if="testResult" class="text-sm" :class="testResult.success ? 'text-green-400' : 'text-red-400'">
-          <p v-if="testResult.success">Connected as @{{ testResult.bot_name }} (ID: {{ testResult.bot_id }})</p>
-          <p v-else>Connection failed: {{ testResult.error }}</p>
+          <p v-if="testResult.success">{{ t('settings_test_ok') }} @{{ testResult.bot_name }} (ID: {{ testResult.bot_id }})</p>
+          <p v-else>{{ t('settings_test_fail') }}: {{ testResult.error }}</p>
         </div>
 
         <div v-if="saveMessage" class="text-sm" :class="saveMessage.type === 'success' ? 'text-green-400' : 'text-red-400'">
@@ -61,21 +61,22 @@
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6">
-      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>Database Backup<span class="font-mono text-indigo-400">]</span></h2>
-      <p class="text-zinc-400 mb-4">Download a complete database backup as a zip archive.</p>
+      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_backup') }}<span class="font-mono text-indigo-400">]</span></h2>
+      <p class="text-zinc-400 mb-4">{{ t('settings_backup_hint') }}</p>
       <button @click="downloadBackup" class="px-4 py-2 bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-100 rounded-xl transition-colors">
-        <span class="font-mono text-sm">[Download Backup]</span>
+        <span class="font-mono text-sm">[{{ t('settings_backup_btn') }}]</span>
       </button>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, inject } from 'vue';
 
 export default {
   name: 'Settings',
   setup() {
+    const t = inject('t') || ((k) => k);
     const botEnabled = ref(false);
     const botToken = ref('');
     const adminChatId = ref('');
@@ -129,7 +130,7 @@ export default {
 
     const testConnection = async () => {
       if (!botToken.value) {
-        testResult.value = { success: false, error: 'Enter a bot token first' };
+        testResult.value = { success: false, error: t('settings_test_no_token') };
         return;
       }
       testing.value = true;
@@ -154,9 +155,9 @@ export default {
       try {
         const resp = await fetch('/api/web/settings/bot/reset-avatar', { method: 'POST' });
         if (!resp.ok) throw new Error((await resp.text()) || 'Failed to restore avatar');
-        avatarToast.value = 'Bot profile photo updated!';
+        avatarToast.value = t('settings_avatar_ok');
       } catch (e) {
-        avatarToast.value = 'Could not restore avatar: ' + e.message;
+        avatarToast.value = t('settings_avatar_fail') + ': ' + e.message;
       } finally {
         avatarResetting.value = false;
         clearTimeout(avatarToastTimer);
@@ -187,7 +188,7 @@ export default {
 
     return {
       botEnabled, botToken, adminChatId, saving, testing, avatarResetting, testResult, saveMessage, avatarToast,
-      saveBotSettings, testConnection, restoreAvatar, downloadBackup,
+      saveBotSettings, testConnection, restoreAvatar, downloadBackup, t,
     };
   },
 };

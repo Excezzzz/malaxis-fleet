@@ -57,6 +57,8 @@ type Repository interface {
 	DeleteUser(id int64) error
 	IsUsersEmpty() (bool, error)
 	CountUsersByRole(role string) (int, error)
+	GetUserPreferences(id int64) (*domain.UserPreferences, error)
+	UpdateUserPreferences(id int64, p domain.UserPreferences) error
 
 	// --- Custom Role Methods ---
 	AddCustomRole(role *domain.CustomRole) (int64, error)

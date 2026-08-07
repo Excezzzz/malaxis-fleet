@@ -541,6 +541,87 @@ func (b *Bot) showMainMenuFresh(chatID int64) {
 	b.mu.Unlock()
 }
 
+// botPrefs loads the admin user's personalization settings used to render the
+// bot menu (language and emoji rendering).
+func (b *Bot) botPrefs() (lang string, emojis bool) {
+	lang = "ru"
+	emojis = true
+	user, err := b.repo.GetUserByUsername(b.cfg.AdminUser)
+	if err != nil {
+		return
+	}
+	prefs, err := b.repo.GetUserPreferences(user.ID)
+	if err != nil {
+		return
+	}
+	if prefs.Language == "en" {
+		lang = "en"
+	}
+	emojis = prefs.BotEmojisEnabled
+	return
+}
+
+// tr returns the Russian or English string matching the stored bot language.
+func (b *Bot) tr(ru, en string) string {
+	lang, _ := b.botPrefs()
+	if lang == "en" {
+		return en
+	}
+	return ru
+}
+
+// emoji returns the label with its leading emoji stripped when emoji rendering
+// is disabled for the bot.
+func (b *Bot) emoji(label string) string {
+	_, enabled := b.botPrefs()
+	if !enabled {
+		label = strings.TrimLeftFunc(label, func(r rune) bool {
+			return r >= 0x1F000 && r <= 0x1FAFF || r >= 0x2600 && r <= 0x27BF || r == 0xFE0F ||
+				r >= 0x2B00 && r <= 0x2BFF || r >= 0x1F1E6 && r <= 0x1F1FF || r == 0x200D
+		})
+		return strings.TrimSpace(label)
+	}
+	return label
+}
+
+// toggleBotLanguage cycles the stored bot language between RU and EN.
+func (b *Bot) toggleBotLanguage() {
+	lang, _ := b.botPrefs()
+	next := "ru"
+	if lang == "ru" {
+		next = "en"
+	}
+	b.saveBotPrefs(next, -1)
+}
+
+// toggleBotEmojis flips the stored emoji rendering flag for the bot.
+func (b *Bot) toggleBotEmojis() {
+	_, emojis := b.botPrefs()
+	next := 0
+	if !emojis {
+		next = 1
+	}
+	b.saveBotPrefs("", next)
+}
+
+func (b *Bot) saveBotPrefs(lang string, emojis int) {
+	user, err := b.repo.GetUserByUsername(b.cfg.AdminUser)
+	if err != nil {
+		return
+	}
+	prefs, err := b.repo.GetUserPreferences(user.ID)
+	if err != nil {
+		return
+	}
+	if lang != "" {
+		prefs.Language = lang
+	}
+	if emojis >= 0 {
+		prefs.BotEmojisEnabled = emojis == 1
+	}
+	_ = b.repo.UpdateUserPreferences(user.ID, *prefs)
+}
+
 // getMainMenuContent builds the main menu: node online/offline counters and
 // the fleet action buttons.
 func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
@@ -553,34 +634,44 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	}
 	offlineCount := len(nodes) - onlineCount
 
-	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v2.1.0</b>\n\n"+
-		"Nodes: 🟢 %d Online | 🔴 %d Offline", onlineCount, offlineCount)
+	_, emojis := b.botPrefs()
+	emojiState := b.tr("ВКЛ", "ON")
+	if !emojis {
+		emojiState = b.tr("ВЫКЛ", "OFF")
+	}
+
+	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v2.1.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
+		b.tr("Узлы", "Nodes"), onlineCount, b.tr("онлайн", "Online"), offlineCount, b.tr("офлайн", "Offline"))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("➕ Add New Device", "join:command"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("➕ Добавить устройство", "➕ Add New Device")), "join:command"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💻 Manage Nodes", "nodes:list"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("💻 Управление узлами", "💻 Manage Nodes")), "nodes:list"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🚀 Push Client Files (OTA)", "ota:all"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🚀 Отправить файлы клиентов (OTA)", "🚀 Push Client Files (OTA)")), "ota:all"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh Subscriptions", "task:refresh_subs"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🔄 Обновить подписки", "🔄 Refresh Subscriptions")), "task:refresh_subs"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🧹 Purge Offline (>3d)", "purge:go"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🧹 Очистить офлайн (>3д)", "🧹 Purge Offline (>3d)")), "purge:go"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📦 Download DB Backup", "backup:download"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("📦 Скачать бэкап БД", "📦 Download DB Backup")), "backup:download"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("👥 Manage Users", "users:menu"),
-			tgbotapi.NewInlineKeyboardButtonData("🛡️ Manage Roles", "roles:menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("👥 Пользователи", "👥 Manage Users")), "users:menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🛡️ Роли", "🛡️ Manage Roles")), "roles:menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🎨 Restore Avatar", "avatar:restore"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🎨 Вернуть аватар", "🎨 Restore Avatar")), "avatar:restore"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🌐 Язык: RU", "🌐 Language: EN")), "prefs:lang"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("😃 "+b.tr("Эмодзи: "+emojiState, "Emojis: "+emojiState)), "prefs:emoji"),
 		),
 	)
 	return text, markup
@@ -718,15 +809,6 @@ func (b *Bot) processTerminateText(chatID int64, text string) {
 	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "💥 Terminate queued. The node will self-destruct on its next poll.")
 }
 
-func (b *Bot) backMenuMarkup() *tgbotapi.InlineKeyboardMarkup {
-	markup := tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Menu", "menu:main"),
-		),
-	)
-	return &markup
-}
-
 // handleJoinCommand shows the tokenized node onboarding command. The curl line
 // is rendered as a <code> block so Telegram lets the admin copy it on tap.
 func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
@@ -737,30 +819,50 @@ func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 
 	command := "curl -sSL https://" + b.cfg.JoinDomain + "/?t=" + b.cfg.FleetSecret + " | bash"
 
-	text := "<b>➕ Add New Device</b>\n\n" +
-		"To add a new device, run this command on the client machine:\n\n" +
+	text := "<b>➕ " + b.tr("Добавить новое устройство", "Add New Device") + "</b>\n\n" +
+		b.tr("Чтобы добавить новое устройство, выполните эту команду на клиентской машине:", "To add a new device, run this command on the client machine:") + "\n\n" +
 		"<code>" + command + "</code>\n\n" +
-		"Tap the command to copy it, then run it in the terminal of any host with Docker."
+		b.tr("Нажмите на команду, чтобы скопировать её, затем выполните в терминале любого хоста с Docker.", "Tap the command to copy it, then run it in the terminal of any host with Docker.")
 
 	b.editMessage(chatID, messageID, text, b.backMenuMarkup())
 }
 
-// handleAvatarRestore re-uploads the default profile photo, confirms with a
-// callback toast, and re-renders the main menu.
-func (b *Bot) handleAvatarRestore(q *tgbotapi.CallbackQuery) {
-	if err := b.SetDefaultAvatar(); err != nil {
-		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ Could not restore avatar"))
-		log.Printf("Bot: avatar restore failed: %v", err)
-		return
+// handlePrefsCallback answers callbacks for the preference toggles (language,
+// emoji rendering, avatar restore) with a visible toast and re-renders the
+// main menu.
+func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
+	switch data {
+	case "prefs:lang":
+		b.toggleBotLanguage()
+		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Язык обновлён", "Language updated")))
+	case "prefs:emoji":
+		b.toggleBotEmojis()
+		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Настройка обновлена", "Setting updated")))
+	case "avatar:restore":
+		if err := b.SetDefaultAvatar(); err != nil {
+			b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось вернуть аватар", "Could not restore avatar")))
+			log.Printf("Bot: avatar restore failed: %v", err)
+			return
+		}
+		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Фото профиля бота обновлено!", "Bot profile photo updated!")))
 	}
-	b.api.Request(tgbotapi.NewCallback(q.ID, "✅ Bot profile photo updated!"))
 	b.showMainMenu(q.Message.Chat.ID)
 }
 
 func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Cancel", "state:cancel"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("❌ "+b.tr("Отмена", "Cancel")), "state:cancel"),
+		),
+	)
+	return &markup
+}
+
+// backMenuMarkup is the standard "← Main Menu" footer row.
+func (b *Bot) backMenuMarkup() *tgbotapi.InlineKeyboardMarkup {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("⬅️ "+b.tr("Главное меню", "Main Menu")), "menu:main"),
 		),
 	)
 	return &markup
@@ -771,10 +873,11 @@ func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
 func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	data := q.Data
 
-	// The avatar restore answers its callback with a visible toast, so it is
-	// handled before the generic empty acknowledgment below.
-	if data == "avatar:restore" {
-		b.handleAvatarRestore(q)
+	// The preference toggles and the avatar restore answer their callbacks
+	// with a visible toast, so they are handled before the generic empty
+	// acknowledgment below.
+	if data == "avatar:restore" || data == "prefs:lang" || data == "prefs:emoji" {
+		b.handlePrefsCallback(q, data)
 		return
 	}
 

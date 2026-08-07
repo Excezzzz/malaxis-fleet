@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="flex flex-wrap justify-between items-center gap-3 mb-8">
-      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Logs &amp; Audit<span class="font-mono text-indigo-400">]</span></h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('logs_title') }}<span class="font-mono text-indigo-400">]</span></h1>
       <div v-if="activeTab === 'audit'" class="flex items-center space-x-3">
         <button @click="exportLogs" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
           <Download class="w-5 h-5" />
-          <span class="font-mono text-sm">[Export Logs]</span>
+          <span class="font-mono text-sm">[{{ t('audit_export') }}]</span>
         </button>
       </div>
     </div>
@@ -13,11 +13,11 @@
     <div class="flex rounded-xl bg-white/5 border border-white/10 p-1 mb-8 w-fit">
       <button v-if="canViewAuditLogs" @click="activeTab = 'audit'"
         :class="['px-5 py-2 text-sm font-semibold rounded-lg transition-colors', activeTab === 'audit' ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
-        Audit Trail
+        {{ t('audit_trail') }}
       </button>
       <button v-if="canViewMasterLogs" @click="activeTab = 'master'"
         :class="['px-5 py-2 text-sm font-semibold rounded-lg transition-colors', activeTab === 'master' ? 'bg-indigo-500/25 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/5']">
-        Master Server Logs
+        {{ t('audit_master') }}
       </button>
     </div>
 
@@ -85,6 +85,7 @@ export default {
   components: { Download, RefreshCw, Copy },
   setup() {
     const authCtx = inject('authCtx', {});
+    const t = inject('t') || ((k) => k);
     const canViewAuditLogs = computed(() => authCtx.canViewAuditLogs?.value ?? false);
     const canViewMasterLogs = computed(() => authCtx.canViewMasterLogs?.value ?? false);
 
@@ -186,6 +187,7 @@ export default {
       toast,
       canViewAuditLogs,
       canViewMasterLogs,
+      t,
     };
   },
 };

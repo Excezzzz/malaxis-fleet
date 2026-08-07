@@ -94,6 +94,24 @@ type User struct {
 	RoleColor    string    `json:"role_color,omitempty" db:"role_color"`
 }
 
+// AllowedAccentColors are the selectable UI accent colors.
+var AllowedAccentColors = []string{"indigo", "emerald", "amber", "rose", "cyan"}
+
+// AllowedThemeModes are the selectable UI theme modes.
+var AllowedThemeModes = []string{"obsidian", "dark", "light"}
+
+// AllowedLanguages are the selectable UI languages.
+var AllowedLanguages = []string{"ru", "en"}
+
+// UserPreferences holds the per-user personalization settings: accent color,
+// theme mode, UI language and bot emoji rendering.
+type UserPreferences struct {
+	AccentColor      string `json:"accent_color"`
+	ThemeMode        string `json:"theme_mode"`
+	Language         string `json:"language"`
+	BotEmojisEnabled bool   `json:"bot_emojis_enabled"`
+}
+
 // CustomRole represents a custom role definition created by the Owner.
 type CustomRole struct {
 	ID              int64     `json:"id" db:"id"`

@@ -1,11 +1,11 @@
 <template>
   <div>
     <div class="flex flex-wrap justify-between items-center gap-3 mb-8">
-      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Fleet Users<span class="font-mono text-indigo-400">]</span></h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('users_title') }}<span class="font-mono text-indigo-400">]</span></h1>
       <div class="flex space-x-4">
         <button v-if="canCreateUsers" @click="openAddUserModal" class="flex items-center space-x-2 px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">
           <Users class="w-5 h-5" />
-          <span class="font-mono text-sm">[Add New User]</span>
+          <span class="font-mono text-sm">[{{ t('add_user') }}]</span>
         </button>
       </div>
     </div>
@@ -57,7 +57,7 @@
     <!-- Add User Modal -->
     <div v-if="showAddUserModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showAddUserModal = false">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Add New User<span class="font-mono text-indigo-400">]</span></h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ showEditUserModal ? t('edit_user') : t('add_user') }}<span class="font-mono text-indigo-400">]</span></h2>
         <form @submit.prevent="handleCreateUser">
           <div class="space-y-4">
             <div>
@@ -146,6 +146,7 @@ export default {
   components: { Users, Trash2, Plus, Edit, Lock },
   setup() {
     const authCtxRaw = inject('authCtx', {});
+    const t = inject('t') || ((k) => k);
     const actorRole = computed(() => authCtxRaw.user?.value?.role || '');
     const canCreateUsers = computed(() => authCtxRaw.canCreateUsers?.value ?? false);
     const canEditUsers = computed(() => authCtxRaw.canEditUsers?.value ?? false);
@@ -378,6 +379,7 @@ export default {
       canEditUserRow,
       canDeleteUserRow,
       userRank,
+      t,
     };
   },
 };
