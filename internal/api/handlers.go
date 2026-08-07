@@ -1893,6 +1893,72 @@ func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetUserPreferencesHandler returns the current user's personalization
+// settings (accent color, theme mode, language, bot emoji rendering).
+func (a *API) GetUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	prefs, err := a.repo.GetUserPreferences(userID)
+	if err != nil {
+		log.Printf("Failed to load preferences for user %d: %v", userID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(prefs)
+}
+
+// UpdateUserPreferencesHandler updates the current user's personalization
+// settings. Invalid values are silently replaced with the defaults.
+func (a *API) UpdateUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req domain.UserPreferences
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	if !strSliceContains(domain.AllowedAccentColors, req.AccentColor) {
+		req.AccentColor = "indigo"
+	}
+	if !strSliceContains(domain.AllowedThemeModes, req.ThemeMode) {
+		req.ThemeMode = "obsidian"
+	}
+	if !strSliceContains(domain.AllowedLanguages, req.Language) {
+		req.Language = "ru"
+	}
+
+	if err := a.repo.UpdateUserPreferences(userID, req); err != nil {
+		log.Printf("Failed to save preferences for user %d: %v", userID, err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	updated, _ := a.repo.GetUserPreferences(userID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updated)
+}
+
+func strSliceContains(list []string, v string) bool {
+	for _, item := range list {
+		if item == v {
+			return true
+		}
+	}
+	return false
+}
+
 // ResetBotAvatarHandler re-uploads the embedded default profile photo of the
 // Telegram bot on demand.
 func (a *API) ResetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {

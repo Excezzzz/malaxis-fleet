@@ -224,6 +224,8 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	webAPIRouter.Handle("/web/settings/bot", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateBotSettingsHandler)))).Methods("PUT")
 	webAPIRouter.Handle("/web/settings/bot/test", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.TestTelegramBotHandler)))).Methods("POST")
 	webAPIRouter.Handle("/web/settings/bot/reset-avatar", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.ResetBotAvatarHandler)))).Methods("POST")
+	webAPIRouter.Handle("/web/user/preferences", auth.Middleware(cfg)(http.HandlerFunc(api.GetUserPreferencesHandler))).Methods("GET")
+	webAPIRouter.Handle("/web/user/preferences", auth.Middleware(cfg)(http.HandlerFunc(api.UpdateUserPreferencesHandler))).Methods("PUT")
 
 	// Serve the embedded Vue.js dashboard (skip in Low-RAM mode)
 	if !cfg.LowRAMMode {

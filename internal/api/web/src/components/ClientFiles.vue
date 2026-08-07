@@ -2,14 +2,14 @@
   <div>
     <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
       <div>
-        <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Client Files<span class="font-mono text-indigo-400">]</span></h1>
-        <p class="text-zinc-500 mt-1 text-sm">Deploy templates served to fleet agents at <span class="text-indigo-300 font-mono">/node_agent.py</span>, <span class="text-indigo-300 font-mono">/fleet-cli.sh</span> and friends. Edit a file, save it, then push to devices.</p>
+        <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('client_files_title') }}<span class="font-mono text-indigo-400">]</span></h1>
+        <p class="text-zinc-500 mt-1 text-sm">{{ t('client_files_subtitle') }} <span class="text-indigo-300 font-mono">/node_agent.py</span>, <span class="text-indigo-300 font-mono">/fleet-cli.sh</span>.</p>
       </div>
       <button @click="pushFiles" :disabled="pushing"
         :class="['flex items-center space-x-2 px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 border', pushing ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
         <Rocket v-if="!pushing" class="w-5 h-5" />
         <RefreshCw v-else class="w-5 h-5 animate-spin" />
-        <span class="font-mono text-sm">{{ pushing ? '[Queuing...]' : '[Push Latest Client Files to Devices]' }}</span>
+        <span class="font-mono text-sm">{{ pushing ? `[${t('client_push_queued')}]` : `[${t('client_push')}]` }}</span>
       </button>
     </div>
 
@@ -21,21 +21,21 @@
     <div class="bg-zinc-900/40 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
-          <h2 class="text-lg font-bold text-white">Add New Device</h2>
-          <p class="text-sm text-zinc-400">Run this command on any host with Docker to join the fleet. The token is pre-filled and gates every payload download.</p>
+          <h2 class="text-lg font-bold text-white">{{ t('client_add_device') }}</h2>
+          <p class="text-sm text-zinc-400">{{ t('client_add_device_hint') }}</p>
         </div>
       </div>
       <div class="flex flex-wrap items-stretch gap-2">
         <code v-if="installCommand"
           class="flex-1 min-w-0 px-3 py-3 bg-black text-emerald-400 border border-white/10 rounded-xl text-xs font-mono break-all whitespace-pre-wrap">{{ installCommand }}</code>
         <div v-else class="flex-1 min-w-0 px-3 py-3 bg-black text-zinc-500 border border-white/10 rounded-xl text-xs font-mono">
-          {{ commandError || 'Loading install command...' }}
+          {{ commandError || t('client_loading_cmd') }}
         </div>
         <button @click="copyInstallCommand" :disabled="!installCommand"
           :class="['flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-all duration-300', copied ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed']">
           <Copy v-if="!copied" class="w-3.5 h-3.5" />
           <Check v-else class="w-3.5 h-3.5" />
-          <span>{{ copied ? '[Copied]' : '[Copy Command]' }}</span>
+          <span>{{ copied ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
         </button>
       </div>
     </div>
@@ -60,13 +60,13 @@
         <div class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 border-b border-white/5 bg-zinc-900/60">
           <span class="font-mono text-sm text-indigo-300 min-w-0 truncate">{{ selected }}</span>
           <div class="flex flex-wrap items-center gap-3">
-            <span class="text-xs text-zinc-500">{{ lines.length }} lines</span>
-            <span class="text-xs" :class="dirty ? 'text-amber-300' : 'text-zinc-500'">{{ dirty ? 'Unsaved changes' : 'Saved' }}</span>
+            <span class="text-xs text-zinc-500">{{ lines.length }} {{ t('client_lines') }}</span>
+            <span class="text-xs" :class="dirty ? 'text-amber-300' : 'text-zinc-500'">{{ dirty ? t('client_unsaved') : t('client_saved') }}</span>
             <button @click="saveFile" :disabled="saving"
               :class="['flex items-center space-x-2 px-4 py-1.5 rounded-xl text-sm font-semibold border transition-all duration-300', saving ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
               <Save v-if="!saving" class="w-4 h-4" />
               <RefreshCw v-else class="w-4 h-4 animate-spin" />
-              <span class="font-mono text-sm">{{ saving ? '[Saving...]' : '[Save File]' }}</span>
+              <span class="font-mono text-sm">{{ saving ? `[${t('client_saving')}]` : `[${t('client_save')}]` }}</span>
             </button>
           </div>
         </div>
@@ -83,7 +83,7 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, inject } from 'vue';
 import axios from 'axios';
 import { FileCode2, Rocket, RefreshCw, Save, Copy, Check } from 'lucide-vue-next';
 
@@ -91,6 +91,7 @@ export default {
   name: 'ClientFiles',
   components: { FileCode2, Rocket, RefreshCw, Save, Copy, Check },
   setup() {
+    const t = inject('t') || ((k) => k);
     const files = ref([]);
     const selected = ref('');
     const content = ref('');
@@ -227,6 +228,7 @@ export default {
       lines,
       saveFile,
       pushFiles,
+      t,
     };
   },
 };

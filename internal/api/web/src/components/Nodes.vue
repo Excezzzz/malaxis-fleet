@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
-      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Nodes<span class="font-mono text-indigo-400">]</span></h1>
+      <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('nodes_title') }}<span class="font-mono text-indigo-400">]</span></h1>
       <div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full lg:w-auto">
         <div class="relative flex-1 min-w-[220px]">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
@@ -16,7 +16,7 @@
         </select>
         <button @click="refreshList" class="flex items-center justify-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
-          <span class="font-mono">{{ refreshingList ? '[Refreshing...]' : '[Refresh List]' }}</span>
+          <span class="font-mono">{{ refreshingList ? `[${t('nodes_refreshing')}]` : `[${t('nodes_refresh')}]` }}</span>
         </button>
       </div>
     </div>
@@ -53,13 +53,13 @@
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300"
             title="Delete ghost nodes offline for more than 7 days">
             <Trash2 class="w-4 h-4" />
-            <span class="font-mono">[Purge Offline]</span>
+            <span class="font-mono">[{{ t('nodes_purge') }}]</span>
           </button>
           <button v-if="canEditSub" @click="handleRefreshAllSubs"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 text-sm font-semibold shadow-lg shadow-indigo-500/10 transition-all duration-300"
             title="Queue a subscription re-fetch for ALL nodes" :disabled="refreshingSubs">
             <RefreshCw :class="['w-4 h-4', refreshingSubs ? 'animate-spin' : '']" />
-            <span class="font-mono">{{ refreshingSubs ? '[Updating...]' : '[Update All Devices]' }}</span>
+            <span class="font-mono">{{ refreshingSubs ? `[${t('nodes_updating')}]` : `[${t('nodes_update_all')}]` }}</span>
           </button>
           <button v-if="canEditSub" @click="showMassUpdateModal = true"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 text-sm font-semibold shadow-lg shadow-emerald-500/10 transition-all duration-300"
@@ -74,7 +74,7 @@
         title="Quick Fleet Actions" aria-label="Quick Fleet Actions">
         <span class="text-indigo-400 font-bold">[</span>
         <svg class="w-4 h-4 inline-block text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        <span class="text-zinc-200">Commands</span>
+        <span class="text-zinc-200">{{ t('nodes_commands') }}</span>
         <span class="text-indigo-400 font-bold">]</span>
       </button>
     </div>
@@ -82,17 +82,17 @@
     <!-- Mass Update Subscription Domain Modal -->
     <div v-if="showMassUpdateModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showMassUpdateModal = false">
       <div class="bg-zinc-900/90 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Mass Update Subscription Domain<span class="font-mono text-indigo-400">]</span></h2>
-        <p class="text-zinc-400 mb-4">This will replace the domain portion of the subscription URL for ALL nodes while preserving each node&apos;s unique path and token.</p>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('nodes_mass_domain') }}<span class="font-mono text-indigo-400">]</span></h2>
+        <p class="text-zinc-400 mb-4">{{ t('nodes_mass_domain_hint') }}</p>
         <div class="space-y-4">
           <div>
-            <label for="mass_domain" class="block text-sm font-medium text-zinc-400">New Subdomain</label>
+            <label for="mass_domain" class="block text-sm font-medium text-zinc-400">{{ t('nodes_new_domain') }}</label>
             <input v-model="massUpdateDomain" type="text" id="mass_domain" placeholder="sub.yourdomain.com" class="mt-1 block w-full bg-zinc-800/80 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50" required>
           </div>
         </div>
         <div class="mt-8 flex justify-end space-x-4">
-          <button type="button" @click="showMassUpdateModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
-          <button @click="handleMassUpdateDomain" class="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-100 rounded-xl transition-colors">Update All</button>
+          <button type="button" @click="showMassUpdateModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('cancel') }}</button>
+          <button @click="handleMassUpdateDomain" class="px-4 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/30 text-emerald-100 rounded-xl transition-colors">{{ t('update_all') }}</button>
         </div>
       </div>
     </div>
@@ -119,6 +119,7 @@ export default {
   },
   setup() {
     const authCtx = inject('authCtx', {});
+    const t = inject('t') || ((k) => k);
     const canEditSub = computed(() => authCtx.canEditSub?.value ?? false);
     const canPurgeNodes = computed(() => authCtx.canPurgeNodes?.value ?? false);
     const nodes = ref([]);
@@ -271,6 +272,7 @@ return {
       handleMassUpdateDomain,
       onNodeDeleted,
       handlePurgeOffline,
+      t,
 };
   },
 };

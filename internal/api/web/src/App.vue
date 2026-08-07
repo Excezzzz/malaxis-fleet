@@ -18,7 +18,7 @@
             <span v-if="roleName" :class="['text-[10px] uppercase tracking-wider truncate', roleName.toLowerCase() === 'owner' ? 'text-red-400' : 'text-indigo-400']">{{ roleName }}</span>
             <span v-else class="text-[10px] uppercase tracking-wider truncate text-zinc-500">user</span>
           </div>
-          <button @click="logout" class="flex items-center justify-center w-9 h-9 rounded-full text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors" title="Logout">
+          <button @click="logout" class="flex items-center justify-center w-9 h-9 rounded-full text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors" :title="t('logout')">
             <LogOut class="w-4 h-4" />
           </button>
         </div>
@@ -57,20 +57,42 @@
         </div>
 
         <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
+          <!-- Accent color picker -->
+          <div class="hidden xl:flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/5 border border-white/10" :title="t('prefs_accent')">
+            <button v-for="c in accentOptions" :key="c.id" @click="setAccent(c.id)"
+              class="w-4 h-4 rounded-full transition-transform hover:scale-125"
+              :class="prefs.accent_color === c.id ? 'ring-2 ring-offset-2 ring-offset-[#09090b]' : ''"
+              :style="{ backgroundColor: c.color, '--tw-ring-color': c.color }"></button>
+          </div>
+
+          <!-- Language toggle -->
+          <div class="flex items-center rounded-full bg-white/5 border border-white/10 p-0.5 text-xs font-bold" :title="t('prefs_theme')">
+            <button v-for="lang in ['ru', 'en']" :key="lang" @click="setLanguage(lang)"
+              class="px-2 py-1 rounded-full transition-colors uppercase"
+              :class="prefs.language === lang ? 'bg-indigo-500/20 text-indigo-300' : 'text-zinc-500 hover:text-zinc-300'">{{ lang }}</button>
+          </div>
+
+          <!-- Theme toggle -->
+          <div class="flex items-center rounded-full bg-white/5 border border-white/10 p-0.5 text-xs" :title="t('prefs_theme')">
+            <button v-for="th in themeOptions" :key="th.id" @click="setTheme(th.id)"
+              class="w-7 h-6 flex items-center justify-center rounded-full transition-colors"
+              :class="prefs.theme_mode === th.id ? 'bg-indigo-500/20' : 'hover:bg-white/5'">{{ th.icon }}</button>
+          </div>
+
           <div v-if="username" class="hidden sm:flex flex-col text-right mr-2">
             <span class="text-sm font-bold text-white whitespace-nowrap">{{ username }}</span>
             <span v-if="roleName" class="text-[10px] uppercase tracking-wider text-indigo-400">{{ roleName }}</span>
           </div>
           <button @click="logout" class="flex items-center space-x-1.5 px-2.5 sm:px-3 py-2 rounded-full text-sm text-red-400 hover:text-red-300 hover:bg-red-950/30 transition-colors">
             <LogOut class="w-4 h-4" />
-            <span class="hidden min-[420px]:inline">Logout</span>
+            <span class="hidden min-[420px]:inline">{{ t('logout') }}</span>
           </button>
         </div>
       </nav>
 
       <main class="w-full px-4 md:px-8 pt-16 md:pt-28 pb-24 md:pb-16">
         <div v-if="isReadOnly" class="mb-6 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
-          <strong>Read-only mode:</strong> your role only has view access. Management actions are hidden.
+          <strong>{{ t('readonly_banner') }}</strong>
         </div>
         <component :is="currentViewComponent" />
       </main>
@@ -88,6 +110,28 @@ import AdminUsers from './components/AdminUsers.vue';
 import RoleManager from './components/RoleManager.vue';
 import AuditLogs from './components/AuditLogs.vue';
 import SettingsView from './components/Settings.vue';
+import messages from './i18n';
+
+const ACCENTS = {
+  indigo: '#6366f1',
+  emerald: '#10b981',
+  amber: '#f59e0b',
+  rose: '#f43f5e',
+  cyan: '#06b6d4',
+};
+
+const THEMES = {
+  obsidian: { base: '#000000', surface: '#09090b' },
+  dark: { base: '#09090b', surface: '#18181b' },
+  light: { base: '#f4f4f5', surface: '#ffffff' },
+};
+
+const mix = (hex, target, amt) => {
+  const n = parseInt(hex.slice(1), 16);
+  const tn = parseInt(target.slice(1), 16);
+  const mixCh = (sh) => Math.round(((n >> sh) & 255) * (1 - amt) + ((tn >> sh) & 255) * amt);
+  return `rgb(${mixCh(16)},${mixCh(8)},${mixCh(0)})`;
+};
 
 export default {
   name: 'App',
@@ -108,6 +152,63 @@ export default {
     const roleName = ref('');
     const username = ref('');
     const permissions = ref([]);
+    const prefs = ref({ accent_color: 'indigo', theme_mode: 'obsidian', language: 'ru', bot_emojis_enabled: true });
+
+    const accentOptions = Object.entries(ACCENTS).map(([id, color]) => ({ id, color }));
+    const themeOptions = [
+      { id: 'obsidian', icon: '🖤' },
+      { id: 'dark', icon: '🌙' },
+      { id: 'light', icon: '☀️' },
+    ];
+
+    const applyPrefs = () => {
+      const root = document.documentElement;
+      const acc = ACCENTS[prefs.value.accent_color] || ACCENTS.indigo;
+      const theme = THEMES[prefs.value.theme_mode] || THEMES.obsidian;
+      const light = prefs.value.theme_mode === 'light';
+
+      root.style.setProperty('--acc', acc);
+      root.style.setProperty('--acc-text', light ? mix(acc, '#000000', 0.18) : mix(acc, '#ffffff', 0.58));
+      root.style.setProperty('--acc-text-2', light ? mix(acc, '#000000', 0.12) : mix(acc, '#ffffff', 0.42));
+      root.style.setProperty('--acc-dark', mix(acc, '#000000', 0.45));
+      root.style.setProperty('--bg-base', theme.base);
+      root.style.setProperty('--bg-surface', theme.surface);
+      root.style.setProperty('--text-main', light ? '#18181b' : '#ffffff');
+      root.style.setProperty('--text-2', light ? '#27272a' : '#f4f4f5');
+      root.style.setProperty('--text-3', light ? '#3f3f46' : '#d4d4d8');
+      root.style.setProperty('--text-4', light ? '#52525b' : '#a1a1aa');
+      root.style.setProperty('--text-5', light ? '#71717a' : '#71717a');
+      root.style.setProperty('--border-soft', light ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)');
+      root.style.setProperty('--border-softer', light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)');
+      root.style.setProperty('--bg-input', light ? '#ffffff' : '#27272a');
+      root.style.setProperty('--bg-input-2', light ? '#ffffff' : '#3f3f46');
+      document.body.style.backgroundColor = theme.base;
+      localStorage.setItem('fleet_prefs', JSON.stringify(prefs.value));
+    };
+
+    const savePrefs = async (patch) => {
+      prefs.value = { ...prefs.value, ...patch };
+      applyPrefs();
+      try {
+        await fetch('/api/web/user/preferences', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prefs.value),
+        });
+      } catch (e) {
+        console.error('Failed to save preferences:', e);
+      }
+    };
+
+    const setAccent = (id) => savePrefs({ accent_color: id });
+    const setTheme = (id) => savePrefs({ theme_mode: id });
+    const setLanguage = (lang) => savePrefs({ language: lang });
+
+    const t = (key) => (messages[prefs.value.language] && messages[prefs.value.language][key]) || key;
+
+    provide('t', t);
+    provide('prefs', prefs);
+    provide('savePrefs', savePrefs);
 
     const hasPermission = (perm) => {
       if (role.value === 'owner' || username.value === 'admin') return true;
@@ -135,12 +236,12 @@ export default {
 
     const navItems = computed(() => {
       const items = [];
-      if (canViewNodes.value) items.push({ view: 'Nodes', label: 'Nodes', icon: 'Server' });
-      if (canEditSub.value || canUpdateClient.value) items.push({ view: 'ClientFiles', label: 'Client Files', icon: 'FileCode' });
-      if (canViewUsers.value) items.push({ view: 'AdminUsers', label: 'Fleet Users', icon: 'Users' });
-      if (canViewRoles.value) items.push({ view: 'RoleManager', label: 'Roles & Permissions', icon: 'Shield' });
-      if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: 'Logs & Audit', icon: 'Terminal' });
-      if (isOwner.value) items.push({ view: 'Settings', label: 'Settings', icon: 'Settings' });
+      if (canViewNodes.value) items.push({ view: 'Nodes', label: t('nav_nodes'), icon: 'Server' });
+      if (canEditSub.value || canUpdateClient.value) items.push({ view: 'ClientFiles', label: t('nav_client_files'), icon: 'FileCode' });
+      if (canViewUsers.value) items.push({ view: 'AdminUsers', label: t('nav_users'), icon: 'Users' });
+      if (canViewRoles.value) items.push({ view: 'RoleManager', label: t('nav_roles'), icon: 'Shield' });
+      if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: t('nav_logs'), icon: 'Terminal' });
+      if (isOwner.value) items.push({ view: 'Settings', label: t('nav_settings'), icon: 'Settings' });
       return items;
     });
 
@@ -169,6 +270,18 @@ export default {
         permissions.value = Array.isArray(user.permissions) ? user.permissions : [];
     };
 
+    const fetchPreferences = async () => {
+      try {
+        const resp = await fetch('/api/web/user/preferences');
+        if (resp.ok) {
+          prefs.value = { ...prefs.value, ...(await resp.json()) };
+          applyPrefs();
+        }
+      } catch (e) {
+        console.error('Failed to fetch preferences:', e);
+      }
+    };
+
     const login = () => {
         isAuthenticated.value = true;
         fetch('/api/auth/me')
@@ -181,6 +294,7 @@ export default {
                 console.error('Failed to fetch current user:', e);
                 isAuthenticated.value = false;
             });
+        fetchPreferences();
     };
 
     const checkAuth = () => {
@@ -192,6 +306,7 @@ export default {
             .then(user => {
                 isAuthenticated.value = true;
                 applyUser(user);
+                fetchPreferences();
             })
             .catch(() => {
                 isAuthenticated.value = false;
@@ -199,6 +314,13 @@ export default {
     };
 
     onMounted(() => {
+        const cached = localStorage.getItem('fleet_prefs');
+        if (cached) {
+          try {
+            prefs.value = { ...prefs.value, ...JSON.parse(cached) };
+          } catch (e) { /* ignore corrupt cache */ }
+        }
+        applyPrefs();
         checkAuth();
     });
 
@@ -232,6 +354,13 @@ export default {
       isOwner,
       roleName,
       username,
+      prefs,
+      accentOptions,
+      themeOptions,
+      setAccent,
+      setTheme,
+      setLanguage,
+      t,
       login,
       logout,
     };
@@ -245,4 +374,68 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+/* --- Theme variables: surfaces --- */
+#app .bg-zinc-950 { background-color: var(--bg-base); }
+#app .bg-zinc-900 { background-color: var(--bg-surface); }
+#app .bg-zinc-900\/40 { background-color: color-mix(in srgb, var(--bg-surface) 40%, transparent); }
+#app .bg-zinc-900\/60 { background-color: color-mix(in srgb, var(--bg-surface) 60%, transparent); }
+#app .bg-zinc-900\/80 { background-color: color-mix(in srgb, var(--bg-surface) 80%, transparent); }
+#app .bg-zinc-900\/90 { background-color: color-mix(in srgb, var(--bg-surface) 90%, transparent); }
+#app .bg-zinc-900\/95 { background-color: color-mix(in srgb, var(--bg-surface) 95%, transparent); }
+#app .bg-zinc-800 { background-color: var(--bg-input); }
+#app .bg-zinc-800\/60 { background-color: color-mix(in srgb, var(--bg-input) 60%, transparent); }
+#app .bg-zinc-800\/80 { background-color: color-mix(in srgb, var(--bg-input) 80%, transparent); }
+#app .bg-zinc-700 { background-color: var(--bg-input); }
+#app .bg-zinc-700\/40 { background-color: color-mix(in srgb, var(--bg-input) 40%, transparent); }
+#app .bg-\[\#09090b\] { background-color: var(--bg-base); }
+#app .bg-white\/5 { background-color: color-mix(in srgb, var(--text-main) 5%, transparent); }
+#app .bg-white\/10 { background-color: color-mix(in srgb, var(--text-main) 10%, transparent); }
+#app .bg-white\/\[0\.03\] { background-color: color-mix(in srgb, var(--text-main) 3%, transparent); }
+
+/* --- Theme variables: text --- */
+#app .text-white { color: var(--text-main); }
+#app .text-white\/80 { color: color-mix(in srgb, var(--text-main) 80%, transparent); }
+#app .text-zinc-100 { color: var(--text-2); }
+#app .text-zinc-200 { color: var(--text-2); }
+#app .text-zinc-300 { color: var(--text-3); }
+#app .text-zinc-400 { color: var(--text-4); }
+#app .text-zinc-500 { color: var(--text-5); }
+
+/* --- Theme variables: borders --- */
+#app .border-white\/10 { border-color: var(--border-soft); }
+#app .border-white\/5 { border-color: var(--border-softer); }
+
+/* --- Accent variables: text --- */
+#app .text-indigo-100 { color: var(--acc-text); }
+#app .text-indigo-300 { color: var(--acc-text); }
+#app .text-indigo-400 { color: var(--acc-text-2); }
+
+/* --- Accent variables: surfaces --- */
+#app .bg-indigo-400 { background-color: var(--acc); }
+#app .bg-indigo-500 { background-color: var(--acc); }
+#app .bg-indigo-600 { background-color: var(--acc); }
+#app .bg-indigo-500\/15 { background-color: color-mix(in srgb, var(--acc) 15%, transparent); }
+#app .bg-indigo-500\/20 { background-color: color-mix(in srgb, var(--acc) 20%, transparent); }
+#app .bg-indigo-500\/25 { background-color: color-mix(in srgb, var(--acc) 25%, transparent); }
+#app .bg-indigo-600\/15 { background-color: color-mix(in srgb, var(--acc) 15%, transparent); }
+#app .bg-indigo-600\/90 { background-color: color-mix(in srgb, var(--acc) 90%, transparent); }
+
+/* --- Accent variables: borders & focus --- */
+#app .border-indigo-400\/20 { border-color: color-mix(in srgb, var(--acc) 20%, transparent); }
+#app .border-indigo-500\/20 { border-color: color-mix(in srgb, var(--acc) 20%, transparent); }
+#app .border-indigo-500\/30 { border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+#app .border-indigo-500\/40 { border-color: color-mix(in srgb, var(--acc) 40%, transparent); }
+#app .focus\:border-indigo-500\/50:focus { border-color: color-mix(in srgb, var(--acc) 50%, transparent); }
+#app .focus\:ring-indigo-500:focus { --tw-ring-color: var(--acc); }
+#app .focus\:ring-indigo-500\/50:focus { --tw-ring-color: color-mix(in srgb, var(--acc) 50%, transparent); }
+#app .focus\:ring-offset-\[\#09090b\]:focus { --tw-ring-offset-color: var(--bg-base); }
+#app .focus\:border-zinc-500\/40:focus { border-color: color-mix(in srgb, var(--acc) 40%, transparent); }
+#app .focus\:ring-zinc-500\/40:focus { --tw-ring-color: color-mix(in srgb, var(--acc) 40%, transparent); }
+
+/* --- Accent variables: shadows & glows --- */
+#app .shadow-indigo-500\/10 { --tw-shadow-color: color-mix(in srgb, var(--acc) 10%, transparent); }
+#app .shadow-indigo-900\/50 { --tw-shadow-color: var(--acc-dark); }
+#app .shadow-indigo-950\/50 { --tw-shadow-color: var(--acc-dark); }
+#app .shadow-\[0_0_8px_2px_rgba\(129\,140\,248\,0\.6\)\] { box-shadow: 0 0 8px 2px color-mix(in srgb, var(--acc) 60%, transparent); }
 </style>
