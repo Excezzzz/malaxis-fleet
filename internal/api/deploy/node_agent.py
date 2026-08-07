@@ -33,6 +33,7 @@ SERVER_URL = os.environ.get("SERVER_URL", "https://__API_DOMAIN__")
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
+HEALTH_FAIL_THRESHOLD = int(os.environ.get("HEALTH_FAIL_THRESHOLD", "3"))
 BENCH_TTL = int(os.environ.get("BENCH_TTL", "600"))
 BENCH_PROBES = int(os.environ.get("BENCH_PROBES", "2"))
 BENCH_TIMEOUT = float(os.environ.get("BENCH_TIMEOUT", "1.5"))
@@ -654,7 +655,7 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             ob["tag"] = srv.get("tag", f"server-{i}")
             cfg["outbounds"].append(ob)
     tag = servers[active_idx].get("tag", f"server-{active_idx}") if servers else "direct"
-    cfg["outbounds"].append({"protocol": "freedom", "tag": "direct"})
+    cfg["outbounds"].append({"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15}}})
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
@@ -822,7 +823,7 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
                 "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
             },
         ],
-        "outbounds": [ob, {"protocol": "freedom", "tag": "direct"}],
+        "outbounds": [ob, {"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15}}}],
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
@@ -856,7 +857,7 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 "sniff": {"enabled": True, "override_destination": True, "route_only": True},
             },
         ],
-        "outbounds": [ob, {"type": "direct", "tag": "direct"}],
+        "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
         "route": {
             "final": ob.get("tag", "proxy"),
             "auto_detect_interface": True,
@@ -948,7 +949,7 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "auto_detect_interface": True,
     }
     cfg["experimental"] = {"cache_file": {"enabled": True}}
-    cfg["outbounds"].append({"type": "direct", "tag": "direct"})
+    cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
     return cfg
 
 
@@ -965,6 +966,12 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         "type": proto,
         "server": host,
         "server_port": port,
+        # Socket hardening for all proxy outbounds: TCP keepalive keeps NAT
+        # mappings and idle tunnels alive through transient link dropouts.
+        # (sing-box >= 1.13; tcp_no_delay is removed there - Go enables
+        # TCP_NODELAY by default.)
+        "tcp_keep_alive": "5m",
+        "tcp_keep_alive_interval": "15s",
     }
 
     if proto == "hysteria2":
@@ -998,6 +1005,7 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         return ob
 
     if proto == "wireguard":
+        ob["domain_strategy"] = "ipv4_only"
         ob["private_key"] = srv.get("private_key", "")
         ob["server_port"] = port
         local_addr = srv.get("allowed_ips", "") or "10.0.0.1/32"
@@ -1859,11 +1867,58 @@ def print_benchmark(results: dict) -> None:
     print("--------------------------------------------")
 
 
+def _balanced_score(entry: dict) -> float:
+    """Composite 'balanced' stability score: lower is better.
+
+    Loss dominates, then jitter, then latency - mirrors the
+    (loss, jitter, latency) ranking tuple used for selection.
+    """
+    loss = float(entry.get("loss_pct") or 0.0)
+    jitter = float(entry.get("jitter_ms") or 0.0)
+    latency = float(entry.get("latency_ms") or 0.0)
+    return loss * 100.0 + jitter * 10.0 + latency
+
+
+def _switch_target(results: dict, servers: list, active_name: str, mode: str, threshold: float = 0.25) -> Optional[int]:
+    """Choose the server to switch to, or None to keep the current one.
+
+    Hysteresis against flapping: the active server is only replaced when it
+    is dead (missing from the reachable set) or the best alternative scores
+    at least `threshold` (25%) better - by latency for 'fastest', by the
+    composite stability score for 'balanced'. Transient benchmark noise can
+    no longer bounce the active server back and forth.
+    """
+    reachable = {int(idx): r for idx, r in results.items() if r.get("ok")}
+    if not reachable:
+        return None
+    if mode == "fastest":
+        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
+    else:
+        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
+    active_idx = next(
+        (i for i, s in enumerate(servers) if s.get("tag") == active_name or s.get("name") == active_name or s.get("id") == active_name),
+        -1,
+    )
+    if active_idx < 0 or active_idx not in reachable:
+        return best
+    if active_idx == best:
+        return None
+    cur = reachable[active_idx]
+    bst = reachable[best]
+    if mode == "fastest":
+        better = bst["latency_ms"] <= cur["latency_ms"] * (1.0 - threshold)
+    else:
+        better = _balanced_score(bst) <= _balanced_score(cur) * (1.0 - threshold)
+    return best if better else None
+
+
 def select_mode(mode: str) -> int:
     """Auto-select the best server by mode: 'fastest' or 'balanced'.
 
     Uses the cached benchmark when fresh (no ping spam); otherwise probes
-    with live progress output so the CLI never appears frozen.
+    with live progress output so the CLI never appears frozen. The active
+    server is kept unless it is dead or an alternative is at least 25%
+    better (hysteresis against flapping).
     """
     mode = (mode or "manual").strip().lower()
     if mode not in ("fastest", "balanced"):
@@ -1883,17 +1938,19 @@ def select_mode(mode: str) -> int:
         save_benchmark(results, mode)
     print_benchmark(results)
 
-    reachable = {int(idx): r for idx, r in results.items() if r.get("ok")}
-    if not reachable:
-        log("No servers reachable, keeping current selection")
-        return 1
+    state = load_state()
+    active = state.get("active_server", "")
+    best = _switch_target(results, servers, active, mode)
+    if best is None:
+        log(f"{mode.capitalize()} mode: keeping current server '{active}' (no alternative at least 25% better)")
+        state["active_mode"] = mode
+        save_state(state)
+        return 0
 
     if mode == "fastest":
-        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
-        log(f"Fastest mode: server {best + 1} ({servers[best].get('name', '')}) at {reachable[best]['latency_ms']} ms")
+        log(f"Fastest mode: server {best + 1} ({servers[best].get('name', '')}) at {results[str(best)]['latency_ms']} ms")
     else:
-        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
-        log(f"Balanced mode: server {best + 1} ({servers[best].get('name', '')}) loss={reachable[best]['loss_pct']:.0f}% jitter={reachable[best]['jitter_ms']} ms")
+        log(f"Balanced mode: server {best + 1} ({servers[best].get('name', '')}) loss={results[str(best)]['loss_pct']:.0f}% jitter={results[str(best)]['jitter_ms']} ms")
 
     rc = select_server(best, mode=mode)
     if rc == 0:
@@ -1932,6 +1989,16 @@ def health_loop() -> None:
             else:
                 fail_count += 1
                 log(f"Health check failed ({fail_count}): {status}")
+                if fail_count >= HEALTH_FAIL_THRESHOLD:
+                    # Conservative recovery: only treat the proxy as dead and
+                    # attempt a restart after N consecutive failed checks, so a
+                    # single transient drop never resets the proxy socket.
+                    state = load_state()
+                    container = "singbox-node" if state.get("active_engine", "xray") == "singbox" else "xray-node"
+                    log(f"Proxy considered dead after {fail_count} consecutive failures, restarting {container}")
+                    report(status="Proxy dead", message=f"Health check failed {fail_count} times consecutively, restarted {container}")
+                    docker_restart(container)
+                    fail_count = 0
         except Exception as e:
             log(f"Health check error: {e}")
 
@@ -2101,14 +2168,15 @@ def _smart_switch(mode: str) -> None:
     if not fresh:
         results = benchmark_servers()
         save_benchmark(results, mode)
-    reachable = {int(i): r for i, r in results.items() if r.get("ok")}
-    if not reachable:
-        report(status="Switch failed", message="No reachable servers")
+    state = load_state()
+    active = state.get("active_server", "")
+    best = _switch_target(results, servers, active, mode)
+    if best is None:
+        log(f"[smart] {mode}: keeping current server '{active}' (no alternative at least 25% better)")
+        state["active_mode"] = mode
+        save_state(state)
+        report(status="Verified & Active", message=f"Auto-select ({mode}): kept current server")
         return
-    if mode == "fastest":
-        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
-    else:
-        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
     log(f"[smart] {mode} -> server {best + 1} ({servers[best].get('name', '')})")
     rc = select_server(best, mode=mode)
     if rc == 0:
@@ -2153,16 +2221,12 @@ def _reselect_after_update() -> None:
     if not fresh:
         results = benchmark_servers()
         save_benchmark(results, mode)
-    reachable = {int(i): r for i, r in results.items() if r.get("ok")}
-    if not reachable:
-        log("[auto] no reachable servers, keeping current selection")
-        return
-    if mode == "fastest":
-        best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
-    else:
-        best = min(reachable, key=lambda i: (reachable[i]["loss_pct"], reachable[i]["jitter_ms"], reachable[i]["latency_ms"]))
-    if servers[best].get("tag", "") == state.get("active_server"):
-        log("[auto] best server already active, nothing to do")
+    active = state.get("active_server", "")
+    best = _switch_target(results, servers, active, mode)
+    if best is None:
+        log(f"[auto] keeping current server '{active}' (no alternative at least 25% better)")
+        state["active_mode"] = mode
+        save_state(state)
         return
     log(f"[auto] switching to server {best + 1} ({servers[best].get('name', '')})")
     select_server(best, mode=mode)

@@ -114,7 +114,7 @@
     </div>
 
     <!-- Modals -->
-    <div v-if="showRenameModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showRenameModal = false">
+    <div v-if="showRenameModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showRenameModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_rename_title') }}<span class="font-mono text-indigo-400">]</span></h2>
         <input v-model="newNodeName" type="text" :placeholder="t('node_rename_ph')" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
@@ -125,7 +125,7 @@
       </div>
     </div>
 
-    <div v-if="showDeleteModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showDeleteModal = false">
+    <div v-if="showDeleteModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showDeleteModal = false">
       <div class="bg-zinc-900 border border-red-500/40 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-2 tracking-tight text-red-300"><span class="font-mono text-red-400">[</span>{{ t('node_delete_title') }}<span class="font-mono text-red-400">]</span></h2>
         <p class="text-zinc-400 mb-6 text-sm">{{ t('node_delete_hint', { name: node.name }) }}</p>
@@ -154,7 +154,7 @@
       </div>
     </div>
 
-    <div v-if="showTaskQueueModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showTaskQueueModal = false">
+    <div v-if="showTaskQueueModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showTaskQueueModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-4">
           <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_task_queue_title') }}<span class="font-mono text-indigo-400">]</span></h2>
@@ -179,7 +179,7 @@
       </div>
     </div>
 
-    <div v-if="showSubModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSubModal = false">
+    <div v-if="showSubModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showSubModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_sub_title') }}<span class="font-mono text-indigo-400">]</span></h2>
         <input v-model="newSubUrl" type="text" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
@@ -190,7 +190,7 @@
       </div>
     </div>
 
-    <div v-if="showSwitchModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="showSwitchModal = false">
+    <div v-if="showSwitchModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showSwitchModal = false">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <h2 class="text-2xl font-bold mb-2 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_switch_title') }}<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-5">{{ t('node_currently') }} <strong>{{ node.active_server || t('common_none') }}</strong></p>
@@ -210,7 +210,7 @@
       </div>
     </div>
 
-    <div v-if="showLogsModal" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="closeLogs">
+    <div v-if="showLogsModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="closeLogs">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-4 sm:p-6 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto flex flex-col">
         <div class="flex items-start justify-between gap-3 mb-4">
           <h2 class="text-xl sm:text-2xl font-bold tracking-tight min-w-0 truncate"><span class="font-mono text-indigo-400">[</span>{{ t('node_logs_title', { name: node.name }) }}<span class="font-mono text-indigo-400">]</span></h2>
@@ -254,7 +254,7 @@
       </div>
     </div>
 
-    <div v-if="activeModal === 'status'" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="activeModal = ''">
+    <div v-if="activeModal === 'status'" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="activeModal = ''">
       <div class="bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-6">
           <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_status_title') }}<span class="font-mono text-indigo-400">]</span></h2>
@@ -299,6 +299,7 @@ export default {
   setup(props, { emit }) {
     const t = inject('t') || ((k) => k);
     const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
+    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/25 backdrop-blur-sm' : 'bg-black/70 backdrop-blur-md');
     const { user, hasPermission, isReadOnly } = inject('authCtx', { user: ref(null), hasPermission: () => false, isReadOnly: ref(false) });
 
     const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
