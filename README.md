@@ -176,7 +176,21 @@ all client templates are only served to requests carrying
 
 ### 2. Deploy
 
-From a Windows workstation with Go and Node.js installed:
+**Option A — One-line server installer (Debian/Ubuntu VPS):**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.sh | bash
+```
+
+The installer (run as root) verifies the account, checks RAM and disk space
+(offering to create a 2 GB swap file below 2 GB RAM and running a cleanup
+pass below 5 GB free disk), installs `git`, `curl`, and Docker, clones the
+repository into `/opt/malaxis-fleet`, prompts for your four domains and the
+master credentials, generates random `SECRET_TOKEN` / `SESSION_SECRET` /
+`POSTGRES_PASSWORD` values into `.env`, and launches the fleet with
+`docker compose up -d --build`.
+
+**Option B — From a Windows workstation with Go and Node.js installed:**
 
 ```powershell
 .\build_and_deploy.ps1 admin@your-server-ip
