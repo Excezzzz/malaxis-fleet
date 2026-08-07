@@ -489,6 +489,9 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("➕ Add New Device", "join:command"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("💻 Manage Nodes", "nodes:list"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -643,6 +646,33 @@ func (b *Bot) processTerminateText(chatID int64, text string) {
 	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "💥 Terminate queued. The node will self-destruct on its next poll.")
 }
 
+func (b *Bot) backMenuMarkup() *tgbotapi.InlineKeyboardMarkup {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Menu", "menu:main"),
+		),
+	)
+	return &markup
+}
+
+// handleJoinCommand shows the tokenized node onboarding command. The curl line
+// is rendered as a <code> block so Telegram lets the admin copy it on tap.
+func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
+	if b.cfg.JoinDomain == "" || b.cfg.FleetSecret == "" {
+		b.editMessage(chatID, messageID, "<b>❌ Join domain or fleet secret is not configured.</b>", b.backMenuMarkup())
+		return
+	}
+
+	command := "curl -sSL https://" + b.cfg.JoinDomain + "/?t=" + b.cfg.FleetSecret + " | bash"
+
+	text := "<b>➕ Add New Device</b>\n\n" +
+		"To add a new device, run this command on the client machine:\n\n" +
+		"<code>" + command + "</code>\n\n" +
+		"Tap the command to copy it, then run it in the terminal of any host with Docker."
+
+	b.editMessage(chatID, messageID, text, b.backMenuMarkup())
+}
+
 func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -668,6 +698,8 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.showMainMenu(chatID)
 	case data == "menu:main" || data == "start":
 		b.showMainMenu(chatID)
+	case data == "join:command":
+		b.handleJoinCommand(chatID, messageID)
 	case data == "nodes:list":
 		b.handleNodeList(chatID, messageID)
 	case data == "ota:all":
