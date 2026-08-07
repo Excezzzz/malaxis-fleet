@@ -90,10 +90,12 @@
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center space-x-3">
-                      <input type="checkbox" v-model="newRole.permissions" :value="perm"
-                             class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                      <span class="text-sm text-zinc-300">{{ label }}</span>
+                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group">
+                      <input type="checkbox" v-model="newRole.permissions" :value="perm" class="sr-only peer" />
+                      <div class="w-5 h-5 rounded border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all">
+                        <svg class="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">{{ label }}</span>
                     </label>
                   </div>
                 </div>
@@ -145,10 +147,12 @@
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center space-x-3">
-                      <input type="checkbox" v-model="editForm.permissions" :value="perm"
-                             class="rounded bg-zinc-700 text-purple-500 focus:ring-purple-500">
-                      <span class="text-sm text-zinc-300">{{ label }}</span>
+                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group">
+                      <input type="checkbox" v-model="editForm.permissions" :value="perm" class="sr-only peer" />
+                      <div class="w-5 h-5 rounded border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all">
+                        <svg class="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      </div>
+                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">{{ label }}</span>
                     </label>
                   </div>
                 </div>
@@ -172,9 +176,6 @@ import { ref, computed, inject, onMounted } from 'vue';
 import { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup } from 'lucide-vue-next';
 
 const ROLE_RANK = { owner: 100, admin: 80, client: 30, viewer: 10 };
-
-// Built-in role names that may never be created, edited or deleted through the UI.
-const SYSTEM_ROLE_NAMES = ['owner', 'admin', 'client', 'viewer'];
 
 const PERMISSION_SECTIONS = [
   {
@@ -258,7 +259,6 @@ export default {
     const canDeleteRole = (role) => {
       if (!canManageRoles.value) return false;
       if (isImmutableRole(role)) return false;
-      if (SYSTEM_ROLE_NAMES.includes(role.name)) return false;
       return (role.rank ?? ROLE_RANK[role.name] ?? 10) < actorRank.value;
     };
 

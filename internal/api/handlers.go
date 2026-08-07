@@ -1741,9 +1741,10 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE RANK ENFORCEMENT: the owner role is immutable and may never be
-	// deleted or re-ranked. An actor may only delete roles ranked STRICTLY
-	// LOWER than their own.
+	// ROLE RANK ENFORCEMENT: the owner role (rank 100) is immutable and may
+	// never be deleted. Every other role - including the built-in admin,
+	// client and viewer roles - can be deleted by an actor whose rank is
+	// STRICTLY higher, per the mathematical hierarchy.
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	actorUser, err := a.repo.GetUserByID(actorID)
 	if err != nil {
@@ -1762,12 +1763,6 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if roleRank >= actorRank {
 		a.writeForbidden(w, "Forbidden: Cannot delete a role with an equal or higher rank than yours")
-		return
-	}
-
-	// Prevent deletion of system roles (owner_id = 'system')
-	if role.OwnerID == "system" {
-		http.Error(w, "Bad Request: Cannot delete system roles", http.StatusBadRequest)
 		return
 	}
 
