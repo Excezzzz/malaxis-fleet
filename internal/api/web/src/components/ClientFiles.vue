@@ -14,7 +14,7 @@
     </div>
 
     <div v-if="error" class="bg-red-900/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl mb-6" role="alert">
-      <strong class="font-bold">Error:</strong>
+      <strong class="font-bold">{{ t('client_error_label') }}:</strong>
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
@@ -77,7 +77,7 @@
     </div>
 
     <div v-else-if="!error" class="text-center py-16">
-      <p class="text-zinc-500 text-lg">No template files found on the server.</p>
+      <p class="text-zinc-500 text-lg">{{ t('client_no_templates') }}</p>
     </div>
   </div>
 </template>
@@ -118,7 +118,7 @@ export default {
         copied.value = true;
         setTimeout(() => { copied.value = false; }, 2000);
       } catch (e) {
-        showToast('Could not copy the command.');
+        showToast(t('client_toast_copy_failed'));
       }
     };
 
@@ -129,7 +129,7 @@ export default {
         commandError.value = '';
       } catch (e) {
         console.error("Failed to fetch install command:", e);
-        commandError.value = 'Unable to load the install command.';
+        commandError.value = t('client_cmd_error');
       }
     };
 
@@ -151,7 +151,7 @@ export default {
     };
 
     const selectFile = (name) => {
-      if (dirty.value && !confirm('Discard unsaved changes to this file?')) return;
+      if (dirty.value && !confirm(t('client_confirm_discard'))) return;
       selected.value = name;
       const current = files.value.find(f => f.name === selected.value);
       if (current) content.value = current.content;
@@ -176,28 +176,28 @@ export default {
         if (response.data.status !== 'ok') throw new Error('Save failed');
         current.value.content = content.value;
         dirty.value = false;
-        showToast(`Saved ${selected.value} — the change is live at the download URLs.`);
+        showToast(t('client_saved_toast', { name: selected.value }));
       } catch (e) {
         console.error("Failed to save template:", e);
         error.value = e.message;
-        showToast('Could not save the file.');
+        showToast(t('client_save_failed'));
       } finally {
         saving.value = false;
       }
     };
 
     const pushFiles = async () => {
-      if (!confirm('Queue "update_client_files" for ALL devices?\n\nAgents will download the latest templates and gracefully restart with the new code.')) return;
+      if (!confirm(t('client_push_confirm'))) return;
       pushing.value = true;
       error.value = null;
       try {
         const response = await axios.post('/api/web/nodes/update-client-files', {});
         if (response.data.status !== 'ok') throw new Error('Push failed');
-        showToast(`Queued client file update for ${response.data.commands_queued} node(s).`);
+        showToast(t('client_push_queued_toast', { n: response.data.commands_queued }));
       } catch (e) {
         console.error("Failed to push client files:", e);
         error.value = e.message;
-        showToast('Could not queue client file update.');
+        showToast(t('client_push_failed_toast'));
       } finally {
         pushing.value = false;
       }

@@ -15,14 +15,14 @@
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
               <span class="w-5 h-5 rounded-full shrink-0" :style="{ backgroundColor: role.color_hex }"></span>
               <h3 class="text-xl font-bold text-white break-all min-w-0">{{ role.name }}</h3>
-              <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">Rank 100 · Immutable</span>
-              <span v-else class="px-2 py-1 text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ Rank: {{ role.rank ?? 10 }} ]</span>
+              <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">{{ t('roles_rank_immutable') }}</span>
+              <span v-else class="px-2 py-1 text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ {{ t('roles_rank') }}: {{ role.rank ?? 10 }} ]</span>
             </div>
             <div class="flex space-x-2 shrink-0">
-              <button v-if="canManageRole(role)" @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit Role">
+              <button v-if="canManageRole(role)" @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" :title="t('roles_edit_tt')">
                 <Edit class="w-5 h-5" />
               </button>
-              <button v-if="canDeleteRole(role)" @click="deleteRole(role)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete Role">
+              <button v-if="canDeleteRole(role)" @click="deleteRole(role)" class="text-red-500 hover:text-red-700 transition-colors" :title="t('roles_delete_tt')">
                 <Trash2 class="w-5 h-5" />
               </button>
             </div>
@@ -36,25 +36,25 @@
         </div>
 
         <div class="space-y-2">
-          <p class="text-xs uppercase tracking-wider font-medium text-zinc-500">Permissions:</p>
+          <p class="text-xs uppercase tracking-wider font-medium text-zinc-500">{{ t('roles_permissions') }}:</p>
           <div v-if="parsePermissions(role.permissions_json).length > 0" class="flex flex-wrap gap-2">
             <span v-for="perm in parsePermissions(role.permissions_json)" :key="perm" class="px-2 py-1 bg-white/5 border border-white/10 text-xs text-zinc-300 rounded">
               {{ permLabel(perm) }}
             </span>
           </div>
-          <p v-else class="text-sm text-zinc-500">No permissions assigned</p>
+          <p v-else class="text-sm text-zinc-500">{{ t('roles_no_perms') }}</p>
         </div>
 
         <div class="mt-4 text-xs text-zinc-500">
-          Created: {{ new Date(role.created_at).toLocaleDateString() }}
+          {{ t('roles_created') }}: {{ new Date(role.created_at).toLocaleDateString() }}
         </div>
       </div>
     </div>
 
     <div v-else class="text-center py-16">
       <Shield class="w-16 h-16 text-zinc-600 mx-auto mb-4" />
-      <p class="text-zinc-500 text-lg">No custom roles created yet.</p>
-      <p class="text-zinc-600 text-sm mt-2">Create a custom role to assign granular permissions to users.</p>
+      <p class="text-zinc-500 text-lg">{{ t('roles_empty') }}</p>
+      <p class="text-zinc-600 text-sm mt-2">{{ t('roles_empty_hint') }}</p>
     </div>
 
     <!-- Create Role Modal -->
@@ -65,12 +65,12 @@
         <form @submit.prevent="handleCreateRole">
           <div class="space-y-6">
             <div>
-              <label for="role_name" class="block text-sm font-medium text-zinc-400 mb-1">Role Name</label>
-              <input v-model="newRole.name" type="text" id="role_name" placeholder="e.g. Co-Creator, Moderator"
+              <label for="role_name" class="block text-sm font-medium text-zinc-400 mb-1">{{ t('roles_name') }}</label>
+              <input v-model="newRole.name" type="text" id="role_name" :placeholder="t('roles_name_ph')"
                      class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50" required>
             </div>
             <div>
-              <label for="role_color" class="block text-sm font-medium text-zinc-400 mb-1">Role Color</label>
+              <label for="role_color" class="block text-sm font-medium text-zinc-400 mb-1">{{ t('roles_color') }}</label>
               <div class="flex items-center space-x-3 mt-1">
                 <input v-model="newRole.color_hex" type="color" id="role_color_picker"
                        class="h-10 w-16 rounded cursor-pointer bg-zinc-800 border-white/10">
@@ -79,23 +79,23 @@
               </div>
             </div>
             <div>
-              <label for="role_rank" class="block text-sm font-medium text-zinc-400 mb-1">Role Rank</label>
+              <label for="role_rank" class="block text-sm font-medium text-zinc-400 mb-1">{{ t('roles_rank_label') }}</label>
               <input v-model.number="newRole.rank" type="number" id="role_rank" min="1" :max="maxRank" required
                      class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50">
-              <p class="mt-1 text-xs text-zinc-500">Must be lower than your current rank ({{ actorRank }}). Higher rank = more authority.</p>
+              <p class="mt-1 text-xs text-zinc-500">{{ t('roles_rank_label_hint', { rank: actorRank }) }}</p>
             </div>
             <div>
-              <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
+              <label class="block text-sm font-medium text-zinc-400 mb-2">{{ t('roles_perms_label') }}</label>
               <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
-                <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
-                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
+                <div v-for="section in PERMISSION_SECTIONS" :key="section.titleKey">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ t(section.titleKey) }}</p>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
                     <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group py-1">
                       <input type="checkbox" v-model="newRole.permissions" :value="perm" class="sr-only peer" />
                       <div class="w-6 h-6 rounded-md border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all shrink-0">
                         <svg class="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ label }}</span>
+                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ t(label) }}</span>
                     </label>
                   </div>
                 </div>
@@ -104,9 +104,9 @@
           </div>
           <div class="mt-8 flex justify-end space-x-4">
             <button type="button" @click="showCreateModal = false"
-                    class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
+                    class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('cancel') }}</button>
             <button type="submit"
-                    class="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">Create Role</button>
+                    class="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">{{ t('roles_create_btn') }}</button>
           </div>
         </form>
       </div>
@@ -115,17 +115,17 @@
     <!-- Edit Role Modal -->
     <div v-if="editingRole" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="editingRole = null">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6"><span class="font-mono text-indigo-400">[</span>Edit Role<span class="font-mono text-indigo-400">]</span>: {{ editingRole.name }}</h2>
+        <h2 class="text-2xl font-bold mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('edit_role') }}<span class="font-mono text-indigo-400">]</span>: {{ editingRole.name }}</h2>
 
         <form @submit.prevent="handleEditRole">
           <div class="space-y-6">
             <div>
-              <label for="edit_role_name" class="block text-sm font-medium text-zinc-400 mb-1">Role Name</label>
+              <label for="edit_role_name" class="block text-sm font-medium text-zinc-400 mb-1">{{ t('roles_name') }}</label>
               <input v-model="editForm.name" type="text" id="edit_role_name"
                      class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50" required>
             </div>
             <div>
-              <label for="edit_role_color" class="block text-sm font-medium text-zinc-400 mb-1">Role Color</label>
+              <label for="edit_role_color" class="block text-sm font-medium text-zinc-400 mb-1">{{ t('roles_color') }}</label>
               <div class="flex items-center space-x-3 mt-1">
                 <input v-model="editForm.color_hex" type="color" id="edit_role_color_picker"
                        class="h-10 w-16 rounded cursor-pointer bg-zinc-800 border-white/10">
@@ -134,25 +134,25 @@
               </div>
             </div>
             <div>
-              <label for="edit_role_rank" class="block text-sm font-medium text-zinc-400 mb-1">Role Rank</label>
+              <label for="edit_role_rank" class="block text-sm font-medium text-zinc-400 mb-1">{{ t('roles_rank_label') }}</label>
               <input v-model.number="editForm.rank" type="number" id="edit_role_rank" min="1" :max="maxRank"
                      :disabled="isImmutableRole(editingRole)" required
                      class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-purple-500 focus:border-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed">
-              <p v-if="isImmutableRole(editingRole)" class="mt-1 text-xs text-zinc-500">The owner role is immutable and cannot be re-ranked.</p>
-              <p v-else class="mt-1 text-xs text-zinc-500">Must be lower than your current rank ({{ actorRank }}). Higher rank = more authority.</p>
+              <p v-if="isImmutableRole(editingRole)" class="mt-1 text-xs text-zinc-500">{{ t('roles_immutable_hint') }}</p>
+              <p v-else class="mt-1 text-xs text-zinc-500">{{ t('roles_rank_label_hint', { rank: actorRank }) }}</p>
             </div>
             <div>
-              <label class="block text-sm font-medium text-zinc-400 mb-2">Permissions</label>
+              <label class="block text-sm font-medium text-zinc-400 mb-2">{{ t('roles_perms_label') }}</label>
               <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
-                <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
-                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
+                <div v-for="section in PERMISSION_SECTIONS" :key="section.titleKey">
+                  <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ t(section.titleKey) }}</p>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
                     <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group py-1">
                       <input type="checkbox" v-model="editForm.permissions" :value="perm" class="sr-only peer" />
                       <div class="w-6 h-6 rounded-md border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all shrink-0">
                         <svg class="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ label }}</span>
+                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ t(label) }}</span>
                     </label>
                   </div>
                 </div>
@@ -161,9 +161,9 @@
           </div>
           <div class="mt-8 flex justify-end space-x-4">
             <button type="button" @click="editingRole = null"
-                    class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
+                    class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('cancel') }}</button>
             <button type="submit"
-                    class="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">Save Changes</button>
+                    class="px-4 py-2 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 text-purple-100 rounded-xl transition-colors">{{ t('save') }}</button>
           </div>
         </form>
       </div>
@@ -179,51 +179,50 @@ const ROLE_RANK = { owner: 100, admin: 80, client: 30, viewer: 10 };
 
 const PERMISSION_SECTIONS = [
   {
-    title: 'Nodes',
+    titleKey: 'roles_sec_nodes',
     icon: 'Server',
     perms: [
-      ['can_view_nodes', 'View Nodes'],
-      ['can_switch_vpn', 'Switch VPN'],
-      ['can_edit_sub', 'Manage Sub URL'],
-      ['can_rename_node', 'Rename Nodes'],
-      ['can_terminate_node', 'Terminate & Self-Destruct'],
-      ['can_view_node_logs', 'View Node Logs'],
-      ['can_update_client', 'Push Client Files (OTA)'],
-      ['can_purge_nodes', 'Purge Offline Nodes'],
+      ['can_view_nodes', 'perm_view_nodes'],
+      ['can_switch_vpn', 'perm_switch_vpn'],
+      ['can_edit_sub', 'perm_edit_sub'],
+      ['can_rename_node', 'perm_rename_node'],
+      ['can_terminate_node', 'perm_terminate_node'],
+      ['can_view_node_logs', 'perm_view_node_logs'],
+      ['can_update_client', 'perm_update_client'],
+      ['can_purge_nodes', 'perm_purge_nodes'],
     ],
   },
   {
-    title: 'Users',
+    titleKey: 'roles_sec_users',
     icon: 'Users',
     perms: [
-      ['can_view_users', 'View Fleet Users'],
-      ['can_create_users', 'Add New Users'],
-      ['can_edit_users', 'Edit Users'],
-      ['can_delete_users', 'Delete Users'],
+      ['can_view_users', 'perm_view_users'],
+      ['can_create_users', 'perm_create_users'],
+      ['can_edit_users', 'perm_edit_users'],
+      ['can_delete_users', 'perm_delete_users'],
     ],
   },
   {
-    title: 'Roles',
+    titleKey: 'roles_sec_roles',
     icon: 'Shield',
     perms: [
-      ['can_view_roles', 'View Roles & Permissions'],
-      ['can_manage_roles', 'Create / Edit / Delete Roles'],
+      ['can_view_roles', 'perm_view_roles'],
+      ['can_manage_roles', 'perm_manage_roles'],
     ],
   },
   {
-    title: 'Logs & Backups',
+    titleKey: 'roles_sec_logs',
     icon: 'ScrollText',
     perms: [
-      ['can_view_audit_logs', 'View Audit Trail'],
-      ['can_view_master_logs', 'View Master Server Logs'],
-      ['can_export_backups', 'Export Backups (ZIP)'],
+      ['can_view_audit_logs', 'perm_view_audit_logs'],
+      ['can_view_master_logs', 'perm_view_master_logs'],
+      ['can_export_backups', 'perm_export_backups'],
     ],
   },
 ];
 
 const PERMISSION_LABELS = Object.fromEntries(PERMISSION_SECTIONS.flatMap(s => s.perms));
 const ALL_PERMS = Object.keys(PERMISSION_LABELS);
-
 export default {
   name: 'RoleManager',
   components: { Plus, Trash2, Shield, Edit, Server, Users, ScrollText, DatabaseBackup },
@@ -298,7 +297,7 @@ export default {
       }
     };
 
-    const permLabel = (perm) => PERMISSION_LABELS[perm] || perm;
+    const permLabel = (perm) => t(PERMISSION_LABELS[perm] || perm);
 
     const handleCreateRole = async () => {
       try {
@@ -315,7 +314,7 @@ export default {
           body: JSON.stringify(roleData),
         });
         if (!response.ok) {
-          let errMsg = 'Failed to create role';
+          let errMsg = t('roles_create_failed');
           try {
             const errData = await response.json();
             if (errData.error) errMsg = errData.error;
@@ -326,10 +325,10 @@ export default {
         newRole.value = { name: '', color_hex: '#FF5733', rank: 10, permissions: [] };
         showCreateModal.value = false;
         await fetchCustomRoles();
-        alert('Custom role created successfully!');
+        alert(t('roles_created_ok'));
       } catch (error) {
         console.error('Error creating role:', error);
-        alert(error.message || 'Could not create role.');
+        alert(error.message || t('roles_create_failed'));
       }
     };
 
@@ -360,7 +359,7 @@ export default {
           body: JSON.stringify(roleData),
         });
         if (!response.ok) {
-          let errMsg = 'Failed to update role';
+          let errMsg = t('roles_update_failed');
           try {
             const errData = await response.json();
             if (errData.error) errMsg = errData.error;
@@ -370,27 +369,27 @@ export default {
 
         editingRole.value = null;
         await fetchCustomRoles();
-        alert('Custom role updated successfully!');
+        alert(t('roles_updated_ok'));
       } catch (error) {
         console.error('Error updating role:', error);
-        alert(error.message || 'Could not update role.');
+        alert(error.message || t('roles_update_failed'));
       }
     };
 
     const deleteRole = async (role) => {
-      if (!confirm(`Delete the role "${role.name}"? This action cannot be undone.`)) return;
+      if (!confirm(t('roles_delete_confirm', { name: role.name }))) return;
       try {
         const response = await fetch(`/api/web/roles/${role.id}`, {
           method: 'DELETE',
         });
         if (!response.ok) {
           const errText = await response.text();
-          throw new Error(errText || 'Failed to delete role');
+          throw new Error(errText || t('roles_delete_failed'));
         }
         await fetchCustomRoles();
       } catch (error) {
         console.error('Error deleting role:', error);
-        alert(error.message || 'Could not delete role.');
+        alert(error.message || t('roles_delete_failed'));
       }
     };
 

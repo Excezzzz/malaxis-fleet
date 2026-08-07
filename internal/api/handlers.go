@@ -1985,6 +1985,48 @@ func (a *API) ResetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+// SetBotAvatarHandler applies one of the five themed avatar colors to the
+// Telegram bot's profile photo (owner only). The chosen color is persisted in
+// the settings table and re-applied automatically on every bot start.
+func (a *API) SetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
+	var req struct {
+		Color string `json:"color"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Bad Request: Invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Color == "" {
+		http.Error(w, "Bad Request: color is required", http.StatusBadRequest)
+		return
+	}
+
+	if a.botManager == nil {
+		http.Error(w, "Bot is not configured", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.botManager.SetAvatarColor(req.Color); err != nil {
+		log.Printf("Bot: avatar color set failed: %v", err)
+		http.Error(w, "Failed to update bot profile photo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "bot", "Bot profile photo set to color "+req.Color)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "ok",
+		"color":  req.Color,
+	})
+}
+
 func (a *API) TestTelegramBotHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireOwner(w, r) {
 		return
@@ -2058,6 +2100,9 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	botEnabled, _ := a.repo.GetSetting("tg_bot_enabled")
 	botToken, _ := a.repo.GetSetting("tg_bot_token")
 	botChatIDStr, _ := a.repo.GetSetting("tg_admin_chat_id")
+	backupToLocal, _ := a.repo.GetSetting("backup_to_local")
+	backupToTelegram, _ := a.repo.GetSetting("backup_to_telegram")
+	botAvatarColor, _ := a.repo.GetSetting("bot_avatar_color")
 	lowRAMMode := a.config.LowRAMMode
 
 	// Fall back to env-configured values so the settings page always reflects
@@ -2079,11 +2124,57 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"tg_bot_enabled":            botEnabled == "true",
 		"tg_bot_token":              botToken,
 		"tg_admin_chat_id":          botChatID,
+		"backup_to_local":           backupToLocal != "false",
+		"backup_to_telegram":        backupToTelegram == "true",
+		"bot_avatar_color":          botAvatarColor,
 		"low_ram_mode":              lowRAMMode,
 		"join_domain":               a.config.JoinDomain,
 		"api_domain":                a.config.ApiDomain,
 		"sub_domain":                a.config.SubDomain,
 		"dashboard_domain":          a.config.DashboardDomain,
+	})
+}
+
+// UpdateBackupSettingsHandler updates the automated-backup routing settings
+// (owner only). The values are persisted in the settings table and consumed by
+// the daily backup scheduler inside the bot.
+func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
+	var req struct {
+		BackupToLocal     *bool `json:"backup_to_local"`
+		BackupToTelegram *bool `json:"backup_to_telegram"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	if req.BackupToLocal != nil {
+		if err := a.repo.SetSetting("backup_to_local", strconv.FormatBool(*req.BackupToLocal)); err != nil {
+			log.Printf("Error saving backup_to_local: %v", err)
+			http.Error(w, "Failed to save settings", http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.BackupToTelegram != nil {
+		if err := a.repo.SetSetting("backup_to_telegram", strconv.FormatBool(*req.BackupToTelegram)); err != nil {
+			log.Printf("Error saving backup_to_telegram: %v", err)
+			http.Error(w, "Failed to save settings", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	localVal, _ := a.repo.GetSetting("backup_to_local")
+	tgVal, _ := a.repo.GetSetting("backup_to_telegram")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":             "ok",
+		"backup_to_local":    localVal != "false",
+		"backup_to_telegram": tgVal == "true",
 	})
 }
 

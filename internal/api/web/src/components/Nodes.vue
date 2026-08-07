@@ -5,16 +5,16 @@
       <div class="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 w-full lg:w-auto">
         <div class="relative flex-1 min-w-[220px]">
           <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
-          <input v-model="searchQuery" type="text" placeholder="Search name, hostname, IP..." aria-label="Search nodes"
+          <input v-model="searchQuery" type="text" :placeholder="t('nodes_search_ph')" :aria-label="t('nodes_search_aria')"
             class="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-white/10 rounded-xl text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors" />
         </div>
-        <select v-model="statusFilter" aria-label="Filter by status"
+        <select v-model="statusFilter" :aria-label="t('nodes_filter_aria')"
           class="w-full sm:w-auto bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
-          <option value="all">All Nodes</option>
-          <option value="online">Online Only</option>
-          <option value="offline">Offline Only</option>
+          <option value="all">{{ t('nodes_filter_all') }}</option>
+          <option value="online">{{ t('nodes_filter_online') }}</option>
+          <option value="offline">{{ t('nodes_filter_offline') }}</option>
         </select>
-        <button @click="refreshList" class="flex items-center justify-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" title="Refresh Nodes List" :disabled="refreshingList">
+        <button @click="refreshList" class="flex items-center justify-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" :title="t('nodes_refresh_list_tt')" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
           <span class="font-mono">{{ refreshingList ? `[${t('nodes_refreshing')}]` : `[${t('nodes_refresh')}]` }}</span>
         </button>
@@ -26,7 +26,7 @@
     </div>
 
     <div v-if="error" class="bg-red-900/20 border border-red-500/30 text-red-300 px-4 py-3 rounded-xl mb-6" role="alert">
-      <strong class="font-bold">Error:</strong>
+      <strong class="font-bold">{{ t('client_error_label') }}:</strong>
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
@@ -35,11 +35,11 @@
     </div>
 
     <div v-else-if="nodes.length > 0" class="text-center py-16">
-      <p class="text-zinc-500 text-lg">No nodes match your search or filters.</p>
+      <p class="text-zinc-500 text-lg">{{ t('nodes_no_match') }}</p>
     </div>
 
     <div v-else-if="!error" class="text-center py-16">
-      <p class="text-zinc-500 text-lg">No nodes found. Waiting for agents to poll...</p>
+      <p class="text-zinc-500 text-lg">{{ t('nodes_no_nodes') }}</p>
     </div>
 
     <!-- FAB backdrop overlay (dims & dismisses when menu is open) -->
@@ -51,27 +51,27 @@
         <div v-if="fabOpen" class="flex flex-col items-end gap-3">
           <button v-if="canPurgeNodes" @click="handlePurgeOffline"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300"
-            title="Delete ghost nodes offline for more than 7 days">
+            :title="t('nodes_purge_tt')">
             <Trash2 class="w-4 h-4" />
             <span class="font-mono">[{{ t('nodes_purge') }}]</span>
           </button>
           <button v-if="canEditSub" @click="handleRefreshAllSubs"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 text-sm font-semibold shadow-lg shadow-indigo-500/10 transition-all duration-300"
-            title="Queue a subscription re-fetch for ALL nodes" :disabled="refreshingSubs">
+            :title="t('nodes_refresh_subs_tt')" :disabled="refreshingSubs">
             <RefreshCw :class="['w-4 h-4', refreshingSubs ? 'animate-spin' : '']" />
             <span class="font-mono">{{ refreshingSubs ? `[${t('nodes_updating')}]` : `[${t('nodes_update_all')}]` }}</span>
           </button>
           <button v-if="canEditSub" @click="showMassUpdateModal = true"
             class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 text-sm font-semibold shadow-lg shadow-emerald-500/10 transition-all duration-300"
-            title="Mass update the subscription domain for all nodes">
+            :title="t('nodes_mass_domain_tt')">
             <Link class="w-4 h-4" />
-            <span class="font-mono">[Mass Update Domain]</span>
+            <span class="font-mono">[{{ t('nodes_mass_domain_btn') }}]</span>
           </button>
         </div>
       </transition>
       <button @click="fabOpen = !fabOpen"
         class="px-5 py-3 bg-zinc-900/90 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 hover:border-indigo-500/30 rounded-xl text-sm font-semibold font-mono shadow-2xl transition-all cursor-pointer flex items-center gap-2"
-        title="Quick Fleet Actions" aria-label="Quick Fleet Actions">
+        :title="t('nodes_quick_actions_tt')" :aria-label="t('nodes_quick_actions_tt')">
         <span class="text-indigo-400 font-bold">[</span>
         <svg class="w-4 h-4 inline-block text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
         <span class="text-zinc-200">{{ t('nodes_commands') }}</span>
@@ -168,16 +168,16 @@ export default {
     };
 
     const handleRefreshAllSubs = async () => {
-      if (!confirm('Queue subscription refresh for ALL nodes? Each agent will re-fetch its subscription and re-apply VPN config.')) return;
+      if (!confirm(t('nodes_confirm_refresh_all'))) return;
       refreshingSubs.value = true;
       try {
         const response = await axios.post('/api/web/nodes/mass-update-sub', {});
         if (response.data.status !== 'ok') throw new Error('Refresh failed');
-        showToast(`Queued subscription refresh for ${response.data.commands_queued} node(s).`);
+        showToast(t('nodes_queued_refresh', { n: response.data.commands_queued }));
         fetchNodes();
       } catch (e) {
         console.error("Failed to refresh all subscriptions:", e);
-        showToast('Could not queue subscription refresh.', 'error');
+        showToast(t('nodes_failed_refresh'), 'error');
       } finally {
         refreshingSubs.value = false;
       }
@@ -208,37 +208,37 @@ export default {
     };
 
     const handlePurgeOffline = async () => {
-      if (!confirm('Delete ALL nodes that have been offline for more than 7 days?')) return;
+      if (!confirm(t('nodes_confirm_purge'))) return;
       try {
         const response = await axios.post('/api/web/nodes/purge-offline');
         if (response.data.status !== 'ok') throw new Error('Purge failed');
-        alert(`Purged ${response.data.deleted} offline node(s).`);
+        alert(t('nodes_purged', { n: response.data.deleted }));
         fetchNodes();
       } catch (e) {
         console.error("Failed to purge offline nodes:", e);
         error.value = e.message;
-        alert('Could not purge offline nodes.');
+        alert(t('nodes_purge_failed'));
       }
     };
 
     const handleMassUpdateDomain = async () => {
       if (!massUpdateDomain.value) {
-        alert('Please enter a new subdomain.');
+        alert(t('nodes_domain_required'));
         return;
       }
-      if (!confirm(`Replace subscription domain for ALL nodes with:\n${massUpdateDomain.value}`)) return;
+      if (!confirm(t('nodes_confirm_mass_domain', { domain: massUpdateDomain.value }))) return;
       try {
         const response = await axios.post('/api/web/devices/mass-update-domain', {
           domain: massUpdateDomain.value,
         });
         if (response.data.status !== 'ok') throw new Error('Failed to mass update domain');
-        alert(`Subscription domain updated for ${response.data.nodes_updated} out of ${response.data.nodes_total} nodes.`);
+        alert(t('nodes_mass_domain_result', { updated: response.data.nodes_updated, total: response.data.nodes_total }));
         showMassUpdateModal.value = false;
         massUpdateDomain.value = '';
         fetchNodes();
       } catch (error) {
         console.error('Error mass updating domain:', error);
-        alert('Could not mass update subscription domain.');
+        alert(t('nodes_mass_domain_failed'));
       }
     };
 
