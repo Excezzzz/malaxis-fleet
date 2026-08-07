@@ -745,6 +745,8 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("📦 Скачать бэкап БД", "📦 Download DB Backup")), "backup:download"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("⏱️ Частота бэкапов", "⏱️ Backup Interval")), "backup:interval"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -752,10 +754,10 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🛡️ Роли", "🛡️ Manage Roles")), "roles:menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🎨 Установить стандартную аватарку", "🎨 Set Standard Avatar")), "avatar:restore"),
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🌐 Язык: RU", "🌐 Language: EN")), "prefs:lang"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🎨 Выбрать цвет аватарки", "🎨 Select Bot Avatar Color")), "bot:avatar_menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🌐 Язык: RU", "🌐 Language: EN")), "prefs:lang"),
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji("😃 "+b.tr("Эмодзи: "+emojiState, "Emojis: "+emojiState)), "prefs:emoji"),
 		),
 	)
@@ -939,8 +941,8 @@ func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 }
 
 // handlePrefsCallback answers callbacks for the preference toggles (language,
-// emoji rendering, avatar restore, backup interval) with a visible toast and
-// re-renders the main menu.
+// emoji rendering, backup interval) with a visible toast and re-renders the
+// main menu.
 func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 	switch data {
 	case "prefs:lang":
@@ -949,13 +951,6 @@ func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 	case "prefs:emoji":
 		b.toggleBotEmojis()
 		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Настройка обновлена", "Setting updated")))
-	case "avatar:restore":
-		if err := b.SetDefaultAvatar(); err != nil {
-			b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось установить стандартную аватарку", "Could not set standard avatar")))
-			log.Printf("Bot: avatar restore failed: %v", err)
-			return
-		}
-		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Фото профиля бота обновлено!", "Bot profile photo updated!")))
 	case "backup:interval":
 		b.showBackupIntervalPicker(q.Message.Chat.ID, q.Message.MessageID)
 		return
@@ -999,6 +994,8 @@ func (b *Bot) showBackupIntervalPicker(chatID int64, messageID int) {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕐 24 "+b.tr("ч", "h")+" ("+b.tr("1 раз в сутки", "daily")+")"), "backup:set:24"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji("📅 168 "+b.tr("ч", "h")+" ("+b.tr("1 раз в неделю", "weekly")+")"), "backup:set:168"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -1007,6 +1004,68 @@ func (b *Bot) showBackupIntervalPicker(chatID int64, messageID int) {
 	)
 
 	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// avatarColorDisplay maps the lowercase color keys to their display names.
+var avatarColorDisplay = map[string]string{
+	"indigo":   "Indigo",
+	"emerald":  "Emerald",
+	"amber":    "Amber",
+	"rose":     "Rose",
+	"cyan":     "Cyan",
+}
+
+// showAvatarMenu renders the bot avatar color picker sub-menu. The five
+// color options match the dashboard accent palette (avatarColors).
+func (b *Bot) showAvatarMenu(chatID int64, messageID int) {
+	text := "<b>🎨 " + b.tr("Выбор цвета аватарки", "Select Bot Avatar Color") + "</b>\n\n" +
+		b.tr("Выберите цвет, соответствующий вашей теме:", "Choose a color matching your theme:")
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🟣 Indigo"), "bot:avatar:indigo"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🟢 Emerald"), "bot:avatar:emerald"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🟠 Amber"), "bot:avatar:amber"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔴 Rose"), "bot:avatar:rose"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔵 Cyan"), "bot:avatar:cyan"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔙 "+b.tr("В главное меню", "Back to Main Menu")), "menu:main"),
+		),
+	)
+
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// handleAvatarColorSelection applies the chosen avatar color to the bot's
+// profile photo (persisting bot_avatar_color) and confirms with a success
+// screen offering to pick another color.
+func (b *Bot) handleAvatarColorSelection(q *tgbotapi.CallbackQuery, color string) {
+	if _, ok := avatarColors[color]; !ok {
+		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Неизвестный цвет", "Unknown color")))
+		return
+	}
+	if err := b.SetAvatarColor(color); err != nil {
+		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось применить аватар", "Could not apply avatar")))
+		log.Printf("Bot: failed to apply avatar color %s: %v", color, err)
+		return
+	}
+	b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Цвет аватарки: ", "Avatar color: ")+color))
+
+	text := fmt.Sprintf("<b>✅ %s</b>\n\n%s <b>%s</b>.",
+		b.tr("Фото профиля бота обновлено!", "Bot Profile Photo Updated!"),
+		b.tr("Аватар изменён на", "Avatar changed to"),
+		avatarColorDisplay[color])
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔙 "+b.tr("К выбору цвета", "Back to Menu")), "bot:avatar_menu"),
+		),
+	)
+	b.editMessage(q.Message.Chat.ID, q.Message.MessageID, text, &markup)
 }
 
 func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
@@ -1033,10 +1092,9 @@ func (b *Bot) backMenuMarkup() *tgbotapi.InlineKeyboardMarkup {
 func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	data := q.Data
 
-	// The preference toggles and the avatar restore answer their callbacks
-	// with a visible toast, so they are handled before the generic empty
-	// acknowledgment below.
-	if data == "avatar:restore" || data == "prefs:lang" || data == "prefs:emoji" || data == "backup:interval" || data == "backup:download" || strings.HasPrefix(data, "backup:set:") {
+	// The preference toggles answer their callbacks with a visible toast, so
+	// they are handled before the generic empty acknowledgment below.
+	if data == "prefs:lang" || data == "prefs:emoji" || data == "backup:interval" || data == "backup:download" || strings.HasPrefix(data, "backup:set:") {
 		b.handlePrefsCallback(q, data)
 		return
 	}
@@ -1055,6 +1113,10 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.showMainMenu(chatID)
 	case data == "join:command":
 		b.handleJoinCommand(chatID, messageID)
+	case data == "bot:avatar_menu":
+		b.showAvatarMenu(chatID, messageID)
+	case strings.HasPrefix(data, "bot:avatar:"):
+		b.handleAvatarColorSelection(q, strings.TrimPrefix(data, "bot:avatar:"))
 	case data == "nodes:list":
 		b.handleNodeList(chatID, messageID)
 	case data == "ota:all":
@@ -1469,6 +1531,8 @@ func (b *Bot) handleDeleteMenu(chatID int64, messageID int, nodeID string) {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("🗑️ Soft Delete", "node:softdelete:"+nodeID),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData("💥 Terminate & Self-Destruct", "node:terminate:"+nodeID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
