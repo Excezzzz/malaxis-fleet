@@ -18,6 +18,21 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/10 rounded-2xl p-5 mb-6">
+      <p class="text-xs uppercase tracking-wider font-medium text-zinc-500 mb-2">Node onboarding</p>
+      <p class="text-sm text-zinc-400 mb-3">Run on any host with Docker to join the fleet. The token gates the bootstrap payload so unauthenticated requests get nothing.</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <code class="flex-1 min-w-0 px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs font-mono text-emerald-300 break-all">{{ joinCommand }}</code>
+        <button @click="copyJoinCommand"
+          :class="['flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all duration-300', copied ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300']">
+          <Copy v-if="!copied" class="w-3.5 h-3.5" />
+          <Check v-else class="w-3.5 h-3.5" />
+          <span>{{ copied ? '[Copied]' : '[Copy]' }}</span>
+        </button>
+      </div>
+      <p class="mt-2 text-xs text-zinc-500">Replace <span class="font-mono text-zinc-400">YOUR_SECRET_TOKEN</span> with the <span class="font-mono text-zinc-400">SECRET_TOKEN</span> value from the server's <span class="font-mono text-zinc-400">.env</span>.</p>
+    </div>
+
     <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
       {{ toast }}
     </div>
@@ -63,11 +78,11 @@
 <script>
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
-import { FileCode2, Rocket, RefreshCw, Save } from 'lucide-vue-next';
+import { FileCode2, Rocket, RefreshCw, Save, Copy, Check } from 'lucide-vue-next';
 
 export default {
   name: 'ClientFiles',
-  components: { FileCode2, Rocket, RefreshCw, Save },
+  components: { FileCode2, Rocket, RefreshCw, Save, Copy, Check },
   setup() {
     const files = ref([]);
     const selected = ref('');
@@ -77,12 +92,38 @@ export default {
     const saving = ref(false);
     const dirty = ref(false);
     const toast = ref('');
+    const joinDomain = ref('');
+    const copied = ref(false);
     let toastTimer = null;
 
     const showToast = (msg) => {
       toast.value = msg;
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { toast.value = ''; }, 4000);
+    };
+
+    const joinCommand = computed(() => {
+      const base = joinDomain.value ? `https://${joinDomain.value}/` : 'https://join.yourdomain.com/';
+      return `curl -sSL '${base}?t=YOUR_SECRET_TOKEN' | bash`;
+    });
+
+    const copyJoinCommand = async () => {
+      try {
+        await navigator.clipboard.writeText(joinCommand.value);
+        copied.value = true;
+        setTimeout(() => { copied.value = false; }, 2000);
+      } catch (e) {
+        showToast('Could not copy the command.');
+      }
+    };
+
+    const fetchSettings = async () => {
+      try {
+        const response = await axios.get('/api/web/settings');
+        joinDomain.value = response.data.join_domain || '';
+      } catch (e) {
+        console.error("Failed to fetch settings:", e);
+      }
     };
 
     const fetchTemplates = async () => {
@@ -155,7 +196,10 @@ export default {
       }
     };
 
-    onMounted(fetchTemplates);
+    onMounted(() => {
+      fetchSettings();
+      fetchTemplates();
+    });
 
     return {
       files,
@@ -166,6 +210,9 @@ export default {
       saving,
       dirty,
       toast,
+      joinCommand,
+      copied,
+      copyJoinCommand,
       fetchTemplates,
       selectFile,
       markDirty,

@@ -31,11 +31,14 @@ mkdir -p "$AGENT_DIR/configs"
 cd "$AGENT_DIR"
 
 echo "Downloading client files..."
-curl -sSL https://__SUB_DOMAIN__/docker-compose.yml -o docker-compose.yml
-curl -sSL https://__SUB_DOMAIN__/Dockerfile.client -o Dockerfile
-curl -sSL https://__SUB_DOMAIN__/requirements.txt -o requirements.txt
-curl -sSL https://__SUB_DOMAIN__/entrypoint.sh -o entrypoint.sh
-curl -sSL https://__API_DOMAIN__/api/agent/latest -o node_agent.py
+# All payload downloads carry the fleet secret (?t=) which is injected into
+# this script by the server at serve time. Unauthenticated requests get a
+# generic 404, so the endpoints stay invisible to active probes.
+curl -sSL "https://__SUB_DOMAIN__/docker-compose.yml?t=__SECRET_TOKEN__" -o docker-compose.yml
+curl -sSL "https://__SUB_DOMAIN__/Dockerfile.client?t=__SECRET_TOKEN__" -o Dockerfile
+curl -sSL "https://__SUB_DOMAIN__/requirements.txt?t=__SECRET_TOKEN__" -o requirements.txt
+curl -sSL "https://__SUB_DOMAIN__/entrypoint.sh?t=__SECRET_TOKEN__" -o entrypoint.sh
+curl -sSL "https://__API_DOMAIN__/api/agent/latest?t=__SECRET_TOKEN__" -o node_agent.py
 chmod +x entrypoint.sh
 
 # Restore configs if backed up
@@ -47,7 +50,7 @@ fi
 
 # Download default configs so containers start cleanly
 echo "Downloading default proxy configs..."
-curl -sSL https://__SUB_DOMAIN__/configs/xray_config.json -o configs/xray_config.json 2>/dev/null || cat > configs/xray_config.json << 'XRAYEOF'
+curl -sSL "https://__SUB_DOMAIN__/configs/xray_config.json?t=__SECRET_TOKEN__" -o configs/xray_config.json 2>/dev/null || cat > configs/xray_config.json << 'XRAYEOF'
 {
   "log": { "loglevel": "warning" },
   "dns": { "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"], "queryStrategy": "UseIPv4" },
@@ -65,7 +68,7 @@ curl -sSL https://__SUB_DOMAIN__/configs/xray_config.json -o configs/xray_config
   }
 }
 XRAYEOF
-curl -sSL https://__SUB_DOMAIN__/configs/singbox_config.json -o configs/singbox_config.json 2>/dev/null || cat > configs/singbox_config.json << 'SINGEOF'
+curl -sSL "https://__SUB_DOMAIN__/configs/singbox_config.json?t=__SECRET_TOKEN__" -o configs/singbox_config.json 2>/dev/null || cat > configs/singbox_config.json << 'SINGEOF'
 {
   "log": { "level": "warn" },
   "dns": {
@@ -87,7 +90,7 @@ SINGEOF
 
 # Download fleet-cli utility
 echo "Downloading fleet-cli utility..."
-curl -sSL https://__JOIN_DOMAIN__/fleet-cli -o fleet-cli.sh
+curl -sSL "https://__JOIN_DOMAIN__/fleet-cli?t=__SECRET_TOKEN__" -o fleet-cli.sh
 chmod +x fleet-cli.sh
 
 # --- Docker availability check ---
@@ -132,7 +135,7 @@ docker compose create singbox-node 2>/dev/null || true
 if [ -z "$INSTALL_SYSTEMD" ] || [ "$INSTALL_SYSTEMD" = "y" ] || [ "$INSTALL_SYSTEMD" = "yes" ]; then
     if command -v systemctl &> /dev/null; then
         echo "Installing systemd service..."
-        curl -sSL https://__JOIN_DOMAIN__/fleet-agent.service -o /etc/systemd/system/fleet-agent.service
+        curl -sSL "https://__JOIN_DOMAIN__/fleet-agent.service?t=__SECRET_TOKEN__" -o /etc/systemd/system/fleet-agent.service
         systemctl daemon-reload
         systemctl enable --now fleet-agent
         echo "systemd service installed and enabled."
