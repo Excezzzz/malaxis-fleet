@@ -4,7 +4,7 @@
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('settings_title') }}<span class="font-mono text-indigo-400">]</span></h1>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
+    <div class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_appearance') }}<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
@@ -42,37 +42,37 @@
       </div>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
+    <div class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-2"><span class="font-mono text-indigo-400">[</span>{{ t('settings_auto_backups') }}<span class="font-mono text-indigo-400">]</span></h2>
       <p class="text-zinc-400 mb-6 text-sm">{{ t('settings_auto_backups_hint') }}</p>
 
       <div class="space-y-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-white/5">
           <div>
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_local') }}</p>
             <p class="text-xs text-zinc-500">{{ t('settings_backup_local_desc') }}</p>
           </div>
-          <button @click="backupToLocal = !backupToLocal" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToLocal ? 'bg-indigo-500' : 'bg-zinc-500'">
+          <button @click="backupToLocal = !backupToLocal" class="relative inline-flex h-6 w-11 shrink-0 max-w-full items-center rounded-full transition-colors" :class="backupToLocal ? 'bg-indigo-500' : 'bg-zinc-500'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="backupToLocal ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-white/5">
           <div>
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_tg') }}</p>
             <p class="text-xs text-zinc-500">{{ t('settings_backup_tg_desc') }}</p>
           </div>
-          <button @click="backupToTelegram = !backupToTelegram" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToTelegram ? 'bg-indigo-500' : 'bg-zinc-500'">
+          <button @click="backupToTelegram = !backupToTelegram" class="relative inline-flex h-6 w-11 shrink-0 max-w-full items-center rounded-full transition-colors" :class="backupToTelegram ? 'bg-indigo-500' : 'bg-zinc-500'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="backupToTelegram ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>
 
-        <div class="flex items-center justify-between gap-4">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-white/5">
           <div>
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_interval') }}</p>
             <p class="text-xs text-zinc-500">{{ t('settings_backup_interval_desc') }}</p>
           </div>
-          <select v-model="backupIntervalHours" class="w-auto bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
+          <select v-model="backupIntervalHours" class="w-auto shrink-0 max-w-full bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
             <option :value="6">{{ t('settings_backup_interval_6') }}</option>
             <option :value="12">{{ t('settings_backup_interval_12') }}</option>
             <option :value="24">{{ t('settings_backup_interval_24') }}</option>
@@ -92,16 +92,16 @@
       </div>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
+    <div class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_bot') }}<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-white/5">
           <div>
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_telegram_bot') }}</p>
             <p class="text-xs text-zinc-500">{{ botEnabled ? t('settings_bot_active') : t('settings_bot_disabled') }}</p>
           </div>
-          <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-500' : 'bg-zinc-500'">
+          <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 shrink-0 max-w-full items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-500' : 'bg-zinc-500'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="botEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>

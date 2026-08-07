@@ -6,11 +6,13 @@
     <div v-else class="relative min-h-screen">
       <!-- Mobile top bar: logo / user badge / logout -->
       <header class="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-zinc-900/60 backdrop-blur-xl border-b border-white/10">
-        <div class="flex items-center space-x-2 shrink-0 min-w-0">
-          <div class="p-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/20 shrink-0">
-            <Globe class="w-4 h-4 text-indigo-300" />
+        <div @click="currentView = 'Nodes'" class="cursor-pointer flex items-center gap-3 hover:opacity-80 transition-opacity">
+          <div class="flex items-center space-x-2 shrink-0 min-w-0">
+            <div class="p-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/20 shrink-0">
+              <Globe class="w-4 h-4 text-indigo-300" />
+            </div>
+            <h1 class="text-sm font-bold tracking-tight whitespace-nowrap truncate">Malaxis Fleet</h1>
           </div>
-          <h1 class="text-sm font-bold tracking-tight whitespace-nowrap truncate">Malaxis Fleet</h1>
         </div>
         <div class="flex items-center space-x-2 shrink-0">
           <div v-if="username" class="flex flex-col text-right min-w-0">
@@ -36,13 +38,15 @@
       </nav>
 
       <nav class="hidden md:flex fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">
-        <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
-          <div class="p-1.5 sm:p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
-            <Globe class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-300" />
-          </div>
-          <div class="leading-tight">
-            <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
-            <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v1.0.0</span>
+        <div @click="currentView = 'Nodes'" class="cursor-pointer flex items-center gap-3 hover:opacity-80 transition-opacity">
+          <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
+            <div class="p-1.5 sm:p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
+              <Globe class="w-4 h-4 sm:w-5 sm:h-5 text-indigo-300" />
+            </div>
+            <div class="leading-tight">
+              <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
+              <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v1.0.0</span>
+            </div>
           </div>
         </div>
 
@@ -68,7 +72,7 @@
         </div>
       </nav>
 
-      <main class="w-full px-4 md:px-8 pt-16 md:pt-28 pb-24 md:pb-16">
+      <main class="w-full px-4 md:px-8 pt-28 pb-24 md:pb-16">
         <div v-if="isReadOnly" class="mb-6 px-4 py-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-200 text-sm">
           <strong>{{ t('readonly_banner') }}</strong>
         </div>
