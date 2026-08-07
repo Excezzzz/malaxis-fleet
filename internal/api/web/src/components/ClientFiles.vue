@@ -27,8 +27,8 @@
       </div>
       <div class="flex flex-wrap items-stretch gap-2">
         <code v-if="installCommand"
-          class="terminal flex-1 min-w-0 px-3 py-3 bg-black text-emerald-400 border border-white/10 rounded-xl text-xs font-mono break-all whitespace-pre-wrap">{{ installCommand }}</code>
-        <div v-else class="terminal flex-1 min-w-0 px-3 py-3 bg-black text-zinc-400 border border-white/10 rounded-xl text-xs font-mono">
+          :class="['terminal flex-1 min-w-0 px-3 py-3 text-xs font-mono break-all whitespace-pre-wrap rounded-xl border', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900 border-zinc-300' : 'bg-zinc-950 text-emerald-400 border-white/10']">{{ installCommand }}</code>
+        <div v-else :class="['terminal flex-1 min-w-0 px-3 py-3 text-xs font-mono rounded-xl border', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900 border-zinc-300' : 'bg-zinc-950 text-zinc-400 border-white/10']">
           {{ commandError || t('client_loading_cmd') }}
         </div>
         <button @click="copyInstallCommand" :disabled="!installCommand"
@@ -71,7 +71,7 @@
           </div>
         </div>
         <textarea v-model="content" spellcheck="false"
-          class="terminal p-5 flex-1 min-h-[70vh] bg-zinc-950 text-zinc-100 text-xs leading-relaxed font-mono resize-none focus:outline-none overflow-x-auto whitespace-pre"
+          :class="['terminal p-5 flex-1 min-h-[70vh] text-xs leading-relaxed font-mono resize-none focus:outline-none overflow-x-auto whitespace-pre', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-950 text-zinc-100']"
           @input="markDirty"></textarea>
       </div>
     </div>
@@ -92,6 +92,7 @@ export default {
   components: { FileCode2, Rocket, RefreshCw, Save, Copy, Check },
   setup() {
     const t = inject('t') || ((k) => k);
+    const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
     const files = ref([]);
     const selected = ref('');
     const content = ref('');
@@ -228,6 +229,7 @@ export default {
       lines,
       saveFile,
       pushFiles,
+      prefs,
       t,
     };
   },

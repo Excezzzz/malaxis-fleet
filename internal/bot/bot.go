@@ -5,9 +5,11 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -831,6 +833,13 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 		return
 	}
 
+	if !subURLReachable(subURL) {
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>❌ Invalid Subscription URL!</b>\n\nCould not connect to the link or the server returned an error. Check that the subscription address is working and try again.",
+			b.cancelMarkup())
+		return
+	}
+
 	node, err := b.repo.GetNodeByID(state.NodeID)
 	if err != nil {
 		log.Printf("Bot: node %s not found for sub update: %v", state.NodeID, err)
@@ -866,6 +875,25 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	b.editMessage(chatID, b.getMainMenuID(chatID),
 		fmt.Sprintf("<b>✅ Subscription URL Set!</b>\n\nDevice <b>%s</b> is now fetching configs...", b.nodeLabel(state.NodeID)),
 		&markup)
+}
+
+// subURLReachable checks that a subscription URL is well-formed (http/https,
+// no embedded credentials) and actually reachable (5s timeout, HTTP < 400)
+// before the bot saves it.
+func subURLReachable(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
+		return false
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(raw)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	_, _ = io.CopyN(io.Discard, resp.Body, 4096)
+	return resp.StatusCode < http.StatusBadRequest
 }
 
 func (b *Bot) processTerminateText(chatID int64, text string) {
