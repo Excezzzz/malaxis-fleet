@@ -28,13 +28,20 @@
 
       <!-- Mobile bottom island nav: floating capsule, icons only -->
       <nav class="fixed bottom-4 left-4 right-4 z-50 md:hidden bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl px-4 py-2.5 flex justify-around items-center">
-        <a v-for="item in navItems" :key="item.view" @click.prevent="currentView = item.view" href="#"
-           :title="item.label"
-           :class="['relative flex items-center justify-center w-10 h-10 rounded-full transition-colors', currentView === item.view ? 'text-indigo-400' : 'text-zinc-500 hover:text-zinc-300']">
-          <component :is="item.icon" class="w-5 h-5" />
-          <span v-if="currentView === item.view"
-            class="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_8px_2px_rgba(129,140,248,0.6)]"></span>
-        </a>
+        <template v-for="item in navItems" :key="item.view">
+          <a @click.prevent="currentView = item.view" href="#"
+             :title="item.label"
+             :class="['relative flex items-center justify-center w-10 h-10 rounded-full transition-colors', currentView === item.view ? 'text-indigo-400' : 'text-zinc-500 hover:text-zinc-300']">
+            <svg v-if="item.view === 'Nodes'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg>
+            <svg v-else-if="item.view === 'ClientFiles'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <svg v-else-if="item.view === 'AdminUsers'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+            <svg v-else-if="item.view === 'RoleManager'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            <svg v-else-if="item.view === 'AuditLogs'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <svg v-else-if="item.view === 'Settings'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            <span v-if="currentView === item.view"
+              class="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_8px_2px_rgba(129,140,248,0.6)]"></span>
+          </a>
+        </template>
       </nav>
 
       <nav class="hidden md:flex fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">

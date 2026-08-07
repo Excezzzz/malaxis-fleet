@@ -25,13 +25,13 @@
           <p class="text-sm text-zinc-400">{{ t('client_add_device_hint') }}</p>
         </div>
       </div>
-      <div class="w-full">
-        <code v-if="installCommand" class="terminal block w-full bg-zinc-950 text-emerald-400 font-mono text-xs p-3.5 rounded-xl overflow-x-auto border border-white/10 break-all whitespace-pre-wrap">{{ installCommand }}</code>
-        <div v-else :class="['terminal block w-full bg-zinc-950 font-mono text-xs p-3.5 rounded-xl overflow-x-auto border border-white/10', prefs.theme_mode === 'light' ? 'text-zinc-900' : 'text-zinc-400']">
+      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+        <code v-if="installCommand" class="terminal w-full sm:flex-1 bg-zinc-950 text-emerald-400 p-3.5 rounded-xl font-mono text-xs overflow-x-auto border border-white/10 break-all whitespace-pre-wrap">{{ installCommand }}</code>
+        <div v-else :class="['terminal w-full sm:flex-1 bg-zinc-950 p-3.5 rounded-xl font-mono text-xs overflow-x-auto border border-white/10', prefs.theme_mode === 'light' ? 'text-zinc-900' : 'text-zinc-400']">
           {{ commandError || t('client_loading_cmd') }}
         </div>
         <button @click="copyInstallCommand" :disabled="!installCommand"
-          class="w-full mt-2.5 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+          class="w-full sm:w-auto shrink-0 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
           <Copy v-if="!copied" class="w-4 h-4 shrink-0" />
           <Check v-else class="w-4 h-4 shrink-0" />
           <span class="truncate min-w-0">{{ copied ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
