@@ -38,11 +38,11 @@ var avatarsFS embed.FS
 // avatarColors maps the five dashboard accent colors to their embedded avatar
 // files. The bot's profile photo can be switched to match the site theme.
 var avatarColors = map[string]string{
-	"indigo":   "avatar_indigo.png",
-	"emerald":  "avatar_emerald.png",
-	"amber":    "avatar_amber.png",
-	"rose":     "avatar_rose.png",
-	"cyan":     "avatar_cyan.png",
+	"indigo":  "avatar_indigo.png",
+	"emerald": "avatar_emerald.png",
+	"amber":   "avatar_amber.png",
+	"rose":    "avatar_rose.png",
+	"cyan":    "avatar_cyan.png",
 }
 
 // onlineWindow is how recent a LastSeen timestamp must be for a node to count
@@ -445,7 +445,7 @@ func (b *Bot) runBackupScheduler() {
 			switch {
 			case telegramEnabled:
 				// sendBackupDocument also stores the file locally.
-				b.sendBackupDocument(b.chatID, "⏰ Scheduled backup")
+				b.sendBackupDocument(b.chatID, "⏰ "+b.tr("Плановая резервная копия", "Scheduled backup"))
 			case localEnabled:
 				if _, err := b.backupEngine.CreateGzipBackup(); err != nil {
 					log.Printf("Bot: scheduled backup failed: %v", err)
@@ -499,20 +499,26 @@ func (b *Bot) NotifyNewNode(id, name, ipLan string) {
 	name = emptyDash(name)
 	ipLan = emptyDash(ipLan)
 
-	text := fmt.Sprintf("<b>🖥️ NEW DEVICE CONNECTED!</b>\n\n"+
-		"<b>Name:</b> %s\n"+
-		"<b>LAN IP:</b> %s\n"+
-		"<b>Node ID:</b> <code>%s</code>\n\n"+
-		"Status: <b>Registered &amp; Waiting for Configuration.</b>",
-		name, ipLan, id)
+	_, emojis := b.botPrefs()
+	text := fmt.Sprintf("<b>🖥️ %s</b>\n\n"+
+		"<b>%s</b> %s\n"+
+		"<b>%s</b> %s\n"+
+		"<b>%s</b> <code>%s</code>\n\n"+
+		"%s <b>%s</b>",
+		b.tr("НОВОЕ УСТРОЙСТВО ПОДКЛЮЧЕНО!", "NEW DEVICE CONNECTED!"),
+		b.tr("Имя:", "Name:"), name,
+		b.tr("IP в LAN:", "LAN IP:"), ipLan,
+		b.tr("ID узла:", "Node ID:"), id,
+		b.tr("Статус:", "Status:"),
+		b.tr("Зарегистрировано и ожидает настройки.", "Registered &amp; Waiting for Configuration."))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔗 Set Sub URL", "node:set_sub:"+id),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Установить Sub URL", "Set Sub URL"), "🔗", emojis), "node:set_sub:"+id),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⚖️ Set Balanced", "node:switch:"+id+":balanced"),
-			tgbotapi.NewInlineKeyboardButtonData("❌ Reject & Delete", "node:delete:"+id),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Баланс", "Balanced"), "⚖️", emojis), "node:switch:"+id+":balanced"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Отклонить и удалить", "Reject & Delete"), "❌", emojis), "node:delete:"+id),
 		),
 	)
 
@@ -668,6 +674,23 @@ func (b *Bot) emoji(label string) string {
 	return label
 }
 
+// fmtBtn renders an inline keyboard button label with an optional emoji
+// prefix: the emoji is only prepended when emoji rendering is enabled for the
+// bot, guaranteeing a strict no-emoji button surface when disabled.
+func (b *Bot) fmtBtn(label string, emoji string, emojisEnabled bool) string {
+	if !emojisEnabled {
+		return label
+	}
+	return emoji + " " + label
+}
+
+// btn is the localization-aware shortcut for fmtBtn: it resolves the stored
+// bot language and emoji flag, then formats the button label.
+func (b *Bot) btn(emoji, ru, en string) string {
+	_, enabled := b.botPrefs()
+	return b.fmtBtn(b.tr(ru, en), emoji, enabled)
+}
+
 // toggleBotLanguage cycles the stored bot language between RU and EN.
 func (b *Bot) toggleBotLanguage() {
 	lang, _ := b.botPrefs()
@@ -788,7 +811,7 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 	case "add_user_role":
 		// Role selection happens via the inline keyboard; stray text is
 		// ignored and the role picker is re-shown.
-		b.showRoleSelection(chatID, b.getMainMenuID(chatID), state.Username, "Tap a role below to finish creating the user:")
+		b.showRoleSelection(chatID, b.getMainMenuID(chatID), state.Username, b.tr("Нажмите на роль ниже, чтобы завершить создание пользователя:", "Tap a role below to finish creating the user:"))
 	case "add_role_name":
 		b.processAddRoleNameText(chatID, text)
 	case "add_role_rank":
@@ -811,18 +834,20 @@ func (b *Bot) processRenameText(chatID int64, text string) {
 
 	newName := strings.TrimSpace(text)
 	if newName == "" {
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>✏️ Rename</b>\n\nName cannot be empty. Send a name or press Cancel.", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>✏️ "+b.tr("Переименование", "Rename")+"</b>\n\n"+b.tr("Имя не может быть пустым. Отправьте имя или нажмите «Отмена».", "Name cannot be empty. Send a name or press Cancel."),
+			b.cancelMarkup())
 		return
 	}
 
 	if err := b.repo.RenameNode(state.NodeID, newName); err != nil {
 		log.Printf("Bot: failed to rename node %s: %v", state.NodeID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to rename node.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось переименовать узел.", "Failed to rename node.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateDevice, state.NodeID, "Renamed node to "+newName+" (via Telegram bot)")
-	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "✅ Renamed to "+newName)
+	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "✅ "+b.tr("Переименован в", "Renamed to")+" "+newName)
 }
 
 func (b *Bot) processSetSubText(chatID int64, text string) {
@@ -831,13 +856,15 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 
 	subURL := strings.TrimSpace(text)
 	if subURL == "" {
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>🔗 Set Sub URL</b>\n\nURL cannot be empty. Send a URL or press Cancel.", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID),
+			"<b>🔗 "+b.tr("Установить Sub URL", "Set Sub URL")+"</b>\n\n"+b.tr("URL не может быть пустым. Отправьте URL или нажмите «Отмена».", "URL cannot be empty. Send a URL or press Cancel."),
+			b.cancelMarkup())
 		return
 	}
 
 	if !subURLReachable(subURL) {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Invalid Subscription URL!</b>\n\nCould not connect to the link or the server returned an error. Check that the subscription address is working and try again.",
+			"<b>❌ "+b.tr("Неверный URL подписки!", "Invalid Subscription URL!")+"</b>\n\n"+b.tr("Не удалось подключиться к ссылке или сервер вернул ошибку. Проверьте, что адрес подписки работает, и попробуйте снова.", "Could not connect to the link or the server returned an error. Check that the subscription address is working and try again."),
 			b.cancelMarkup())
 		return
 	}
@@ -845,14 +872,14 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	node, err := b.repo.GetNodeByID(state.NodeID)
 	if err != nil {
 		log.Printf("Bot: node %s not found for sub update: %v", state.NodeID, err)
-		b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "❌ Node not found")
+		b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "❌ "+b.tr("Узел не найден", "Node not found"))
 		return
 	}
 
 	node.SubURL = subURL
 	if err := b.repo.UpdateNode(node); err != nil {
 		log.Printf("Bot: failed to update sub_url for node %s: %v", state.NodeID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update subscription URL.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить URL подписки.", "Failed to update subscription URL.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -871,11 +898,15 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	// to the full node detail view.
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💻 View Node Details", "node:detail:"+state.NodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("💻", "Детали узла", "View Node Details"), "node:detail:"+state.NodeID),
 		),
 	)
 	b.editMessage(chatID, b.getMainMenuID(chatID),
-		fmt.Sprintf("<b>✅ Subscription URL Set!</b>\n\nDevice <b>%s</b> is now fetching configs...", b.nodeLabel(state.NodeID)),
+		fmt.Sprintf("<b>✅ %s</b>\n\n%s <b>%s</b> %s",
+			b.tr("URL подписки установлен!", "Subscription URL Set!"),
+			b.tr("Устройство", "Device"),
+			b.nodeLabel(state.NodeID),
+			b.tr("теперь загружает конфигурации...", "is now fetching configs...")),
 		&markup)
 }
 
@@ -902,7 +933,7 @@ func (b *Bot) processTerminateText(chatID int64, text string) {
 	state := b.getState(chatID)
 	if strings.TrimSpace(text) != "TERMINATE" {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>💥 Terminate & Self-Destruct</b>\n\n<code>TERMINATE</code> not received. Type the exact word <code>TERMINATE</code> to confirm (or press Cancel).",
+			"<b>💥 "+b.tr("Завершение и самоуничтожение", "Terminate & Self-Destruct")+"</b>\n\n<code>TERMINATE</code> "+b.tr("не получено. Введите точное слово", "not received. Type the exact word")+" <code>TERMINATE</code> "+b.tr("для подтверждения (или нажмите «Отмена»).", "to confirm (or press Cancel)."),
 			b.cancelMarkup())
 		return
 	}
@@ -913,20 +944,20 @@ func (b *Bot) processTerminateText(chatID int64, text string) {
 	messageID := time.Now().Unix()
 	if err := b.repo.SetPendingCommand(state.NodeID, string(command), messageID); err != nil {
 		log.Printf("Bot: failed to queue terminate for node %s: %v", state.NodeID, err)
-		b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "❌ Failed to queue terminate")
+		b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "❌ "+b.tr("Не удалось поставить команду завершения", "Failed to queue terminate"))
 		return
 	}
 	b.repo.UpdateNodePipelineStatus(state.NodeID, "Queued", "terminate")
 
 	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, state.NodeID, "Queued terminate (self-destruct) command (via Telegram bot)")
-	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "💥 Terminate queued. The node will self-destruct on its next poll.")
+	b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "💥 "+b.tr("Завершение поставлено в очередь. Узел самоуничтожится при следующем опросе.", "Terminate queued. The node will self-destruct on its next poll."))
 }
 
 // handleJoinCommand shows the tokenized node onboarding command. The curl line
 // is rendered as a <code> block so Telegram lets the admin copy it on tap.
 func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 	if b.cfg.JoinDomain == "" || b.cfg.FleetSecret == "" {
-		b.editMessage(chatID, messageID, "<b>❌ Join domain or fleet secret is not configured.</b>", b.backMenuMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Домен подключения или секрет флота не настроены.", "Join domain or fleet secret is not configured.")+"</b>", b.backMenuMarkup())
 		return
 	}
 
@@ -1008,11 +1039,11 @@ func (b *Bot) showBackupIntervalPicker(chatID int64, messageID int) {
 
 // avatarColorDisplay maps the lowercase color keys to their display names.
 var avatarColorDisplay = map[string]string{
-	"indigo":   "Indigo",
-	"emerald":  "Emerald",
-	"amber":    "Amber",
-	"rose":     "Rose",
-	"cyan":     "Cyan",
+	"indigo":  "Indigo",
+	"emerald": "Emerald",
+	"amber":   "Amber",
+	"rose":    "Rose",
+	"cyan":    "Cyan",
 }
 
 // showAvatarMenu renders the bot avatar color picker sub-menu. The five
@@ -1130,7 +1161,7 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	case data == "users:add":
 		b.setState(chatID, &userState{Step: "add_user_creds"})
 		b.editMessage(chatID, messageID,
-			"<b>👥 Add User</b>\n\nSend username and password separated by space (e.g., <code>john secret123</code>).\n\nThe message will be deleted after processing.",
+			"<b>👥 "+b.tr("Добавление пользователя", "Add User")+"</b>\n\n"+b.tr("Отправьте имя пользователя и пароль через пробел (например, <code>john secret123</code>).\n\nСообщение будет удалено после обработки.", "Send username and password separated by space (e.g., <code>john secret123</code>).\n\nThe message will be deleted after processing."),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "user:create:"):
 		b.handleUserCreate(chatID, messageID, strings.TrimPrefix(data, "user:create:"))
@@ -1169,7 +1200,7 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	case data == "roles:add":
 		b.setState(chatID, &userState{Step: "add_role_name"})
 		b.editMessage(chatID, messageID,
-			"<b>🛡️ Add Role</b>\n\nSend the role name (e.g., <code>manager</code>):",
+			"<b>🛡️ "+b.tr("Добавление роли", "Add Role")+"</b>\n\n"+b.tr("Отправьте имя роли (например, <code>manager</code>):", "Send the role name (e.g., <code>manager</code>):"),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "role:detail:"):
 		if id, err := strconv.ParseInt(strings.TrimPrefix(data, "role:detail:"), 10, 64); err == nil {
@@ -1219,13 +1250,19 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		nodeID := strings.TrimPrefix(data, "node:rename:")
 		b.setState(chatID, &userState{Step: "rename_node", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>✏️ Rename</b>\n\nSend the new name for node <b>%s</b>:", b.nodeLabel(nodeID)),
+			fmt.Sprintf("<b>✏️ %s</b>\n\n%s <b>%s</b>:",
+				b.tr("Переименование", "Rename"),
+				b.tr("Отправьте новое имя для узла", "Send the new name for node"),
+				b.nodeLabel(nodeID)),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:sub:"):
 		nodeID := strings.TrimPrefix(data, "node:sub:")
 		b.setState(chatID, &userState{Step: "set_sub", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>🔗 Set Sub URL</b>\n\nSend the new subscription URL for node <b>%s</b>:", b.nodeLabel(nodeID)),
+			fmt.Sprintf("<b>🔗 %s</b>\n\n%s <b>%s</b>:",
+				b.tr("Установить Sub URL", "Set Sub URL"),
+				b.tr("Отправьте новый URL подписки для узла", "Send the new subscription URL for node"),
+				b.nodeLabel(nodeID)),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:set_sub:"):
 		// Onboarding quick-action: prompt for the subscription URL inside the
@@ -1233,7 +1270,10 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		nodeID := strings.TrimPrefix(data, "node:set_sub:")
 		b.setState(chatID, &userState{Step: "set_sub_url", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>🔗 Set Sub URL</b>\n\nPlease reply/send the Subscription URL for <b>%s</b>:", b.nodeLabel(nodeID)),
+			fmt.Sprintf("<b>🔗 %s</b>\n\n%s <b>%s</b>:",
+				b.tr("Установить Sub URL", "Set Sub URL"),
+				b.tr("Отправьте URL подписки для", "Please reply/send the Subscription URL for"),
+				b.nodeLabel(nodeID)),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:delete:"):
 		b.handleDeleteMenu(chatID, messageID, strings.TrimPrefix(data, "node:delete:"))
@@ -1250,8 +1290,13 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		nodeID := strings.TrimPrefix(data, "node:terminate:")
 		b.setState(chatID, &userState{Step: "terminate_confirm", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>💥 Terminate &amp; Self-Destruct</b>\n\nThis will destroy node <b>%s</b> on its next poll.\n\nType <code>TERMINATE</code> to confirm:",
-				b.nodeLabel(nodeID)),
+			fmt.Sprintf("<b>💥 %s</b>\n\n%s <b>%s</b> %s\n\n%s <code>TERMINATE</code> %s:",
+				b.tr("Завершение и самоуничтожение", "Terminate &amp; Self-Destruct"),
+				b.tr("Это уничтожит узел", "This will destroy node"),
+				b.nodeLabel(nodeID),
+				b.tr("при следующем опросе.", "on its next poll."),
+				b.tr("Введите", "Type"),
+				b.tr("для подтверждения", "to confirm")),
 			b.cancelMarkup())
 	}
 }
@@ -1275,11 +1320,12 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 
 	var rows [][]tgbotapi.InlineKeyboardButton
 	var text strings.Builder
-	text.WriteString("<b>💻 Manage Nodes</b>\n\n")
+	_, emojis := b.botPrefs()
+	text.WriteString("<b>💻 " + b.tr("Управление узлами", "Manage Nodes") + "</b>\n\n")
 	if len(nodes) == 0 {
-		text.WriteString("No nodes registered yet.")
+		text.WriteString(b.tr("Узлы ещё не зарегистрированы.", "No nodes registered yet."))
 	} else {
-		text.WriteString(fmt.Sprintf("%d node(s) registered.\n\nTap a node for details:", len(nodes)))
+		text.WriteString(fmt.Sprintf(b.tr("%d узлов зарегистрировано.\n\nНажмите на узел для деталей:", "%d node(s) registered.\n\nTap a node for details:"), len(nodes)))
 	}
 
 	for _, n := range nodes {
@@ -1292,12 +1338,12 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 			name = n.ID
 		}
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("%s %s", icon, name), "node:detail:"+n.ID),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(name, icon, emojis), "node:detail:"+n.ID),
 		))
 	}
 
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
+		tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
 	))
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	b.editMessage(chatID, messageID, text.String(), &markup)
@@ -1306,7 +1352,7 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 	node, err := b.repo.GetNodeByID(nodeID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ Node not found.</b>", nil)
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Узел не найден.", "Node not found.")+"</b>", nil)
 		b.handleNodeList(chatID, messageID)
 		return
 	}
@@ -1316,7 +1362,7 @@ func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 		name = node.ID
 	}
 
-	pendingTask := "None"
+	pendingTask := b.tr("Нет", "None")
 	taskCount := 0
 	if strings.TrimSpace(node.PendingCommand) != "" {
 		pendingTask = "<code>" + xmlEscape(node.PendingCommand) + "</code>"
@@ -1332,31 +1378,31 @@ func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 	}
 
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("🖥️ <b>Node:</b> %s\n", xmlEscape(name)))
-	text.WriteString(fmt.Sprintf("<b>IP:</b> %s | <b>Host:</b> %s\n", emptyDash(node.IPLan), emptyDash(node.Hostname)))
+	text.WriteString(fmt.Sprintf("🖥️ <b>%s</b> %s\n", b.tr("Узел:", "Node:"), xmlEscape(name)))
+	text.WriteString(fmt.Sprintf("<b>IP:</b> %s | <b>%s</b> %s\n", emptyDash(node.IPLan), b.tr("Хост:", "Host:"), emptyDash(node.Hostname)))
 	text.WriteString(fmt.Sprintf("<b>VPN:</b> %s\n", xmlEscape(vpn)))
 	text.WriteString(fmt.Sprintf("<b>Sub URL:</b> %s\n", emptyDash(node.SubURL)))
-	text.WriteString(fmt.Sprintf("<b>Status:</b> %s\n", emptyDash(node.StatusMessage)))
-	text.WriteString(fmt.Sprintf("<b>Pending Task:</b> %s\n", pendingTask))
+	text.WriteString(fmt.Sprintf("<b>%s</b> %s\n", b.tr("Статус:", "Status:"), emptyDash(node.StatusMessage)))
+	text.WriteString(fmt.Sprintf("<b>%s</b> %s\n", b.tr("Ожидаемая задача:", "Pending Task:"), pendingTask))
 	if note != "" {
 		text.WriteString("\n<i>" + note + "</i>")
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🛡️ Switch VPN", "node:vpn:"+node.ID),
-			tgbotapi.NewInlineKeyboardButtonData("🔗 Set Sub URL", "node:sub:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🛡️", "Переключить VPN", "Switch VPN"), "node:vpn:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔗", "Установить Sub URL", "Set Sub URL"), "node:sub:"+node.ID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("📜 View Logs", "node:logs:"+node.ID),
-			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf("⏳ Task Queue (%d)", taskCount), "node:queue:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("📜", "Просмотр логов", "View Logs"), "node:logs:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf(b.btn("⏳", "Очередь задач (%d)", "Task Queue (%d)"), taskCount), "node:queue:"+node.ID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✏️ Rename Node", "node:rename:"+node.ID),
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete Node", "node:delete:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("✏️", "Переименовать узел", "Rename Node"), "node:rename:"+node.ID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🗑️", "Удалить узел", "Delete Node"), "node:delete:"+node.ID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Nodes List", "nodes:list"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К списку узлов", "Back to Nodes List"), "nodes:list"),
 		),
 	)
 	b.editMessage(chatID, messageID, text.String(), &markup)
@@ -1371,10 +1417,10 @@ func (b *Bot) handleLogsMenu(chatID int64, messageID int, nodeID string) {
 			tgbotapi.NewInlineKeyboardButtonData("singbox-node", "node:logs_show:"+nodeID+":singbox-node"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К узлу", "Back to Node"), "node:detail:"+nodeID),
 		),
 	)
-	text := fmt.Sprintf("📜 <b>Logs:</b> %s\n\nSelect a container:", xmlEscape(b.nodeLabel(nodeID)))
+	text := fmt.Sprintf("📜 <b>%s</b> %s\n\n%s:", b.tr("Логи:", "Logs:"), xmlEscape(b.nodeLabel(nodeID)), b.tr("Выберите контейнер", "Select a container"))
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
@@ -1403,7 +1449,7 @@ func (b *Bot) showContainerLogs(chatID int64, messageID int, nodeID, container s
 		}
 	}
 
-	logs := "No logs stored for this container yet. The node will upload them on its next poll."
+	logs := b.tr("Логов для этого контейнера пока нет. Узел загрузит их при следующем опросе.", "No logs stored for this container yet. The node will upload them on its next poll.")
 	logsMap := map[string]string{}
 	if raw, err := b.repo.GetNodeLogs(nodeID); err == nil && strings.TrimSpace(raw) != "" {
 		if err := json.Unmarshal([]byte(raw), &logsMap); err == nil {
@@ -1420,13 +1466,13 @@ func (b *Bot) showContainerLogs(chatID int64, messageID int, nodeID, container s
 		logs = "...[truncated]...\n" + logs
 	}
 
-	text := fmt.Sprintf("📜 <b>Logs:</b> %s -> <b>%s</b>\n\n<code>%s</code>",
-		xmlEscape(b.nodeLabel(nodeID)), xmlEscape(container), xmlEscape(logs))
+	text := fmt.Sprintf("📜 <b>%s</b> %s -> <b>%s</b>\n\n<code>%s</code>",
+		b.tr("Логи:", "Logs:"), xmlEscape(b.nodeLabel(nodeID)), xmlEscape(container), xmlEscape(logs))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔄 Refresh Logs", "node:logs_refresh:"+nodeID+":"+container),
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔄", "Обновить логи", "Refresh Logs"), "node:logs_refresh:"+nodeID+":"+container),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К узлу", "Back to Node"), "node:detail:"+nodeID),
 		),
 	)
 	b.editMessage(chatID, messageID, text, &markup)
@@ -1438,29 +1484,29 @@ func (b *Bot) handleQueueMenu(chatID int64, messageID int, nodeID string) {
 	pending, err := b.repo.GetPendingCommand(nodeID)
 	if err != nil {
 		log.Printf("Bot: failed to read pending command for node %s: %v", nodeID, err)
-		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to read task queue")
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ "+b.tr("Не удалось прочитать очередь задач", "Failed to read task queue"))
 		return
 	}
 
 	if strings.TrimSpace(pending) == "" {
 		markup := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+				tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К узлу", "Back to Node"), "node:detail:"+nodeID),
 			),
 		)
-		text := fmt.Sprintf("⏳ <b>%s</b>\n\nNo pending tasks for this node.", xmlEscape(b.nodeLabel(nodeID)))
+		text := fmt.Sprintf("⏳ <b>%s</b>\n\n%s", xmlEscape(b.nodeLabel(nodeID)), b.tr("Нет ожидающих задач для этого узла.", "No pending tasks for this node."))
 		b.editMessage(chatID, messageID, text, &markup)
 		return
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("❌ Cancel Pending Task", "node:queue_cancel:"+nodeID),
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("❌", "Отменить ожидаемую задачу", "Cancel Pending Task"), "node:queue_cancel:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К узлу", "Back to Node"), "node:detail:"+nodeID),
 		),
 	)
-	text := fmt.Sprintf("⏳ <b>Pending Task for %s:</b>\n\n<code>%s</code>",
-		xmlEscape(b.nodeLabel(nodeID)), xmlEscape(pending))
+	text := fmt.Sprintf("⏳ <b>%s %s:</b>\n\n<code>%s</code>",
+		b.tr("Ожидаемая задача для", "Pending Task for"), xmlEscape(b.nodeLabel(nodeID)), xmlEscape(pending))
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
@@ -1469,7 +1515,7 @@ func (b *Bot) handleQueueMenu(chatID int64, messageID int, nodeID string) {
 func (b *Bot) handleQueueCancel(chatID int64, messageID int, nodeID string) {
 	if err := b.repo.ClearPendingCommand(nodeID); err != nil {
 		log.Printf("Bot: failed to clear pending command for node %s: %v", nodeID, err)
-		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to cancel pending task")
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ "+b.tr("Не удалось отменить ожидаемую задачу", "Failed to cancel pending task"))
 		return
 	}
 	b.repo.UpdateNodePipelineStatus(nodeID, "Idle", "Command cancelled")
@@ -1477,32 +1523,36 @@ func (b *Bot) handleQueueCancel(chatID int64, messageID int, nodeID string) {
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Node", "node:detail:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К узлу", "Back to Node"), "node:detail:"+nodeID),
 		),
 	)
-	b.editMessage(chatID, messageID, "✅ <b>Pending task cancelled.</b>", &markup)
+	b.editMessage(chatID, messageID, "✅ <b>"+b.tr("Ожидаемая задача отменена.", "Pending task cancelled.")+"</b>", &markup)
 }
 
 func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 	node, err := b.repo.GetNodeByID(nodeID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ Node not found.</b>", nil)
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Узел не найден.", "Node not found.")+"</b>", nil)
 		return
 	}
 
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("<b>🛡️ Switch VPN</b>\n\nSelect the target server for <b>%s</b>:\n\n", b.nodeLabel(nodeID)))
+	text.WriteString(fmt.Sprintf("<b>🛡️ %s</b>\n\n%s <b>%s</b>:\n\n",
+		b.tr("Переключить VPN", "Switch VPN"),
+		b.tr("Выберите целевой сервер для", "Select the target server for"),
+		b.nodeLabel(nodeID)))
 	if node.ActiveServer != "" {
-		text.WriteString(fmt.Sprintf("Currently active: <b>%s</b>", node.ActiveServer))
+		text.WriteString(fmt.Sprintf("%s: <b>%s</b>", b.tr("Сейчас активен", "Currently active"), node.ActiveServer))
 	} else {
-		text.WriteString("Currently active: <i>none</i>")
+		text.WriteString(b.tr("Сейчас активен: <i>нет</i>", "Currently active: <i>none</i>"))
 	}
 
 	var rows [][]tgbotapi.InlineKeyboardButton
+	_, emojis := b.botPrefs()
 	rows = append(rows,
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("⚡ Fastest", "node:switch:"+nodeID+":fastest"),
-			tgbotapi.NewInlineKeyboardButtonData("⚖️ Balanced", "node:switch:"+nodeID+":balanced"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Быстрый", "Fastest"), "⚡", emojis), "node:switch:"+nodeID+":fastest"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Баланс", "Balanced"), "⚖️", emojis), "node:switch:"+nodeID+":balanced"),
 		),
 	)
 	for _, srv := range node.AvailableServers {
@@ -1511,11 +1561,11 @@ func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 			continue
 		}
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🌐 "+srv, "node:switch:"+nodeID+":"+srv),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(srv, "🌐", emojis), "node:switch:"+nodeID+":"+srv),
 		))
 	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "node:detail:"+nodeID),
+		tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "node:detail:"+nodeID),
 	))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
@@ -1523,20 +1573,26 @@ func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 }
 
 func (b *Bot) handleDeleteMenu(chatID int64, messageID int, nodeID string) {
-	text := fmt.Sprintf("<b>🗑️ Delete Node</b>\n\nDelete <b>%s</b>?\n\n"+
-		"• <b>Soft Delete</b> removes the node from the fleet immediately.\n"+
-		"• <b>Terminate &amp; Self-Destruct</b> queues the destructive command; the agent wipes its engine containers and exits on its next poll.",
-		b.nodeLabel(nodeID))
+	text := fmt.Sprintf("<b>🗑️ %s</b>\n\n%s <b>%s</b>?\n\n"+
+		"• <b>%s</b> %s\n"+
+		"• <b>%s</b> %s",
+		b.tr("Удалить узел", "Delete Node"),
+		b.tr("Удалить", "Delete"),
+		b.nodeLabel(nodeID),
+		b.tr("Мягкое удаление", "Soft Delete"),
+		b.tr("сразу убирает узел из флота.", "removes the node from the fleet immediately."),
+		b.tr("Завершение и самоуничтожение", "Terminate &amp; Self-Destruct"),
+		b.tr("ставит деструктивную команду в очередь; агент удалит свои контейнеры и выйдет при следующем опросе.", "queues the destructive command; the agent wipes its engine containers and exits on its next poll."))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Soft Delete", "node:softdelete:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🗑️", "Мягкое удаление", "Soft Delete"), "node:softdelete:"+nodeID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("💥 Terminate & Self-Destruct", "node:terminate:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("💥", "Завершение и самоуничтожение", "Terminate & Self-Destruct"), "node:terminate:"+nodeID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("↩️ Cancel", "node:detail:"+nodeID),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("↩️", "Отмена", "Cancel"), "node:detail:"+nodeID),
 		),
 	)
 	b.editMessage(chatID, messageID, text, &markup)
@@ -1551,28 +1607,28 @@ func (b *Bot) handleSwitch(chatID int64, messageID int, nodeID, target string) {
 	if err := b.repo.SetPendingCommand(nodeID, string(command), cmdMessageID); err != nil {
 		log.Printf("Bot: failed to queue switch for node %s: %v", nodeID, err)
 		if err == repository.ErrNodeNotFound {
-			b.showNodeDetail(chatID, messageID, nodeID, "❌ Node not found")
+			b.showNodeDetail(chatID, messageID, nodeID, "❌ "+b.tr("Узел не найден", "Node not found"))
 			return
 		}
-		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to queue switch command")
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ "+b.tr("Не удалось поставить команду переключения", "Failed to queue switch command"))
 		return
 	}
 	b.repo.UpdateNodePipelineStatus(nodeID, "Queued", "switch")
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, nodeID, "Switched VPN to "+target+" (via Telegram bot)")
-	b.showNodeDetail(chatID, messageID, nodeID, "🛡️ Switch to <b>"+target+"</b> queued")
+	b.showNodeDetail(chatID, messageID, nodeID, "🛡️ "+b.tr("Переключение на", "Switch to")+" <b>"+target+"</b> "+b.tr("поставлено в очередь", "queued"))
 }
 
 func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 	name := b.nodeLabel(nodeID)
 	if err := b.repo.DeleteNode(nodeID); err != nil {
 		log.Printf("Bot: failed to delete node %s: %v", nodeID, err)
-		b.showNodeDetail(chatID, messageID, nodeID, "❌ Failed to delete node")
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ "+b.tr("Не удалось удалить узел", "Failed to delete node"))
 		return
 	}
 	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Rejected and deleted node "+name+" (via Telegram bot)")
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("❌ Node <b>%s</b> rejected and deleted.", name),
+		fmt.Sprintf("❌ %s <b>%s</b> %s", b.tr("Узел", "Node"), name, b.tr("отклонён и удалён.", "rejected and deleted.")),
 		b.cancelMarkup())
 }
 
@@ -1583,7 +1639,7 @@ func (b *Bot) handleRefreshAllSubs(chatID int64, messageID int) {
 	nodes, err := b.repo.GetAllNodes()
 	if err != nil {
 		log.Printf("Bot: failed to list nodes for refresh subs: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to list nodes.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось получить список узлов.", "Failed to list nodes.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1602,7 +1658,7 @@ func (b *Bot) handleRefreshAllSubs(chatID int64, messageID int) {
 	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, "all_nodes", "Queued subscription refresh for "+strconv.Itoa(queuedCount)+" nodes (via Telegram bot)")
 	text, markup := b.getMainMenuContent()
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("🔄 All <b>%d</b> node(s) queued to refresh their subscriptions.\n\n%s", len(nodes), text),
+		fmt.Sprintf("🔄 "+b.tr("<b>%d</b> узлов поставлены в очередь на обновление подписок.", "<b>%d</b> node(s) queued to refresh their subscriptions.")+"\n\n%s", len(nodes), text),
 		&markup)
 }
 
@@ -1619,7 +1675,7 @@ func (b *Bot) handleOtaAll(chatID int64, messageID int) {
 	nodes, err := b.repo.GetAllNodes()
 	if err != nil {
 		log.Printf("Bot: failed to list nodes for OTA: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to list nodes.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось получить список узлов.", "Failed to list nodes.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1637,7 +1693,7 @@ func (b *Bot) handleOtaAll(chatID int64, messageID int) {
 	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, "all_nodes", "Queued update_client_files for "+strconv.Itoa(queuedCount)+" nodes (via Telegram bot)")
 	text, markup := b.getMainMenuContent()
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("🚀 Client files (OTA) queued for <b>%d</b> of <b>%d</b> nodes. Agents will self-update on their next poll.\n\n%s",
+		fmt.Sprintf("🚀 "+b.tr("Файлы клиентов (OTA) поставлены в очередь для <b>%d</b> из <b>%d</b> узлов. Агенты обновятся при следующем опросе.", "Client files (OTA) queued for <b>%d</b> of <b>%d</b> nodes. Agents will self-update on their next poll.")+"\n\n%s",
 			queuedCount, len(nodes), text),
 		&markup)
 }
@@ -1646,14 +1702,14 @@ func (b *Bot) handlePurge(chatID int64, messageID int) {
 	deleted, err := b.repo.DeleteOfflineNodes(3)
 	if err != nil {
 		log.Printf("Bot: purge failed: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ Purge failed.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Очистка не удалась.", "Purge failed.")+"</b>", b.cancelMarkup())
 		return
 	}
 	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, "all_nodes", "Purged "+strconv.FormatInt(deleted, 10)+" offline nodes older than 3 days (via Telegram bot)")
 
 	text, markup := b.getMainMenuContent()
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("🧹 Purged <b>%d</b> offline node(s) (older than 3 days).\n\n%s", deleted, text),
+		fmt.Sprintf("🧹 "+b.tr("Очищено <b>%d</b> офлайн-узлов (старше 3 дней).", "Purged <b>%d</b> offline node(s) (older than 3 days).")+"\n\n%s", deleted, text),
 		&markup)
 }
 
@@ -1661,12 +1717,12 @@ func (b *Bot) handlePurge(chatID int64, messageID int) {
 // document, then restores the main menu in the single bot message.
 func (b *Bot) handleBackup(chatID int64, messageID int) {
 	if messageID > 0 {
-		b.editMessage(chatID, messageID, "<b>📦 Creating database backup...</b>", nil)
+		b.editMessage(chatID, messageID, "<b>📦 "+b.tr("Создание резервной копии БД...", "Creating database backup...")+"</b>", nil)
 	} else {
-		b.SendAdminMessage("<b>📦 Creating database backup...</b>")
+		b.SendAdminMessage("<b>📦 " + b.tr("Создание резервной копии БД...", "Creating database backup...") + "</b>")
 	}
 
-	b.sendBackupDocument(chatID, "📦 Database backup (pg_dump + gzip)")
+	b.sendBackupDocument(chatID, "📦 "+b.tr("Резервная копия БД (pg_dump + gzip)", "Database backup (pg_dump + gzip)"))
 
 	if messageID > 0 {
 		b.showMainMenu(chatID)
@@ -1678,14 +1734,14 @@ func (b *Bot) sendBackupDocument(chatID int64, caption string) {
 	backupPath, err := b.backupEngine.CreateGzipBackup()
 	if err != nil {
 		log.Printf("Bot: failed to create backup: %v", err)
-		b.SendAdminMessage("<b>❌ Failed to create database backup.</b>")
+		b.SendAdminMessage("<b>❌ " + b.tr("Не удалось создать резервную копию БД.", "Failed to create database backup.") + "</b>")
 		return
 	}
 
 	fileBytes, err := os.ReadFile(backupPath)
 	if err != nil {
 		log.Printf("Bot: failed to read backup file: %v", err)
-		b.SendAdminMessage("<b>❌ Failed to read backup file.</b>")
+		b.SendAdminMessage("<b>❌ " + b.tr("Не удалось прочитать файл резервной копии.", "Failed to read backup file.") + "</b>")
 		return
 	}
 
@@ -1707,35 +1763,36 @@ func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
 	users, err := b.repo.GetAllUsers()
 	if err != nil {
 		log.Printf("Bot: failed to list users: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to list users.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось получить список пользователей.", "Failed to list users.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	var text strings.Builder
-	text.WriteString("<b>👥 Manage Users</b>\n\n")
+	text.WriteString("<b>👥 " + b.tr("Управление пользователями", "Manage Users") + "</b>\n\n")
 	if len(users) == 0 {
-		text.WriteString("No users yet.")
+		text.WriteString(b.tr("Пользователей пока нет.", "No users yet."))
 	} else {
-		text.WriteString(fmt.Sprintf("%d user(s). Tap a user to manage:\n", len(users)))
+		text.WriteString(fmt.Sprintf(b.tr("%d пользователей. Нажмите на пользователя для управления:\n", "%d user(s). Tap a user to manage:\n"), len(users)))
 	}
 
 	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(users)+2)
+	_, emojis := b.botPrefs()
 	for _, u := range users {
 		roleName := u.RoleName
 		if roleName == "" {
 			roleName = u.Role
 		}
-		label := fmt.Sprintf("👤 %s", xmlEscape(u.Username))
+		label := b.fmtBtn(xmlEscape(u.Username), "👤", emojis)
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(label, "user:detail:"+strconv.FormatInt(u.ID, 10)),
 		))
 	}
 	rows = append(rows,
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("➕ Add User", "users:add"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("➕", "Добавить пользователя", "Add User"), "users:add"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
 		),
 	)
 
@@ -1763,7 +1820,7 @@ func (b *Bot) showUserDetail(chatID int64, messageID int, userID int64, note str
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
 		log.Printf("Bot: user %d not found: %v", userID, err)
-		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1773,24 +1830,24 @@ func (b *Bot) showUserDetail(chatID int64, messageID int, userID int64, note str
 	}
 
 	var text strings.Builder
-	text.WriteString("<b>👤 User Details</b>\n\n")
-	text.WriteString(fmt.Sprintf("<b>Username:</b> %s\n", xmlEscape(user.Username)))
-	text.WriteString(fmt.Sprintf("<b>Role:</b> %s [rank <code>%d</code>]\n", xmlEscape(roleName), b.roleRankOf(user.Role)))
-	text.WriteString(fmt.Sprintf("<b>Created:</b> %s", user.CreatedAt.Format("2006-01-02 15:04")))
+	text.WriteString("<b>👤 " + b.tr("Данные пользователя", "User Details") + "</b>\n\n")
+	text.WriteString(fmt.Sprintf("<b>%s</b> %s\n", b.tr("Имя пользователя:", "Username:"), xmlEscape(user.Username)))
+	text.WriteString(fmt.Sprintf("<b>%s</b> %s [%s <code>%d</code>]\n", b.tr("Роль:", "Role:"), xmlEscape(roleName), b.tr("ранг", "rank"), b.roleRankOf(user.Role)))
+	text.WriteString(fmt.Sprintf("<b>%s</b> %s", b.tr("Создан:", "Created:"), user.CreatedAt.Format("2006-01-02 15:04")))
 	if note != "" {
 		text.WriteString("\n\n✅ <i>" + note + "</i>")
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔄 Change Role", "user:role:"+strconv.FormatInt(user.ID, 10)),
-			tgbotapi.NewInlineKeyboardButtonData("🔑 Change Password", "user:pw:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔄", "Сменить роль", "Change Role"), "user:role:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔑", "Сменить пароль", "Change Password"), "user:pw:"+strconv.FormatInt(user.ID, 10)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete User", "user:del:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🗑️", "Удалить пользователя", "Delete User"), "user:del:"+strconv.FormatInt(user.ID, 10)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Users", "users:menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К пользователям", "Back to Users"), "users:menu"),
 		),
 	)
 	b.editMessage(chatID, messageID, text.String(), &markup)
@@ -1801,13 +1858,13 @@ func (b *Bot) showUserDetail(chatID int64, messageID int, userID int64, note str
 func (b *Bot) showUserRolePicker(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	roles, err := b.repo.GetAllRoles()
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ Failed to load roles.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось загрузить роли.", "Failed to load roles.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1834,12 +1891,12 @@ func (b *Bot) showUserRolePicker(chatID int64, messageID int, userID int64) {
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
 	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("❌ Cancel", "user:detail:"+strconv.FormatInt(user.ID, 10)),
+		tgbotapi.NewInlineKeyboardButtonData(b.btn("❌", "Отмена", "Cancel"), "user:detail:"+strconv.FormatInt(user.ID, 10)),
 	))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("<b>🔄 Change Role</b>\n\nSelect the new role for <b>%s</b>:", xmlEscape(user.Username)),
+		fmt.Sprintf("<b>🔄 %s</b>\n\n%s <b>%s</b>:", b.tr("Смена роли", "Change Role"), b.tr("Выберите новую роль для", "Select the new role for"), xmlEscape(user.Username)),
 		&markup)
 }
 
@@ -1849,20 +1906,20 @@ func (b *Bot) showUserRolePicker(chatID int64, messageID int, userID int64) {
 func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if strings.EqualFold(role.Name, domain.RoleOwner) {
-		b.editMessage(chatID, messageID, "<b>❌ The owner role cannot be assigned to a user.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль владельца нельзя назначить пользователю.", "The owner role cannot be assigned to a user.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if strings.EqualFold(user.Username, "admin") || strings.EqualFold(user.Role, domain.RoleOwner) {
-		b.editMessage(chatID, messageID, "<b>❌ The owner account cannot be reassigned.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Учётная запись владельца не может быть переведена.", "The owner account cannot be reassigned.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1871,7 +1928,7 @@ func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID i
 		oldRole = user.Role
 	}
 	if strings.EqualFold(oldRole, role.Name) {
-		b.editMessage(chatID, messageID, "<b>ℹ️ User already has this role.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>ℹ️ "+b.tr("У пользователя уже есть эта роль.", "User already has this role.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1880,12 +1937,12 @@ func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID i
 	user.ColorHex = role.ColorHex
 	if err := b.repo.UpdateUser(user); err != nil {
 		log.Printf("Bot: failed to update role for user %d: %v", userID, err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to update role.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось обновить роль.", "Failed to update role.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateUser, user.Username, "Changed role from "+oldRole+" to "+role.Name+" (via Telegram bot)")
-	b.showUserDetail(chatID, messageID, userID, "Role changed to "+role.Name)
+	b.showUserDetail(chatID, messageID, userID, b.tr("Роль изменена на", "Role changed to")+" "+role.Name)
 }
 
 // handleUserPwRequest opens the password-change prompt; the next text message
@@ -1893,12 +1950,12 @@ func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID i
 func (b *Bot) handleUserPwRequest(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	b.setState(chatID, &userState{Step: "user_pw", TargetID: userID})
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("<b>🔑 Change Password</b>\n\nSend the new password for <b>%s</b>:\n\nThe message will be deleted after processing.", xmlEscape(user.Username)),
+		fmt.Sprintf("<b>🔑 %s</b>\n\n%s <b>%s</b>:\n\n%s", b.tr("Смена пароля", "Change Password"), b.tr("Отправьте новый пароль для", "Send the new password for"), xmlEscape(user.Username), b.tr("Сообщение будет удалено после обработки.", "The message will be deleted after processing.")),
 		b.cancelMarkup())
 }
 
@@ -1911,32 +1968,32 @@ func (b *Bot) processChangeUserPwText(chatID int64, text string) {
 	password := strings.TrimSpace(text)
 	if password == "" {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>🔑 Change Password</b>\n\nPassword cannot be empty. Send a password or press Cancel:",
+			"<b>🔑 "+b.tr("Смена пароля", "Change Password")+"</b>\n\n"+b.tr("Пароль не может быть пустым. Отправьте пароль или нажмите «Отмена»:", "Password cannot be empty. Send a password or press Cancel:"),
 			b.cancelMarkup())
 		return
 	}
 
 	user, err := b.repo.GetUserByID(state.TargetID)
 	if err != nil {
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("Bot: failed to hash new password for user %d: %v", state.TargetID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update password.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить пароль.", "Failed to update password.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	if err := b.repo.UpdateUserPassword(state.TargetID, string(hashed)); err != nil {
 		log.Printf("Bot: failed to update password for user %d: %v", state.TargetID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update password.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить пароль.", "Failed to update password.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateUser, user.Username, "Changed password (via Telegram bot)")
-	b.showUserDetail(chatID, b.getMainMenuID(chatID), state.TargetID, "Password updated")
+	b.showUserDetail(chatID, b.getMainMenuID(chatID), state.TargetID, b.tr("Пароль обновлён", "Password updated"))
 }
 
 // handleUserDeleteRequest asks for explicit confirmation before deleting a
@@ -1944,22 +2001,22 @@ func (b *Bot) processChangeUserPwText(chatID int64, text string) {
 func (b *Bot) handleUserDeleteRequest(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if strings.EqualFold(user.Username, "admin") || strings.EqualFold(user.Role, domain.RoleOwner) {
-		b.editMessage(chatID, messageID, "<b>❌ The owner account cannot be deleted.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Учётная запись владельца не может быть удалена.", "The owner account cannot be deleted.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Yes, Delete", "user:delconfirm:"+strconv.FormatInt(user.ID, 10)),
-			tgbotapi.NewInlineKeyboardButtonData("↩️ Cancel", "user:detail:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🗑️", "Да, удалить", "Yes, Delete"), "user:delconfirm:"+strconv.FormatInt(user.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("↩️", "Отмена", "Cancel"), "user:detail:"+strconv.FormatInt(user.ID, 10)),
 		),
 	)
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("<b>🗑️ Delete User</b>\n\nAre you sure you want to permanently delete <b>%s</b>? This cannot be undone.", xmlEscape(user.Username)),
+		fmt.Sprintf("<b>🗑️ %s</b>\n\n%s <b>%s</b>? %s", b.tr("Удаление пользователя", "Delete User"), b.tr("Вы уверены, что хотите навсегда удалить", "Are you sure you want to permanently delete"), xmlEscape(user.Username), b.tr("Это действие необратимо.", "This cannot be undone.")),
 		&markup)
 }
 
@@ -1967,18 +2024,18 @@ func (b *Bot) handleUserDeleteRequest(chatID int64, messageID int, userID int64)
 func (b *Bot) handleUserDeleteConfirm(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ User not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Пользователь не найден.", "User not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if strings.EqualFold(user.Username, "admin") || strings.EqualFold(user.Role, domain.RoleOwner) {
-		b.editMessage(chatID, messageID, "<b>❌ The owner account cannot be deleted.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Учётная запись владельца не может быть удалена.", "The owner account cannot be deleted.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	username := user.Username
 	if err := b.repo.DeleteUser(userID); err != nil {
 		log.Printf("Bot: failed to delete user %d: %v", userID, err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to delete user.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось удалить пользователя.", "Failed to delete user.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -1992,7 +2049,7 @@ func (b *Bot) processAddUserCredsText(chatID int64, text string) {
 	parts := strings.Fields(strings.TrimSpace(text))
 	if len(parts) != 2 {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>👥 Add User</b>\n\nInvalid input. Send <b>username</b> and <b>password</b> separated by a space (e.g., <code>john secret123</code>):",
+			"<b>👥 "+b.tr("Добавление пользователя", "Add User")+"</b>\n\n"+b.tr("Некорректный ввод. Отправьте <b>имя пользователя</b> и <b>пароль</b> через пробел (например, <code>john secret123</code>):", "Invalid input. Send <b>username</b> and <b>password</b> separated by a space (e.g., <code>john secret123</code>):"),
 			b.cancelMarkup())
 		return
 	}
@@ -2002,7 +2059,7 @@ func (b *Bot) processAddUserCredsText(chatID int64, text string) {
 
 	if _, err := b.repo.GetUserByUsername(username); err == nil {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Username already exists.</b> Please send a different username and password:",
+			"<b>❌ "+b.tr("Имя пользователя уже существует.", "Username already exists.")+"</b> "+b.tr("Отправьте другое имя и пароль:", "Please send a different username and password:"),
 			b.cancelMarkup())
 		return
 	}
@@ -2017,7 +2074,7 @@ func (b *Bot) showRoleSelection(chatID int64, messageID int, username, note stri
 	roles, err := b.repo.GetAllRoles()
 	if err != nil {
 		log.Printf("Bot: failed to list roles for user creation: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to load roles.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось загрузить роли.", "Failed to load roles.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -2037,11 +2094,11 @@ func (b *Bot) showRoleSelection(chatID int64, messageID int, username, note stri
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(row...))
 	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("❌ Cancel", "state:cancel"),
+		tgbotapi.NewInlineKeyboardButtonData(b.btn("❌", "Отмена", "Cancel"), "state:cancel"),
 	))
 
 	var text strings.Builder
-	text.WriteString("<b>👥 Add User</b>\n\nSelect a role for <b>" + xmlEscape(username) + "</b>:")
+	text.WriteString("<b>👥 " + b.tr("Добавление пользователя", "Add User") + "</b>\n\n" + b.tr("Выберите роль для", "Select a role for") + " <b>" + xmlEscape(username) + "</b>:")
 	if note != "" {
 		text.WriteString("\n\n<i>" + note + "</i>")
 	}
@@ -2055,26 +2112,26 @@ func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
 	state := b.getState(chatID)
 	if state == nil || state.Step != "add_user_role" || state.Username == "" || state.Password == "" {
 		b.clearState(chatID)
-		b.editMessage(chatID, messageID, "<b>⚠️ Add-user flow expired.</b> Please start again from the main menu.", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>⚠️ "+b.tr("Процесс добавления пользователя истёк.", "Add-user flow expired.")+"</b> "+b.tr("Начните заново из главного меню.", "Please start again from the main menu."), b.cancelMarkup())
 		return
 	}
 
 	roleID, err := strconv.ParseInt(roleIDStr, 10, 64)
 	if err != nil {
-		b.editMessage(chatID, messageID, "<b>❌ Invalid role.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Неверная роль.", "Invalid role.")+"</b>", b.cancelMarkup())
 		return
 	}
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil || strings.EqualFold(role.Name, domain.RoleOwner) {
 		log.Printf("Bot: role %d not found for user creation: %v", roleID, err)
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	hashed, err := bcrypt.GenerateFromPassword([]byte(state.Password), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("Bot: failed to hash password for user %q: %v", state.Username, err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to create user.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось создать пользователя.", "Failed to create user.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -2087,7 +2144,7 @@ func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
 	}
 	if _, err := b.repo.AddUser(newUser); err != nil {
 		log.Printf("Bot: failed to create user %q: %v", state.Username, err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to create user.</b> The username may already be taken.", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось создать пользователя.", "Failed to create user.")+"</b> "+b.tr("Возможно, имя уже занято.", "The username may already be taken."), b.cancelMarkup())
 		return
 	}
 
@@ -2096,8 +2153,10 @@ func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
 
 	text, markup := b.getMainMenuContent()
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("✅ <b>User created!</b>\n\n<b>Username:</b> %s\n<b>Role:</b> %s\n\n%s",
-			xmlEscape(state.Username), xmlEscape(role.Name), text),
+		fmt.Sprintf("✅ <b>%s</b>\n\n<b>%s</b> %s\n<b>%s</b> %s\n\n%s",
+			b.tr("Пользователь создан!", "User created!"),
+			b.tr("Имя:", "Username:"), xmlEscape(state.Username),
+			b.tr("Роль:", "Role:"), xmlEscape(role.Name), text),
 		&markup)
 }
 
@@ -2107,35 +2166,36 @@ func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
 	roles, err := b.repo.GetAllRoles()
 	if err != nil {
 		log.Printf("Bot: failed to list roles: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to list roles.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось получить список ролей.", "Failed to list roles.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	var text strings.Builder
-	text.WriteString("<b>🛡️ Manage Roles</b>\n\n")
+	text.WriteString("<b>🛡️ " + b.tr("Управление ролями", "Manage Roles") + "</b>\n\n")
 	if len(roles) == 0 {
-		text.WriteString("No roles defined.")
+		text.WriteString(b.tr("Роли не заданы.", "No roles defined."))
 	} else {
-		text.WriteString(fmt.Sprintf("%d role(s). Tap a role to manage:\n", len(roles)))
+		text.WriteString(fmt.Sprintf(b.tr("%d ролей. Нажмите на роль для управления:\n", "%d role(s). Tap a role to manage:\n"), len(roles)))
 	}
 
 	rows := make([][]tgbotapi.InlineKeyboardButton, 0, len(roles)+2)
+	_, emojis := b.botPrefs()
 	for _, r := range roles {
 		rank := r.Rank
 		if rank < 1 {
 			rank = domain.RoleRank(r.Name)
 		}
-		label := fmt.Sprintf("🛡️ %s [rank %d]", xmlEscape(r.Name), rank)
+		label := b.fmtBtn(fmt.Sprintf("%s [%s %d]", xmlEscape(r.Name), b.tr("ранг", "rank"), rank), "🛡️", emojis)
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(label, "role:detail:"+strconv.FormatInt(r.ID, 10)),
 		))
 	}
 	rows = append(rows,
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("➕ Add Role", "roles:add"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("➕", "Добавить роль", "Add Role"), "roles:add"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back", "menu:main"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
 		),
 	)
 
@@ -2149,7 +2209,7 @@ func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note str
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
 		log.Printf("Bot: role %d not found: %v", roleID, err)
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -2160,12 +2220,12 @@ func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note str
 	userCount, _ := b.repo.CountUsersByRoleName(role.Name)
 
 	var text strings.Builder
-	text.WriteString("<b>🛡️ Role Details</b>\n\n")
-	text.WriteString(fmt.Sprintf("<b>Name:</b> %s\n", xmlEscape(role.Name)))
-	text.WriteString(fmt.Sprintf("<b>Rank:</b> <code>%d</code>\n", rank))
-	text.WriteString(fmt.Sprintf("<b>Users assigned:</b> %d\n", userCount))
+	text.WriteString("<b>🛡️ " + b.tr("Данные роли", "Role Details") + "</b>\n\n")
+	text.WriteString(fmt.Sprintf("<b>%s</b> %s\n", b.tr("Имя:", "Name:"), xmlEscape(role.Name)))
+	text.WriteString(fmt.Sprintf("<b>%s</b> <code>%d</code>\n", b.tr("Ранг:", "Rank:"), rank))
+	text.WriteString(fmt.Sprintf("<b>%s</b> %d\n", b.tr("Назначено пользователей:", "Users assigned:"), userCount))
 	if role.OwnerID == "system" {
-		text.WriteString("<b>Type:</b> system role")
+		text.WriteString("<b>" + b.tr("Тип:", "Type:") + "</b> " + b.tr("системная роль", "system role"))
 	}
 	if note != "" {
 		text.WriteString("\n\n✅ <i>" + note + "</i>")
@@ -2173,14 +2233,14 @@ func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note str
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✏️ Rename Role", "role:rename:"+strconv.FormatInt(role.ID, 10)),
-			tgbotapi.NewInlineKeyboardButtonData("🔢 Change Rank", "role:rank:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("✏️", "Переименовать роль", "Rename Role"), "role:rename:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔢", "Изменить ранг", "Change Rank"), "role:rank:"+strconv.FormatInt(role.ID, 10)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Delete Role", "role:del:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🗑️", "Удалить роль", "Delete Role"), "role:del:"+strconv.FormatInt(role.ID, 10)),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🔙 Back to Roles", "roles:menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К ролям", "Back to Roles"), "roles:menu"),
 		),
 	)
 	b.editMessage(chatID, messageID, text.String(), &markup)
@@ -2191,17 +2251,17 @@ func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note str
 func (b *Bot) handleRoleRenameRequest(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if role.OwnerID == "system" {
-		b.editMessage(chatID, messageID, "<b>❌ System roles cannot be renamed.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Системные роли нельзя переименовывать.", "System roles cannot be renamed.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.setState(chatID, &userState{Step: "role_rename", TargetID: roleID})
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("<b>✏️ Rename Role</b>\n\nSend the new name for role <b>%s</b>\n(owner, admin, client, viewer are reserved):", xmlEscape(role.Name)),
+		fmt.Sprintf("<b>✏️ %s</b>\n\n%s <b>%s</b>\n%s", b.tr("Переименование роли", "Rename Role"), b.tr("Отправьте новое имя для роли", "Send the new name for role"), xmlEscape(role.Name), b.tr("(owner, admin, client, viewer зарезервированы):", "(owner, admin, client, viewer are reserved):")),
 		b.cancelMarkup())
 }
 
@@ -2213,7 +2273,7 @@ func (b *Bot) processRenameRoleText(chatID int64, text string) {
 	name := strings.TrimSpace(text)
 	if name == "" {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>✏️ Rename Role</b>\n\nRole name cannot be empty. Send a name or press Cancel:",
+			"<b>✏️ "+b.tr("Переименование роли", "Rename Role")+"</b>\n\n"+b.tr("Имя роли не может быть пустым. Отправьте имя или нажмите «Отмена»:", "Role name cannot be empty. Send a name or press Cancel:"),
 			b.cancelMarkup())
 		return
 	}
@@ -2221,20 +2281,20 @@ func (b *Bot) processRenameRoleText(chatID int64, text string) {
 	lower := strings.ToLower(name)
 	if lower == "owner" || lower == "admin" || lower == "client" || lower == "viewer" {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Reserved role name.</b> Please choose a different name:",
+			"<b>❌ "+b.tr("Зарезервированное имя роли.", "Reserved role name.")+"</b> "+b.tr("Выберите другое имя:", "Please choose a different name:"),
 			b.cancelMarkup())
 		return
 	}
 	if _, err := b.repo.GetRoleByName(name); err == nil {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Role name already exists.</b> Please choose a different name:",
+			"<b>❌ "+b.tr("Роль с таким именем уже существует.", "Role name already exists.")+"</b> "+b.tr("Выберите другое имя:", "Please choose a different name:"),
 			b.cancelMarkup())
 		return
 	}
 
 	role, err := b.repo.GetRoleByID(state.TargetID)
 	if err != nil || role == nil || role.OwnerID == "system" {
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -2242,12 +2302,12 @@ func (b *Bot) processRenameRoleText(chatID int64, text string) {
 	role.Name = name
 	if err := b.repo.UpdateCustomRole(role); err != nil {
 		log.Printf("Bot: failed to rename role %d: %v", state.TargetID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to rename role.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось переименовать роль.", "Failed to rename role.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, role.Name, "Renamed role from "+oldName+" to "+name+" (via Telegram bot)")
-	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, "Renamed to "+role.Name)
+	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, b.tr("Переименована в", "Renamed to")+" "+role.Name)
 }
 
 // handleRoleRankRequest opens the rank prompt; the next text message becomes
@@ -2255,21 +2315,21 @@ func (b *Bot) processRenameRoleText(chatID int64, text string) {
 func (b *Bot) handleRoleRankRequest(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if role.OwnerID == "system" {
-		b.editMessage(chatID, messageID, "<b>❌ System role ranks are fixed.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Ранги системных ролей фиксированы.", "System role ranks are fixed.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if role.Name == domain.RoleOwner {
-		b.editMessage(chatID, messageID, "<b>❌ The owner role rank is immutable.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Ранг роли владельца неизменяем.", "The owner role rank is immutable.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.setState(chatID, &userState{Step: "role_rank", TargetID: roleID})
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("<b>🔢 Change Rank</b>\n\nSend the new rank (<b>1-99</b>) for role <b>%s</b>:", xmlEscape(role.Name)),
+		fmt.Sprintf("<b>🔢 %s</b>\n\n%s (<b>1-99</b>) %s <b>%s</b>:", b.tr("Изменение ранга", "Change Rank"), b.tr("Отправьте новый ранг", "Send the new rank"), b.tr("для роли", "for role"), xmlEscape(role.Name)),
 		b.cancelMarkup())
 }
 
@@ -2281,14 +2341,14 @@ func (b *Bot) processChangeRoleRankText(chatID int64, text string) {
 	rank, err := strconv.Atoi(strings.TrimSpace(text))
 	if err != nil || rank < 1 || rank > 99 {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>🔢 Change Rank</b>\n\nInvalid rank. Send a whole number between <b>1</b> and <b>99</b>:",
+			"<b>🔢 "+b.tr("Изменение ранга", "Change Rank")+"</b>\n\n"+b.tr("Неверный ранг. Отправьте целое число от <b>1</b> до <b>99</b>:", "Invalid rank. Send a whole number between <b>1</b> and <b>99</b>:"),
 			b.cancelMarkup())
 		return
 	}
 
 	role, err := b.repo.GetRoleByID(state.TargetID)
 	if err != nil || role == nil || role.OwnerID == "system" {
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -2296,12 +2356,12 @@ func (b *Bot) processChangeRoleRankText(chatID int64, text string) {
 	role.Rank = rank
 	if err := b.repo.UpdateCustomRole(role); err != nil {
 		log.Printf("Bot: failed to change rank for role %d: %v", state.TargetID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ Failed to update rank.</b>", b.cancelMarkup())
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить ранг.", "Failed to update rank.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, role.Name, "Changed rank from "+strconv.Itoa(oldRank)+" to "+strconv.Itoa(rank)+" (via Telegram bot)")
-	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, "Rank updated to "+strconv.Itoa(rank))
+	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, b.tr("Ранг обновлён до", "Rank updated to")+" "+strconv.Itoa(rank))
 }
 
 // handleRoleDeleteRequest asks for explicit confirmation. System roles and the
@@ -2310,30 +2370,30 @@ func (b *Bot) processChangeRoleRankText(chatID int64, text string) {
 func (b *Bot) handleRoleDeleteRequest(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if role.OwnerID == "system" || role.Name == domain.RoleOwner {
-		b.editMessage(chatID, messageID, "<b>❌ System and owner roles cannot be deleted.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Системные роли и роль владельца нельзя удалять.", "System and owner roles cannot be deleted.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	userCount, err := b.repo.CountUsersByRoleName(role.Name)
 	if err == nil && userCount > 0 {
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>❌ Role <b>%s</b> is assigned to %d user(s). Reassign or delete them first.</b>", xmlEscape(role.Name), userCount),
+			fmt.Sprintf("<b>❌ %s <b>%s</b> %s %d %s. %s</b>", b.tr("Роль", "Role"), xmlEscape(role.Name), b.tr("назначена", "is assigned to"), userCount, b.tr("пользователям.", "user(s)."), b.tr("Сначала переназначьте или удалите их.", "Reassign or delete them first.")),
 			b.cancelMarkup())
 		return
 	}
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("🗑️ Yes, Delete", "role:delconfirm:"+strconv.FormatInt(role.ID, 10)),
-			tgbotapi.NewInlineKeyboardButtonData("↩️ Cancel", "role:detail:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🗑️", "Да, удалить", "Yes, Delete"), "role:delconfirm:"+strconv.FormatInt(role.ID, 10)),
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("↩️", "Отмена", "Cancel"), "role:detail:"+strconv.FormatInt(role.ID, 10)),
 		),
 	)
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("<b>🗑️ Delete Role</b>\n\nAre you sure you want to permanently delete role <b>%s</b>? This cannot be undone.", xmlEscape(role.Name)),
+		fmt.Sprintf("<b>🗑️ %s</b>\n\n%s <b>%s</b>? %s", b.tr("Удаление роли", "Delete Role"), b.tr("Вы уверены, что хотите навсегда удалить роль", "Are you sure you want to permanently delete role"), xmlEscape(role.Name), b.tr("Это действие необратимо.", "This cannot be undone.")),
 		&markup)
 }
 
@@ -2341,23 +2401,23 @@ func (b *Bot) handleRoleDeleteRequest(chatID int64, messageID int, roleID int64)
 func (b *Bot) handleRoleDeleteConfirm(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
-		b.editMessage(chatID, messageID, "<b>❌ Role not found.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Роль не найдена.", "Role not found.")+"</b>", b.cancelMarkup())
 		return
 	}
 	if role.OwnerID == "system" || role.Name == domain.RoleOwner {
-		b.editMessage(chatID, messageID, "<b>❌ System roles cannot be deleted.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Системные роли нельзя удалять.", "System roles cannot be deleted.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	userCount, _ := b.repo.CountUsersByRoleName(role.Name)
 	if userCount > 0 {
-		b.editMessage(chatID, messageID, "<b>❌ Role still has assigned users.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("У роли ещё есть назначенные пользователи.", "Role still has assigned users.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	if err := b.repo.DeleteCustomRole(roleID); err != nil {
 		log.Printf("Bot: failed to delete role %d: %v", roleID, err)
-		b.editMessage(chatID, messageID, "<b>❌ Failed to delete role.</b>", b.cancelMarkup())
+		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось удалить роль.", "Failed to delete role.")+"</b>", b.cancelMarkup())
 		return
 	}
 
@@ -2371,7 +2431,7 @@ func (b *Bot) processAddRoleNameText(chatID int64, text string) {
 	name := strings.TrimSpace(text)
 	if name == "" {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>🛡️ Add Role</b>\n\nRole name cannot be empty. Send the role name (e.g., <code>manager</code>):",
+			"<b>🛡️ "+b.tr("Добавление роли", "Add Role")+"</b>\n\n"+b.tr("Имя роли не может быть пустым. Отправьте имя роли (например, <code>manager</code>):", "Role name cannot be empty. Send the role name (e.g., <code>manager</code>):"),
 			b.cancelMarkup())
 		return
 	}
@@ -2379,20 +2439,20 @@ func (b *Bot) processAddRoleNameText(chatID int64, text string) {
 	lower := strings.ToLower(name)
 	if lower == "owner" || lower == "admin" || lower == "client" || lower == "viewer" {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Reserved role name.</b> Please choose a different role name:",
+			"<b>❌ "+b.tr("Зарезервированное имя роли.", "Reserved role name.")+"</b> "+b.tr("Выберите другое имя роли:", "Please choose a different role name:"),
 			b.cancelMarkup())
 		return
 	}
 	if _, err := b.repo.GetRoleByName(name); err == nil {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Role name already exists.</b> Please choose a different name:",
+			"<b>❌ "+b.tr("Роль с таким именем уже существует.", "Role name already exists.")+"</b> "+b.tr("Выберите другое имя:", "Please choose a different name:"),
 			b.cancelMarkup())
 		return
 	}
 
 	b.setState(chatID, &userState{Step: "add_role_rank", RoleName: name})
 	b.editMessage(chatID, b.getMainMenuID(chatID),
-		fmt.Sprintf("<b>🛡️ Add Role</b>\n\nRole name <b>%s</b> accepted.\n\nSend the role rank (<b>1-99</b>):", xmlEscape(name)),
+		fmt.Sprintf("<b>🛡️ %s</b>\n\n%s <b>%s</b> %s\n\n%s (<b>1-99</b>):", b.tr("Добавление роли", "Add Role"), b.tr("Имя роли", "Role name"), xmlEscape(name), b.tr("принято.", "accepted."), b.tr("Отправьте ранг роли", "Send the role rank")),
 		b.cancelMarkup())
 }
 
@@ -2404,7 +2464,7 @@ func (b *Bot) processAddRoleRankText(chatID int64, text string) {
 	rank, err := strconv.Atoi(strings.TrimSpace(text))
 	if err != nil || rank < 1 || rank > 99 {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>🛡️ Add Role</b>\n\nInvalid rank. Send a whole number between <b>1</b> and <b>99</b>:",
+			"<b>🛡️ "+b.tr("Добавление роли", "Add Role")+"</b>\n\n"+b.tr("Неверный ранг. Отправьте целое число от <b>1</b> до <b>99</b>:", "Invalid rank. Send a whole number between <b>1</b> and <b>99</b>:"),
 			b.cancelMarkup())
 		return
 	}
@@ -2426,7 +2486,7 @@ func (b *Bot) processAddRoleRankText(chatID int64, text string) {
 	if _, err := b.repo.AddCustomRole(role); err != nil {
 		log.Printf("Bot: failed to create role %q: %v", state.RoleName, err)
 		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ Failed to create role.</b> It may already exist.",
+			"<b>❌ "+b.tr("Не удалось создать роль.", "Failed to create role.")+"</b> "+b.tr("Возможно, она уже существует.", "It may already exist."),
 			b.cancelMarkup())
 		return
 	}
