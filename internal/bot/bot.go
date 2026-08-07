@@ -484,7 +484,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	}
 	offlineCount := len(nodes) - onlineCount
 
-	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v2.1-BETA</b>\n\n"+
+	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v2.1.0</b>\n\n"+
 		"Nodes: 🟢 %d Online | 🔴 %d Offline", onlineCount, offlineCount)
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(

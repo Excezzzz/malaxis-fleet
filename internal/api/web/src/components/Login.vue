@@ -2,7 +2,7 @@
   <div class="flex items-center justify-center min-h-screen bg-[#09090b]">
     <div class="w-full max-w-sm p-8 space-y-8 bg-zinc-900/60 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/10">
       <div class="text-center">
-        <h2 class="text-2xl font-semibold text-zinc-100 tracking-tight">Authentication</h2>
+        <h2 class="text-2xl font-semibold text-zinc-100 tracking-tight">Sign In</h2>
         <p class="mt-2 text-sm text-zinc-500">Please enter your credentials to continue.</p>
       </div>
       <form class="space-y-6" @submit.prevent="handleLogin">
@@ -16,7 +16,7 @@
           {{ error }}
         </div>
         <div>
-          <button type="submit" class="w-full px-4 py-3 font-medium text-white bg-zinc-700/60 hover:bg-zinc-700/80 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#09090b] focus:ring-zinc-500/50 transition-all duration-200">
+          <button type="submit" class="w-full px-4 py-2.5 font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-xl shadow-lg shadow-indigo-900/50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-[#09090b] focus:ring-indigo-500/50 transition-colors">
             Login
           </button>
         </div>
