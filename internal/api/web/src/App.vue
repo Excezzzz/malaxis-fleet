@@ -42,7 +42,7 @@
           </div>
           <div class="leading-tight">
             <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
-            <span class="hidden sm:inline-block bg-red-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-red-950/50">v2.1-BETA</span>
+            <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v2.1.0</span>
           </div>
         </div>
 
