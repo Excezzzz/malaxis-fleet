@@ -25,16 +25,15 @@
           <p class="text-sm text-zinc-400">{{ t('client_add_device_hint') }}</p>
         </div>
       </div>
-      <div class="flex flex-wrap items-stretch gap-2">
-        <code v-if="installCommand"
-          :class="['terminal flex-1 min-w-0 px-3 py-3 text-xs font-mono break-all whitespace-pre-wrap rounded-xl border', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900 border-zinc-300' : 'bg-zinc-950 text-emerald-400 border-white/10']">{{ installCommand }}</code>
-        <div v-else :class="['terminal flex-1 min-w-0 px-3 py-3 text-xs font-mono rounded-xl border', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900 border-zinc-300' : 'bg-zinc-950 text-zinc-400 border-white/10']">
+      <div class="w-full">
+        <code v-if="installCommand" class="terminal block w-full bg-zinc-950 text-emerald-400 font-mono text-xs p-3.5 rounded-xl overflow-x-auto border border-white/10 break-all whitespace-pre-wrap">{{ installCommand }}</code>
+        <div v-else :class="['terminal block w-full bg-zinc-950 font-mono text-xs p-3.5 rounded-xl overflow-x-auto border border-white/10', prefs.theme_mode === 'light' ? 'text-zinc-900' : 'text-zinc-400']">
           {{ commandError || t('client_loading_cmd') }}
         </div>
         <button @click="copyInstallCommand" :disabled="!installCommand"
-          :class="['flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-all duration-300', copied ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed']">
-          <Copy v-if="!copied" class="w-3.5 h-3.5" />
-          <Check v-else class="w-3.5 h-3.5" />
+          class="w-full mt-2.5 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+          <Copy v-if="!copied" class="w-4 h-4" />
+          <Check v-else class="w-4 h-4" />
           <span>{{ copied ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
         </button>
       </div>
