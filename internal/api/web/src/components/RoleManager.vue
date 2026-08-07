@@ -90,13 +90,14 @@
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.titleKey">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ t(section.titleKey) }}</p>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group py-1">
-                      <input type="checkbox" v-model="newRole.permissions" :value="perm" class="sr-only peer" />
-                      <div class="w-6 h-6 rounded-md border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all shrink-0">
-                        <svg class="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <div v-for="[perm, label] in section.perms" :key="perm" @click="togglePerm(newRole, perm)"
+                         class="flex items-center gap-3 cursor-pointer group py-1 select-none">
+                      <div :class="newRole.permissions[perm] ? 'bg-indigo-600 border-indigo-400' : 'bg-black/50 border-white/20'"
+                           class="w-5 h-5 rounded border flex items-center justify-center transition-all shrink-0">
+                        <svg v-if="newRole.permissions[perm]" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
                       <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ t(label) }}</span>
-                    </label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -147,13 +148,14 @@
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.titleKey">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ t(section.titleKey) }}</p>
                   <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
-                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group py-1">
-                      <input type="checkbox" v-model="editForm.permissions" :value="perm" class="sr-only peer" />
-                      <div class="w-6 h-6 rounded-md border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all shrink-0">
-                        <svg class="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    <div v-for="[perm, label] in section.perms" :key="perm" @click="togglePerm(editForm, perm)"
+                         class="flex items-center gap-3 cursor-pointer group py-1 select-none">
+                      <div :class="editForm.permissions[perm] ? 'bg-indigo-600 border-indigo-400' : 'bg-black/50 border-white/20'"
+                           class="w-5 h-5 rounded border flex items-center justify-center transition-all shrink-0">
+                        <svg v-if="editForm.permissions[perm]" class="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
                       <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ t(label) }}</span>
-                    </label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -237,8 +239,8 @@ export default {
     const customRoles = ref([]);
     const showCreateModal = ref(false);
     const editingRole = ref(null);
-    const newRole = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: [] });
-    const editForm = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: [] });
+    const newRole = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: {} });
+    const editForm = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: {} });
 
     const roleEffectiveRank = (role) => role.rank ?? ROLE_RANK[role.name] ?? 10;
 
@@ -289,26 +291,36 @@ export default {
 
     const parsePermissions = (permissionsJson) => {
       if (!permissionsJson) return [];
-      try {
-        const parsed = JSON.parse(permissionsJson);
-        if (Array.isArray(parsed)) return parsed;
-        if (typeof parsed === 'object' && parsed !== null) return ALL_PERMS.filter(p => parsed[p] === true);
+      let parsed = null;
+      if (typeof permissionsJson === 'string') {
+        try {
+          parsed = JSON.parse(permissionsJson);
+        } catch (e) {
+          return [];
+        }
+      } else if (typeof permissionsJson === 'object') {
+        parsed = permissionsJson;
+      } else {
         return [];
-      } catch (e) {
-        return permissionsJson.split(',').filter(p => p.trim());
       }
+      if (Array.isArray(parsed)) return parsed;
+      if (typeof parsed === 'object' && parsed !== null) return ALL_PERMS.filter(p => parsed[p] === true);
+      return [];
+    };
+
+    const togglePerm = (form, key) => {
+      form.permissions[key] = !form.permissions[key];
     };
 
     const permLabel = (perm) => t(PERMISSION_LABELS[perm] || perm);
 
     const handleCreateRole = async () => {
       try {
-        const permsObj = newRole.value.permissions.reduce((acc, p) => ({ ...acc, [p]: true }), {});
         const roleData = {
           name: newRole.value.name,
           color_hex: newRole.value.color_hex,
           rank: newRole.value.rank,
-          permissions_json: JSON.stringify(permsObj),
+          permissions_json: JSON.stringify(newRole.value.permissions),
         };
         const response = await fetch('/api/web/roles', {
           method: 'POST',
@@ -324,7 +336,7 @@ export default {
           throw new Error(errMsg);
         }
 
-        newRole.value = { name: '', color_hex: '#FF5733', rank: 10, permissions: [] };
+        newRole.value = { name: '', color_hex: '#FF5733', rank: 10, permissions: {} };
         showCreateModal.value = false;
         await fetchCustomRoles();
         alert(t('roles_created_ok'));
@@ -336,24 +348,36 @@ export default {
 
     const openEditModal = (role) => {
       editingRole.value = role;
+      let parsed = {};
+      const raw = role.permissions_json;
+      if (typeof raw === 'string') {
+        try {
+          parsed = JSON.parse(raw);
+        } catch (e) {
+          parsed = {};
+        }
+      } else if (typeof raw === 'object' && raw !== null) {
+        parsed = raw;
+      }
+      const perms = {};
+      ALL_PERMS.forEach(key => { perms[key] = parsed[key] === true; });
       editForm.value = {
         id: role.id,
         name: role.name,
         color_hex: role.color_hex,
         rank: role.rank ?? ROLE_RANK[role.name] ?? 10,
-        permissions: [...parsePermissions(role.permissions_json)],
+        permissions: perms,
       };
     };
 
     const handleEditRole = async () => {
       if (!editingRole.value) return;
       try {
-        const permsObj = editForm.value.permissions.reduce((acc, p) => ({ ...acc, [p]: true }), {});
         const roleData = {
           name: editForm.value.name,
           color_hex: editForm.value.color_hex,
           rank: editForm.value.rank,
-          permissions_json: JSON.stringify(permsObj),
+          permissions_json: JSON.stringify(editForm.value.permissions),
         };
         const response = await fetch(`/api/web/roles/${editForm.value.id}`, {
           method: 'PUT',
@@ -418,6 +442,7 @@ export default {
       handleCreateRole,
       openEditModal,
       handleEditRole,
+      togglePerm,
       deleteRole,
       t,
     };
