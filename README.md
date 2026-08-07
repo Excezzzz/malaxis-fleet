@@ -16,8 +16,8 @@ aggressive filtering.
 
 - [Overview & Architecture](#overview--architecture)
 - [Features](#features)
-- [Quick Start: Server](#quick-start-server)
-- [Quick Start: Client](#quick-start-client)
+- [Server Administration Guide](#server-administration-guide)
+- [End-User Guide](#end-user-guide)
 - [Security & RBAC](#security--rbac)
 - [Telegram Bot Reference](#telegram-bot-reference)
 - [Project Layout](#project-layout)
@@ -118,7 +118,20 @@ double-counting and state confusion.
 - **Task queuing** — per-node commands queue with live pipeline status
   (`queued / running / done / failed`).
 
-## Quick Start: Server
+## Server Administration Guide
+
+### Prerequisites
+
+| Requirement | Version / Notes |
+|-------------|-----------------|
+| Go toolchain | 1.22+ (for cross-compiling the control plane) |
+| Node.js + npm | 18+ (for building the Vue 3 dashboard) |
+| VPS / dedicated server | Docker Engine + Docker Compose; one public IPv4 |
+| DNS | `dash`, `api`, `join`, `sub` A records pointing at the server |
+| TLS | Caddy terminates TLS automatically (with a CF cert pair if you use Cloudflare proxying; paths configured via `SSL_CERT_PATH` / `SSL_KEY_PATH`) |
+
+The server requires no exposed ports beyond `443` (Caddy). PostgreSQL and the
+control plane live on internal Docker networks only.
 
 ### 1. Configure the environment
 
@@ -144,12 +157,15 @@ SUB_DOMAIN="sub.yourdomain.com"
 ```
 
 `.env` is git-ignored and must never be committed. Use `.env.example` as the
-template only.
+template only. Every value above is consumed at runtime by the control plane
+and substituted into the client deployment assets served to nodes.
 
 ### 2. Deploy
 
+From a Windows workstation with Go and Node.js installed:
+
 ```powershell
-.\build_and_deploy.ps1 user@your-server-ip
+.\build_and_deploy.ps1 admin@your-server-ip
 ```
 
 The script performs the following steps:
@@ -162,42 +178,81 @@ The script performs the following steps:
 
 ### 3. Log in
 
-Open `https://dash.yourdomain.com` and sign in with `ADMIN_USER` /
-`ADMIN_PASS`.
+Open `https://dash.yourdomain.com` and sign in with the `ADMIN_USER` /
+`ADMIN_PASS` values from `.env` (defaults: `admin` / `admin` if not set).
+The seeded account is the fleet owner (rank 100) and is the only strictly
+immutable account in the system. Change the password immediately after the
+first login.
 
-## Quick Start: Client
+## End-User Guide
 
-On any host with Docker installed:
+### Joining a fleet
+
+On any host with Docker installed, run the one-line bootstrap:
 
 ```bash
-curl -sSL https://join.yourdomain.com/join.sh | bash
+curl -sSL https://join.yourdomain.com | bash
 ```
 
-The installer downloads the agent and engine assets, then asks two
-interactive questions (read from `/dev/tty`, so they also work when piped):
+The script downloads the agent and engine assets, verifies Docker, and then
+asks two interactive questions (read from `/dev/tty`, so they work even when
+the script is piped):
 
 ```
 Enter Subscription URL (or press Enter to skip):
 Install systemd service for auto-start on boot? [Y/n]:
 ```
 
-- A subscription URL, if provided, is written to
+- **Subscription URL** — the 3x-ui/v2ray subscription URL that contains the
+  servers you are allowed to use. If provided, it is written to
   `fleet-agent/configs/agent_state.json` before the containers start, so the
-  agent fetches and benchmarks servers on first boot. If the server was
-  deployed with a subscription already configured via the dashboard or bot,
-  it is safe to skip this prompt.
-- Answering `Y` (the default) installs and enables
-  `/etc/systemd/system/fleet-agent.service` so the fleet survives reboots.
+  agent fetches and benchmarks servers on first boot. If your administrator
+  has already configured a subscription centrally (via the dashboard or the
+  Telegram bot), skip this prompt.
+- **systemd auto-start** — answering `Y` (the default) installs and enables
+  `/etc/systemd/system/fleet-agent.service` so the agent restarts after a
+  reboot. Declining is only appropriate on short-lived test hosts.
 
-The node registers with the control plane using its hardware fingerprint,
-pulls engine configs, and starts both proxy engines. Useful commands after
-install:
+After the install, the node registers with the control plane using its
+hardware fingerprint and starts both proxy engines. The local proxy listens
+on:
+
+- `SOCKS5 127.0.0.1:6357`
+- `HTTP   127.0.0.1:6358`
+
+### Using the local CLI
+
+Run the interactive CLI to inspect the node and change its routing locally:
 
 ```bash
-cd fleet-agent && bash fleet-cli.sh   # status, sub URL, server switch
-docker logs -f node-agent             # live agent logs
-journalctl -u fleet-agent.service     # boot logs (if systemd installed)
+/opt/fleet-agent/fleet-cli.sh     # if systemd service was installed
+cd fleet-agent && bash fleet-cli.sh   # from the install directory
 ```
+
+The menu shows the active server, protocol, selection mode, and container
+status, then offers the following actions:
+
+| Option | Purpose |
+|--------|---------|
+| 1. Set / Update Subscription URL | Point the node at a new subscription |
+| 2. Update Client Files | Pull the latest client assets from the fleet |
+| 3. Switch Server | Select a server manually, or pick a mode |
+| 4. Toggle Auto-Update | Enable/disable automatic client updates |
+| 5. View Agent Logs | Tail the last 30 lines of `node-agent` |
+| 6. Rename Node | Change the node's display name |
+| 7. Terminate & Self-Destruct | Tear down and wipe the node (requires typing `TERMINATE`) |
+
+Within the **Switch Server** menu:
+
+- `F` — **Fastest**: benchmarks all cached servers and selects the
+  lowest-latency path.
+- `B` — **Balanced**: benchmarks and selects the path with the lowest jitter
+  and loss.
+- `1..N` — selects a specific server by its number in the list.
+
+All switches are reported back to the control plane and reflected on the
+dashboard. Server changes can also be triggered remotely by the administrator
+from the web dashboard or the Telegram bot.
 
 ## Security & RBAC
 

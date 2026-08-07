@@ -9,16 +9,16 @@
     </div>
 
     <!-- Existing Roles -->
-    <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <div v-for="role in customRoles" :key="role.id" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-lg shadow-black/10 hover:border-indigo-500/20 transition-colors">
+    <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div v-for="role in sortedRoles" :key="role.id" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-lg shadow-black/10 hover:border-indigo-500/20 transition-colors">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span class="w-5 h-5 rounded-full" :style="{ backgroundColor: role.color_hex }"></span>
-              <h3 class="text-xl font-bold text-white break-all">{{ role.name }}</h3>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
+              <span class="w-5 h-5 rounded-full shrink-0" :style="{ backgroundColor: role.color_hex }"></span>
+              <h3 class="text-xl font-bold text-white break-all min-w-0">{{ role.name }}</h3>
               <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">Rank 100 · Immutable</span>
               <span v-else class="px-2 py-1 text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ Rank: {{ role.rank ?? 10 }} ]</span>
             </div>
-            <div class="flex space-x-2">
+            <div class="flex space-x-2 shrink-0">
               <button v-if="canManageRole(role)" @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit Role">
                 <Edit class="w-5 h-5" />
               </button>
@@ -89,13 +89,13 @@
               <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group py-1">
                       <input type="checkbox" v-model="newRole.permissions" :value="perm" class="sr-only peer" />
-                      <div class="w-5 h-5 rounded border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all">
-                        <svg class="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <div class="w-6 h-6 rounded-md border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all shrink-0">
+                        <svg class="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">{{ label }}</span>
+                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ label }}</span>
                     </label>
                   </div>
                 </div>
@@ -146,13 +146,13 @@
               <div class="space-y-4 bg-white/5 border border-white/10 rounded-xl p-4">
                 <div v-for="section in PERMISSION_SECTIONS" :key="section.title">
                   <p class="text-xs font-semibold uppercase tracking-wider text-zinc-500 mb-2">{{ section.title }}</p>
-                  <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group">
+                  <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2">
+                    <label v-for="[perm, label] in section.perms" :key="perm" class="flex items-center gap-3 cursor-pointer group py-1">
                       <input type="checkbox" v-model="editForm.permissions" :value="perm" class="sr-only peer" />
-                      <div class="w-5 h-5 rounded border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all">
-                        <svg class="w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                      <div class="w-6 h-6 rounded-md border border-white/10 bg-black/40 peer-checked:bg-indigo-500 peer-checked:border-indigo-400 flex items-center justify-center transition-all shrink-0">
+                        <svg class="w-4 h-4 text-white opacity-0 peer-checked:opacity-100 transition-opacity" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                       </div>
-                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors">{{ label }}</span>
+                      <span class="text-sm text-zinc-300 group-hover:text-white transition-colors min-w-0">{{ label }}</span>
                     </label>
                   </div>
                 </div>
@@ -237,6 +237,18 @@ export default {
     const editingRole = ref(null);
     const newRole = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: [] });
     const editForm = ref({ name: '', color_hex: '#FF5733', rank: 10, permissions: [] });
+
+    const roleEffectiveRank = (role) => role.rank ?? ROLE_RANK[role.name] ?? 10;
+
+    // Roles are rendered sorted by rank descending (Owner 100 -> Admin 80 ->
+    // Viewer 10), then alphabetically by name within equal ranks.
+    const sortedRoles = computed(() => {
+      return [...customRoles.value].sort((a, b) => {
+        const rankDiff = roleEffectiveRank(b) - roleEffectiveRank(a);
+        if (rankDiff !== 0) return rankDiff;
+        return String(a.name).localeCompare(String(b.name));
+      });
+    });
 
     // Actor's effective rank: prefer the DB-stored rank for the actor's role
     // if available, falling back to the built-in table.
@@ -387,6 +399,7 @@ export default {
 
     return {
       customRoles,
+      sortedRoles,
       showCreateModal,
       editingRole,
       newRole,
