@@ -1893,6 +1893,32 @@ func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ResetBotAvatarHandler re-uploads the embedded default profile photo of the
+// Telegram bot on demand.
+func (a *API) ResetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
+	if a.botManager == nil {
+		http.Error(w, "Bot is not configured", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.botManager.SetDefaultAvatar(); err != nil {
+		log.Printf("Bot: avatar restore failed: %v", err)
+		http.Error(w, "Failed to update bot profile photo: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	actorUser, _ := a.repo.GetUserByID(actorID)
+	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "bot", "Bot profile photo reset to default")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
 func (a *API) TestTelegramBotHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireOwner(w, r) {
 		return

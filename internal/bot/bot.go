@@ -1,9 +1,13 @@
 package bot
 
 import (
+	"bytes"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"log"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,6 +26,9 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
+
+//go:embed default_avatar.png
+var defaultAvatarPNG []byte
 
 // onlineWindow is how recent a LastSeen timestamp must be for a node to count
 // as online (mirrors the web dashboard).
@@ -160,6 +167,68 @@ func (b *Bot) Start() error {
 
 	log.Println("Telegram bot started")
 
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := b.SetDefaultAvatar(); err != nil {
+			log.Printf("Bot: failed to set default profile photo: %v", err)
+		} else {
+			log.Println("Bot: default profile photo set")
+		}
+	}()
+
+	return nil
+}
+
+// SetDefaultAvatar uploads the embedded default avatar to the Telegram bot via
+// setMyProfilePhoto. A re-upload of an identical photo is rejected by Telegram
+// and treated as success here, so repeated calls are harmless.
+func (b *Bot) SetDefaultAvatar() error {
+	token := b.token
+	if token == "" {
+		return fmt.Errorf("bot token not configured")
+	}
+
+	endpoint := "https://api.telegram.org/bot" + token + "/setMyProfilePhoto"
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("photo", "default_avatar.png")
+	if err != nil {
+		return err
+	}
+	if _, err := part.Write(defaultAvatarPNG); err != nil {
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, endpoint, &body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("invalid telegram response: %w", err)
+	}
+	if !result.OK {
+		if strings.Contains(strings.ToLower(result.Description), "no need") {
+			return nil
+		}
+		return fmt.Errorf("telegram rejected photo: %s", result.Description)
+	}
 	return nil
 }
 
@@ -510,6 +579,9 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 			tgbotapi.NewInlineKeyboardButtonData("👥 Manage Users", "users:menu"),
 			tgbotapi.NewInlineKeyboardButtonData("🛡️ Manage Roles", "roles:menu"),
 		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("🎨 Restore Avatar", "avatar:restore"),
+		),
 	)
 	return text, markup
 }
@@ -673,6 +745,18 @@ func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 	b.editMessage(chatID, messageID, text, b.backMenuMarkup())
 }
 
+// handleAvatarRestore re-uploads the default profile photo, confirms with a
+// callback toast, and re-renders the main menu.
+func (b *Bot) handleAvatarRestore(q *tgbotapi.CallbackQuery) {
+	if err := b.SetDefaultAvatar(); err != nil {
+		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ Could not restore avatar"))
+		log.Printf("Bot: avatar restore failed: %v", err)
+		return
+	}
+	b.api.Request(tgbotapi.NewCallback(q.ID, "✅ Bot profile photo updated!"))
+	b.showMainMenu(q.Message.Chat.ID)
+}
+
 func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -685,13 +769,21 @@ func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
 // --- Callback handling ---
 
 func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
+	data := q.Data
+
+	// The avatar restore answers its callback with a visible toast, so it is
+	// handled before the generic empty acknowledgment below.
+	if data == "avatar:restore" {
+		b.handleAvatarRestore(q)
+		return
+	}
+
 	callback := tgbotapi.NewCallback(q.ID, "")
 	b.api.Request(callback)
 
 	chatID := q.Message.Chat.ID
 	messageID := q.Message.MessageID
 
-	data := q.Data
 	switch {
 	case data == "state:cancel":
 		b.clearState(chatID)
