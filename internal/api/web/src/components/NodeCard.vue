@@ -247,7 +247,7 @@
             </button>
           </div>
         </div>
-        <div class="terminal bg-black p-4 rounded-lg font-mono text-xs text-emerald-400 h-64 sm:h-96 min-h-0 overflow-y-auto whitespace-pre-wrap flex-1" ref="logHost">
+        <div :class="['terminal font-mono text-xs p-4 rounded-lg h-64 sm:h-96 min-h-0 overflow-y-auto whitespace-pre-wrap flex-1 border', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900 border-zinc-300' : 'bg-zinc-950 text-emerald-400 border-white/10']" ref="logHost">
           <div v-if="isLoadingLogs && !nodeLogs" class="flex items-center justify-center h-full text-zinc-400">{{ t('node_loading_logs') }}</div>
           <pre v-else>{{ nodeLogs || t('node_no_logs') }}</pre>
         </div>
@@ -298,6 +298,7 @@ export default {
   emits: ['node-updated', 'node-deleted'],
   setup(props, { emit }) {
     const t = inject('t') || ((k) => k);
+    const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
     const { user, hasPermission, isReadOnly } = inject('authCtx', { user: ref(null), hasPermission: () => false, isReadOnly: ref(false) });
 
     const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
@@ -424,7 +425,11 @@ export default {
         showToast(t('node_toast_sub_updated'));
       } catch (e) {
         console.error('Error updating sub URL:', e);
-        showToast(t('node_toast_sub_failed'), 'error');
+        if (e.response && e.response.status === 400 && e.response.data && e.response.data.error && e.response.data.error.startsWith('Invalid Subscription URL')) {
+          showToast(t('node_sub_invalid_url'), 'error');
+        } else {
+          showToast(t('node_toast_sub_failed'), 'error');
+        }
       }
     };
 
@@ -624,7 +629,7 @@ export default {
       logContainers, logContainer, autoRefreshLogs, logRefreshInterval, copyLogs,
       user, isOwner, canManage, canRename, canDelete, canEditSubCard, canSwitch, canViewNodeLogs,
       canTerminate, canUpdateClient, canSoftDelete,
-      isReadOnly, toast, toastType, logHost, t,
+      isReadOnly, toast, toastType, logHost, prefs, t,
     };
   },
 };

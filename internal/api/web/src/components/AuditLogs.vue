@@ -68,7 +68,7 @@
           </button>
         </div>
       </div>
-      <div class="terminal bg-black p-4 rounded-2xl border border-white/5 font-mono text-xs text-emerald-400 h-[36rem] overflow-y-auto whitespace-pre-wrap shadow-inner">
+      <div :class="['terminal font-mono text-xs p-4 rounded-2xl h-[36rem] overflow-y-auto whitespace-pre-wrap shadow-inner border', prefs.theme_mode === 'light' ? 'bg-zinc-100 text-zinc-900 border-zinc-300' : 'bg-zinc-950 text-emerald-400 border-white/10']">
         <div v-if="isLoadingMasterLogs && !masterLogs" class="flex items-center justify-center h-full text-zinc-400">{{ t('logs_loading') }}</div>
         <pre v-else>{{ masterLogs || t('logs_none') }}</pre>
       </div>
@@ -86,6 +86,7 @@ export default {
   setup() {
     const authCtx = inject('authCtx', {});
     const t = inject('t') || ((k) => k);
+    const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
     const canViewAuditLogs = computed(() => authCtx.canViewAuditLogs?.value ?? false);
     const canViewMasterLogs = computed(() => authCtx.canViewMasterLogs?.value ?? false);
 
@@ -187,6 +188,7 @@ export default {
       toast,
       canViewAuditLogs,
       canViewMasterLogs,
+      prefs,
       t,
     };
   },

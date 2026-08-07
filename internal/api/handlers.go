@@ -565,6 +565,35 @@ func validSubscriptionURL(raw string) bool {
 	return true
 }
 
+// verifySubscriptionURLReachable performs a fast HTTP GET (5s timeout) to
+// confirm the subscription URL actually exists and serves a valid response
+// before it is saved. Any transport error (DNS, connection refused, timeout)
+// or an HTTP status >= 400 rejects the URL.
+func verifySubscriptionURLReachable(raw string) error {
+	raw = strings.TrimSpace(raw)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(raw)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	_, _ = io.CopyN(io.Discard, resp.Body, 4096)
+	if resp.StatusCode >= http.StatusBadRequest {
+		return errors.New("server returned HTTP " + strconv.Itoa(resp.StatusCode))
+	}
+	return nil
+}
+
+// writeInvalidSubURLError rejects an unreachable subscription URL with a
+// fixed 400 payload (the web UI matches this message for its error toast).
+func writeInvalidSubURLError(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadRequest)
+	json.NewEncoder(w).Encode(map[string]string{
+		"error": "Invalid Subscription URL: Could not connect or server returned an error",
+	})
+}
+
 func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request) {
 	var req SubscriptionValidateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -769,6 +798,12 @@ func (a *API) UpdateNodeHandler(w http.ResponseWriter, r *http.Request) {
 		node.Name = req.Name
 	}
 	if req.SubURL != "" {
+		// Live check: the URL must actually be reachable before it is saved.
+		if err := verifySubscriptionURLReachable(req.SubURL); err != nil {
+			log.Printf("WARN: Rejected unreachable sub_url %s for node %s: %v", req.SubURL, nodeID, err)
+			writeInvalidSubURLError(w)
+			return
+		}
 		node.SubURL = req.SubURL
 	}
 
@@ -809,6 +844,13 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !validSubscriptionURL(req.SubURL) {
 		http.Error(w, "Bad Request: sub_url must be a valid http(s) URL", http.StatusBadRequest)
+		return
+	}
+
+	// Live check: the URL must actually be reachable before it is saved.
+	if err := verifySubscriptionURLReachable(req.SubURL); err != nil {
+		log.Printf("WARN: Rejected unreachable sub_url %s for node %s: %v", req.SubURL, nodeID, err)
+		writeInvalidSubURLError(w)
 		return
 	}
 
@@ -870,6 +912,13 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !validSubscriptionURL(req.SubURL) {
 		http.Error(w, "Bad Request: sub_url must be a valid http(s) URL", http.StatusBadRequest)
+		return
+	}
+
+	// Live check: the URL must actually be reachable before it is saved for ALL nodes.
+	if err := verifySubscriptionURLReachable(req.SubURL); err != nil {
+		log.Printf("WARN: Rejected unreachable sub_url %s for mass update: %v", req.SubURL, err)
+		writeInvalidSubURLError(w)
 		return
 	}
 
