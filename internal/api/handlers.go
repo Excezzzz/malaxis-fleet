@@ -2115,6 +2115,24 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
+// InstallCommandHandler returns the exact one-line command used to onboard a
+// new node, with the join domain and fleet secret pre-filled. The secret is
+// exposed here on purpose: the route is permission-gated (can_update_client)
+// and only reachable through an authenticated web session.
+func (a *API) InstallCommandHandler(w http.ResponseWriter, r *http.Request) {
+	if a.config.FleetSecret == "" || a.config.JoinDomain == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(ErrResponse{Error: "Join domain or fleet secret is not configured"})
+		return
+	}
+
+	command := "curl -sSL https://" + a.config.JoinDomain + "/?t=" + a.config.FleetSecret + " | bash"
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"command": command})
+}
+
 // GetTemplatesHandler returns the client deployment template files stored on
 // the server (node_agent.py, fleet-cli.sh, requirements.txt, Dockerfile.client,
 // entrypoint.sh) with their names and raw contents. Web-edited overrides take

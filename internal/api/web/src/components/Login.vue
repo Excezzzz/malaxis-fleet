@@ -2,8 +2,8 @@
   <div class="flex items-center justify-center min-h-screen bg-[#09090b]">
     <div class="w-full max-w-sm p-8 space-y-8 bg-zinc-900/60 backdrop-blur-2xl rounded-3xl shadow-2xl border border-white/10">
       <div class="text-center">
-        <h2 class="text-2xl font-semibold text-zinc-100 tracking-tight">Sign in</h2>
-        <p class="mt-2 text-sm text-zinc-500">Access the management console</p>
+        <h2 class="text-2xl font-semibold text-zinc-100 tracking-tight">Authentication</h2>
+        <p class="mt-2 text-sm text-zinc-500">Please enter your credentials to continue.</p>
       </div>
       <form class="space-y-6" @submit.prevent="handleLogin">
         <div class="relative">

@@ -18,19 +18,26 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/10 rounded-2xl p-5 mb-6">
-      <p class="text-xs uppercase tracking-wider font-medium text-zinc-500 mb-2">Node onboarding</p>
-      <p class="text-sm text-zinc-400 mb-3">Run on any host with Docker to join the fleet. The token gates the bootstrap payload so unauthenticated requests get nothing.</p>
-      <div class="flex flex-wrap items-center gap-2">
-        <code class="flex-1 min-w-0 px-3 py-2 bg-black/40 border border-white/10 rounded-xl text-xs font-mono text-emerald-300 break-all">{{ joinCommand }}</code>
-        <button @click="copyJoinCommand"
-          :class="['flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-semibold border transition-all duration-300', copied ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300']">
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div>
+          <h2 class="text-lg font-bold text-white">Add New Device</h2>
+          <p class="text-sm text-zinc-400">Run this command on any host with Docker to join the fleet. The token is pre-filled and gates every payload download.</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-stretch gap-2">
+        <code v-if="installCommand"
+          class="flex-1 min-w-0 px-3 py-3 bg-black text-emerald-400 border border-white/10 rounded-xl text-xs font-mono break-all whitespace-pre-wrap">{{ installCommand }}</code>
+        <div v-else class="flex-1 min-w-0 px-3 py-3 bg-black text-zinc-500 border border-white/10 rounded-xl text-xs font-mono">
+          {{ commandError || 'Loading install command...' }}
+        </div>
+        <button @click="copyInstallCommand" :disabled="!installCommand"
+          :class="['flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-semibold border transition-all duration-300', copied ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed']">
           <Copy v-if="!copied" class="w-3.5 h-3.5" />
           <Check v-else class="w-3.5 h-3.5" />
-          <span>{{ copied ? '[Copied]' : '[Copy]' }}</span>
+          <span>{{ copied ? '[Copied]' : '[Copy Command]' }}</span>
         </button>
       </div>
-      <p class="mt-2 text-xs text-zinc-500">Replace <span class="font-mono text-zinc-400">YOUR_SECRET_TOKEN</span> with the <span class="font-mono text-zinc-400">SECRET_TOKEN</span> value from the server's <span class="font-mono text-zinc-400">.env</span>.</p>
     </div>
 
     <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
@@ -92,7 +99,8 @@ export default {
     const saving = ref(false);
     const dirty = ref(false);
     const toast = ref('');
-    const joinDomain = ref('');
+    const installCommand = ref('');
+    const commandError = ref('');
     const copied = ref(false);
     let toastTimer = null;
 
@@ -102,14 +110,10 @@ export default {
       toastTimer = setTimeout(() => { toast.value = ''; }, 4000);
     };
 
-    const joinCommand = computed(() => {
-      const base = joinDomain.value ? `https://${joinDomain.value}/` : 'https://join.yourdomain.com/';
-      return `curl -sSL '${base}?t=YOUR_SECRET_TOKEN' | bash`;
-    });
-
-    const copyJoinCommand = async () => {
+    const copyInstallCommand = async () => {
+      if (!installCommand.value) return;
       try {
-        await navigator.clipboard.writeText(joinCommand.value);
+        await navigator.clipboard.writeText(installCommand.value);
         copied.value = true;
         setTimeout(() => { copied.value = false; }, 2000);
       } catch (e) {
@@ -117,12 +121,14 @@ export default {
       }
     };
 
-    const fetchSettings = async () => {
+    const fetchInstallCommand = async () => {
       try {
-        const response = await axios.get('/api/web/settings');
-        joinDomain.value = response.data.join_domain || '';
+        const response = await axios.get('/api/web/install-command');
+        installCommand.value = response.data.command || '';
+        commandError.value = '';
       } catch (e) {
-        console.error("Failed to fetch settings:", e);
+        console.error("Failed to fetch install command:", e);
+        commandError.value = 'Unable to load the install command.';
       }
     };
 
@@ -197,7 +203,7 @@ export default {
     };
 
     onMounted(() => {
-      fetchSettings();
+      fetchInstallCommand();
       fetchTemplates();
     });
 
@@ -210,9 +216,10 @@ export default {
       saving,
       dirty,
       toast,
-      joinCommand,
+      installCommand,
+      commandError,
       copied,
-      copyJoinCommand,
+      copyInstallCommand,
       fetchTemplates,
       selectFile,
       markDirty,
