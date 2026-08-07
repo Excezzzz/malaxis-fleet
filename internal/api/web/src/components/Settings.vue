@@ -22,11 +22,11 @@
           <p class="text-sm font-medium text-zinc-300 mb-3">{{ t('settings_theme') }}</p>
           <div class="flex items-center gap-2">
             <button @click="setTheme('obsidian')"
-              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.theme_mode === 'obsidian' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">🖤 Obsidian</button>
+              :class="['inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all cursor-pointer border', prefs.theme_mode === 'obsidian' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">🖤 Obsidian</button>
             <button @click="setTheme('dark')"
-              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.theme_mode === 'dark' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">🌙 Dark</button>
+              :class="['inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all cursor-pointer border', prefs.theme_mode === 'dark' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">🌙 Dark</button>
             <button @click="setTheme('light')"
-              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.theme_mode === 'light' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">☀️ Light</button>
+              :class="['inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all cursor-pointer border', prefs.theme_mode === 'light' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">☀️ Light</button>
           </div>
         </div>
 
@@ -34,9 +34,9 @@
           <p class="text-sm font-medium text-zinc-300 mb-3">{{ t('settings_language') }}</p>
           <div class="flex items-center gap-2">
             <button @click="setLanguage('ru')"
-              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.language === 'ru' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[RU]</button>
+              :class="['inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all cursor-pointer border', prefs.language === 'ru' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[RU]</button>
             <button @click="setLanguage('en')"
-              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.language === 'en' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[EN]</button>
+              :class="['inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all cursor-pointer border', prefs.language === 'en' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[EN]</button>
           </div>
         </div>
       </div>
@@ -81,7 +81,7 @@
         </div>
 
         <div class="flex space-x-4">
-          <button @click="saveBackupSettings" :disabled="savingBackup" class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+          <button @click="saveBackupSettings" :disabled="savingBackup" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md disabled:opacity-50">
             <span class="font-mono text-sm">[{{ t('save') }}]</span>
           </button>
         </div>
@@ -119,11 +119,11 @@
         </div>
 
         <div class="flex space-x-4">
-          <button @click="saveBotSettings" :disabled="saving" class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+          <button @click="saveBotSettings" :disabled="saving" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md disabled:opacity-50">
             <span class="font-mono text-sm" v-if="saving">[{{ t('settings_saving_bot') }}]</span>
             <span class="font-mono text-sm" v-else>[{{ t('settings_save_bot') }}]</span>
           </button>
-          <button @click="testConnection" :disabled="testing" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-200 rounded-xl transition-colors disabled:opacity-50">
+          <button @click="testConnection" :disabled="testing" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-zinc-100 hover:bg-zinc-200 text-zinc-900 border border-zinc-300 disabled:opacity-50">
             <span class="font-mono text-sm" v-if="testing">[{{ t('settings_testing') }}]</span>
             <span class="font-mono text-sm" v-else>[{{ t('settings_test') }}]</span>
           </button>
@@ -149,13 +149,9 @@
           </div>
           <div class="mt-4 flex flex-wrap items-center gap-3">
             <button @click="applyBotAvatar" :disabled="avatarApplying"
-              class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+              class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md disabled:opacity-50">
               <span class="font-mono text-sm" v-if="avatarApplying">[{{ t('settings_avatar_applying') }}]</span>
               <span class="font-mono text-sm" v-else>[{{ t('settings_avatar_apply') }}]</span>
-            </button>
-            <button @click="restoreAvatar" :disabled="avatarResetting" class="px-4 py-2 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
-              <span class="font-mono text-sm" v-if="avatarResetting">[{{ t('settings_restoring') }}]</span>
-              <span class="font-mono text-sm" v-else>[{{ t('settings_restore_avatar') }}]</span>
             </button>
           </div>
         </div>
@@ -169,7 +165,7 @@
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_backup') }}<span class="font-mono text-indigo-400">]</span></h2>
       <p class="text-zinc-400 mb-4">{{ t('settings_backup_hint') }}</p>
-      <button @click="downloadBackup" class="px-4 py-2 bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-100 rounded-xl transition-colors">
+      <button @click="downloadBackup" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md">
         <span class="font-mono text-sm">[{{ t('settings_backup_btn') }}]</span>
       </button>
     </div>
@@ -198,7 +194,6 @@ export default {
     const adminChatId = ref('');
     const saving = ref(false);
     const testing = ref(false);
-    const avatarResetting = ref(false);
     const botAvatarColor = ref('indigo');
     const avatarApplying = ref(false);
     const testResult = ref(null);
@@ -346,21 +341,6 @@ export default {
       }
     };
 
-    const restoreAvatar = async () => {
-      avatarResetting.value = true;
-      try {
-        const resp = await fetch('/api/web/settings/bot/reset-avatar', { method: 'POST' });
-        if (!resp.ok) throw new Error((await resp.text()) || 'Failed to restore avatar');
-        avatarToast.value = t('settings_avatar_ok');
-      } catch (e) {
-        avatarToast.value = t('settings_avatar_fail') + ': ' + e.message;
-      } finally {
-        avatarResetting.value = false;
-        clearTimeout(avatarToastTimer);
-        avatarToastTimer = setTimeout(() => { avatarToast.value = ''; }, 4000);
-      }
-    };
-
     const downloadBackup = async () => {
       try {
         const resp = await fetch('/api/web/backup/download');
@@ -383,8 +363,8 @@ export default {
     });
 
     return {
-      botEnabled, botToken, adminChatId, saving, testing, avatarResetting, avatarApplying, botAvatarColor, testResult, saveMessage, avatarToast,
-      saveBotSettings, testConnection, restoreAvatar, applyBotAvatar, downloadBackup,
+      botEnabled, botToken, adminChatId, saving, testing, avatarApplying, botAvatarColor, testResult, saveMessage, avatarToast,
+      saveBotSettings, testConnection, applyBotAvatar, downloadBackup,
       ACCENTS, prefs, setAccent, setTheme, setLanguage,
       backupToLocal, backupToTelegram, backupIntervalHours, savingBackup, backupMessage, saveBackupSettings,
       t,

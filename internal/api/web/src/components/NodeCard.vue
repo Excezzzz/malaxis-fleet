@@ -247,7 +247,7 @@
             </button>
           </div>
         </div>
-        <div class="bg-black p-4 rounded-lg font-mono text-xs text-white/80 h-64 sm:h-96 min-h-0 overflow-y-auto whitespace-pre-wrap flex-1" ref="logHost">
+        <div class="terminal bg-black p-4 rounded-lg font-mono text-xs text-emerald-400 h-64 sm:h-96 min-h-0 overflow-y-auto whitespace-pre-wrap flex-1" ref="logHost">
           <div v-if="isLoadingLogs && !nodeLogs" class="flex items-center justify-center h-full text-zinc-400">{{ t('node_loading_logs') }}</div>
           <pre v-else>{{ nodeLogs || t('node_no_logs') }}</pre>
         </div>
