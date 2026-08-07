@@ -59,7 +59,7 @@
 
     <!-- Create Role Modal -->
     <div v-if="showCreateModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showCreateModal = false">
-      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ editingRole ? t('edit_role') : t('add_role') }}<span class="font-mono text-indigo-400">]</span></h2>
 
         <form @submit.prevent="handleCreateRole">
@@ -114,7 +114,7 @@
 
     <!-- Edit Role Modal -->
     <div v-if="editingRole" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="editingRole = null">
-      <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('edit_role') }}<span class="font-mono text-indigo-400">]</span>: {{ editingRole.name }}</h2>
 
         <form @submit.prevent="handleEditRole">
@@ -230,7 +230,7 @@ export default {
     const authCtx = inject('authCtx', {});
     const t = inject('t') || ((k) => k);
     const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
-    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/25 backdrop-blur-sm' : 'bg-black/70 backdrop-blur-md');
+    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/25 backdrop-blur-sm' : 'bg-black/60 backdrop-blur-md');
     const actorRole = computed(() => authCtx.user?.value?.role || '');
     const canManageRoles = computed(() => authCtx.canManageRoles?.value ?? false);
 

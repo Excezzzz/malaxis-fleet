@@ -752,7 +752,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🛡️ Роли", "🛡️ Manage Roles")), "roles:menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🎨 Вернуть аватар", "🎨 Restore Avatar")), "avatar:restore"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🎨 Установить стандартную аватарку", "🎨 Set Standard Avatar")), "avatar:restore"),
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🌐 Язык: RU", "🌐 Language: EN")), "prefs:lang"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
@@ -951,7 +951,7 @@ func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Настройка обновлена", "Setting updated")))
 	case "avatar:restore":
 		if err := b.SetDefaultAvatar(); err != nil {
-			b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось вернуть аватар", "Could not restore avatar")))
+			b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось установить стандартную аватарку", "Could not set standard avatar")))
 			log.Printf("Bot: avatar restore failed: %v", err)
 			return
 		}
