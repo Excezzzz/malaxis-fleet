@@ -180,8 +180,8 @@ func (b *Bot) Start() error {
 }
 
 // SetDefaultAvatar uploads the embedded default avatar to the Telegram bot via
-// setMyProfilePhoto. A re-upload of an identical photo is rejected by Telegram
-// and treated as success here, so repeated calls are harmless.
+// setMyProfilePhoto (Bot API 7.0+ format: the photo field carries the JSON
+// input profile photo descriptor, the bytes travel in the attach:// file part).
 func (b *Bot) SetDefaultAvatar() error {
 	token := b.token
 	if token == "" {
@@ -192,7 +192,13 @@ func (b *Bot) SetDefaultAvatar() error {
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("photo", "default_avatar.png")
+	if err := writer.WriteField("photo", `{"type":"static","photo":"attach://avatar_data"}`); err != nil {
+		return err
+	}
+	part, err := writer.CreatePart(map[string][]string{
+		"Content-Disposition": {`form-data; name="avatar_data"; filename="avatar.png"`},
+		"Content-Type":        {"image/png"},
+	})
 	if err != nil {
 		return err
 	}
