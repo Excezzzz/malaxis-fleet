@@ -2201,8 +2201,8 @@ func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		BackupToLocal      *bool `json:"backup_to_local"`
-		BackupToTelegram   *bool `json:"backup_to_telegram"`
+		BackupToLocal       *bool `json:"backup_to_local"`
+		BackupToTelegram    *bool `json:"backup_to_telegram"`
 		BackupIntervalHours *int  `json:"backup_interval_hours"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

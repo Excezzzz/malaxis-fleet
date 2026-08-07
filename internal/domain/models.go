@@ -39,19 +39,22 @@ func RoleRank(role string) int {
 
 // Permission constants for custom roles
 const (
-	PermViewNodes      = "can_view_nodes"
-	PermSwitchVPN      = "can_switch_vpn"
-	PermEditSub        = "can_edit_sub"
-	PermRenameNode     = "can_rename_node"
-	PermTerminateNode  = "can_terminate_node"
-	PermUpdateClient   = "can_update_client"
-	PermPurgeNodes     = "can_purge_nodes"
-	PermViewUsers      = "can_view_users"
-	PermCreateUsers    = "can_create_users"
-	PermEditUsers      = "can_edit_users"
-	PermDeleteUsers    = "can_delete_users"
-	PermViewRoles      = "can_view_roles"
-	PermManageRoles    = "can_manage_roles"
+	PermViewNodes     = "can_view_nodes"
+	PermSwitchVPN     = "can_switch_vpn"
+	PermEditSub       = "can_edit_sub"
+	PermRenameNode    = "can_rename_node"
+	PermTerminateNode = "can_terminate_node"
+	PermUpdateClient  = "can_update_client"
+	PermPurgeNodes    = "can_purge_nodes"
+	PermViewUsers     = "can_view_users"
+	PermCreateUsers   = "can_create_users"
+	PermEditUsers     = "can_edit_users"
+	PermDeleteUsers   = "can_delete_users"
+	PermViewRoles     = "can_view_roles"
+	PermManageRoles   = "can_manage_roles"
+	// Deprecated: kept for backwards compatibility with roles seeded before
+	// the audit-log split. Not enforced by any route; the audit log endpoint
+	// requires PermViewAuditLogs.
 	PermViewAudit      = "can_view_audit"
 	PermViewNodeLogs   = "can_view_node_logs"
 	PermViewMasterLogs = "can_view_master_logs"

@@ -1013,24 +1013,25 @@ func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 // showBackupIntervalPicker renders the backup-frequency picker keyboard.
 func (b *Bot) showBackupIntervalPicker(chatID int64, messageID int) {
 	interval := b.backupIntervalHours()
-	text := fmt.Sprintf("<b>⏱️ %s</b>\n\n%s: <b>%d %s</b>",
-		b.tr("Частота бэкапов", "Backup Interval"),
+	_, emojisEnabled := b.botPrefs()
+	text := fmt.Sprintf("<b>%s</b>\n\n%s: <b>%d %s</b>",
+		b.fmtBtn(b.tr("Частота бэкапов", "Backup Interval"), "⏱️", emojisEnabled),
 		b.tr("Текущий интервал", "Current interval"),
 		interval, b.tr("ч", "h"))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕐 6 "+b.tr("ч", "h")), "backup:set:6"),
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕜 12 "+b.tr("ч", "h")), "backup:set:12"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("6 ч", "6 h"), "🕐", emojisEnabled), "backup:set:6"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("12 ч", "12 h"), "🕜", emojisEnabled), "backup:set:12"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕐 24 "+b.tr("ч", "h")+" ("+b.tr("1 раз в сутки", "daily")+")"), "backup:set:24"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("24 ч (1 раз в сутки)", "24 h (daily)"), "🕐", emojisEnabled), "backup:set:24"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("📅 168 "+b.tr("ч", "h")+" ("+b.tr("1 раз в неделю", "weekly")+")"), "backup:set:168"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("168 ч (1 раз в неделю)", "168 h (weekly)"), "📅", emojisEnabled), "backup:set:168"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("⬅️ "+b.tr("Главное меню", "Main Menu")), "menu:main"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Главное меню", "Main Menu"), "⬅️", emojisEnabled), "menu:main"),
 		),
 	)
 
