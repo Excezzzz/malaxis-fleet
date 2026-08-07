@@ -64,10 +64,6 @@
         </span>
         <span class="flex-1 min-w-0 truncate whitespace-nowrap leading-none">
           <strong class="font-semibold" :class="statusColorClass">{{ node.pipeline_status || t('node_idle') }}</strong>
-          <template v-if="node.status_message && !isTaskQueued">
-            <span class="text-zinc-600 mx-1">·</span>
-            <span :class="statusColorClass">{{ node.status_message }}</span>
-          </template>
         </span>
         <span v-if="(node.available_servers || []).length" class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">
           {{ node.available_servers.length }} {{ t('node_configs') }}
@@ -345,8 +341,6 @@ export default {
 
     const isTerminated = computed(() => (props.node.pipeline_status || '').toLowerCase() === 'terminated');
 
-    const isTaskQueued = computed(() => (props.node.pipeline_status || '').toLowerCase() === 'queued');
-
     const pendingTaskLabel = computed(() => {
         const cmd = props.node.pending_command || '';
         try {
@@ -615,7 +609,7 @@ export default {
     });
 
     return {
-      isOnline, isTerminated, isTaskQueued, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, statusBgClass, pendingTaskLabel, pendingCommandCount,
+      isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, statusBgClass, pendingTaskLabel, pendingCommandCount,
       showSubModal, newSubUrl, updateSubUrl,
       pushClientFiles,
       copySubUrl, softDeleteNode, confirmDelete,
