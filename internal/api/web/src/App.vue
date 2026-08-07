@@ -57,28 +57,6 @@
         </div>
 
         <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
-          <!-- Accent color picker -->
-          <div class="hidden xl:flex items-center gap-1.5 px-3 py-2 rounded-full bg-white/5 border border-white/10" :title="t('prefs_accent')">
-            <button v-for="c in accentOptions" :key="c.id" @click="setAccent(c.id)"
-              class="w-4 h-4 rounded-full transition-transform hover:scale-125"
-              :class="prefs.accent_color === c.id ? 'ring-2 ring-offset-2 ring-offset-[#09090b]' : ''"
-              :style="{ backgroundColor: c.color, '--tw-ring-color': c.color }"></button>
-          </div>
-
-          <!-- Language toggle -->
-          <div class="flex items-center rounded-full bg-white/5 border border-white/10 p-0.5 text-xs font-bold" :title="t('prefs_theme')">
-            <button v-for="lang in ['ru', 'en']" :key="lang" @click="setLanguage(lang)"
-              class="px-2 py-1 rounded-full transition-colors uppercase"
-              :class="prefs.language === lang ? 'bg-indigo-500/20 text-indigo-300' : 'text-zinc-500 hover:text-zinc-300'">{{ lang }}</button>
-          </div>
-
-          <!-- Theme toggle -->
-          <div class="flex items-center rounded-full bg-white/5 border border-white/10 p-0.5 text-xs" :title="t('prefs_theme')">
-            <button v-for="th in themeOptions" :key="th.id" @click="setTheme(th.id)"
-              class="w-7 h-6 flex items-center justify-center rounded-full transition-colors"
-              :class="prefs.theme_mode === th.id ? 'bg-indigo-500/20' : 'hover:bg-white/5'">{{ th.icon }}</button>
-          </div>
-
           <div v-if="username" class="hidden sm:flex flex-col text-right mr-2">
             <span class="text-sm font-bold text-white whitespace-nowrap">{{ username }}</span>
             <span v-if="roleName" class="text-[10px] uppercase tracking-wider text-indigo-400">{{ roleName }}</span>
@@ -154,13 +132,6 @@ export default {
     const permissions = ref([]);
     const prefs = ref({ accent_color: 'indigo', theme_mode: 'obsidian', language: 'ru', bot_emojis_enabled: true });
 
-    const accentOptions = Object.entries(ACCENTS).map(([id, color]) => ({ id, color }));
-    const themeOptions = [
-      { id: 'obsidian', icon: '🖤' },
-      { id: 'dark', icon: '🌙' },
-      { id: 'light', icon: '☀️' },
-    ];
-
     const applyPrefs = () => {
       const root = document.documentElement;
       const acc = ACCENTS[prefs.value.accent_color] || ACCENTS.indigo;
@@ -204,7 +175,13 @@ export default {
     const setTheme = (id) => savePrefs({ theme_mode: id });
     const setLanguage = (lang) => savePrefs({ language: lang });
 
-    const t = (key) => (messages[prefs.value.language] && messages[prefs.value.language][key]) || key;
+    const t = (key, vars) => {
+      let s = (messages[prefs.value.language] && messages[prefs.value.language][key]) || key;
+      if (vars) {
+        for (const [k, v] of Object.entries(vars)) s = s.replaceAll('{' + k + '}', String(v));
+      }
+      return s;
+    };
 
     provide('t', t);
     provide('prefs', prefs);
@@ -355,11 +332,6 @@ export default {
       roleName,
       username,
       prefs,
-      accentOptions,
-      themeOptions,
-      setAccent,
-      setTheme,
-      setLanguage,
       t,
       login,
       logout,

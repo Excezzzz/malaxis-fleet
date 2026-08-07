@@ -5,6 +5,81 @@
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
+      <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_appearance') }}<span class="font-mono text-indigo-400">]</span></h2>
+
+      <div class="space-y-6">
+        <div>
+          <p class="text-sm font-medium text-zinc-300 mb-3">{{ t('settings_accent') }}</p>
+          <div class="flex flex-wrap items-center gap-3">
+            <button v-for="(hex, id) in ACCENTS" :key="id" @click="setAccent(id)"
+              class="w-8 h-8 rounded-full border-2 transition-all cursor-pointer hover:scale-110"
+              :class="prefs.accent_color === id ? 'border-white ring-2 ring-indigo-400/50' : 'border-white/20'"
+              :style="{ backgroundColor: hex }" :title="id"></button>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-sm font-medium text-zinc-300 mb-3">{{ t('settings_theme') }}</p>
+          <div class="flex items-center gap-2">
+            <button @click="setTheme('obsidian')"
+              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.theme_mode === 'obsidian' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">🖤 Obsidian</button>
+            <button @click="setTheme('dark')"
+              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.theme_mode === 'dark' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">🌙 Dark</button>
+            <button @click="setTheme('light')"
+              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.theme_mode === 'light' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">☀️ Light</button>
+          </div>
+        </div>
+
+        <div>
+          <p class="text-sm font-medium text-zinc-300 mb-3">{{ t('settings_language') }}</p>
+          <div class="flex items-center gap-2">
+            <button @click="setLanguage('ru')"
+              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.language === 'ru' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[RU]</button>
+            <button @click="setLanguage('en')"
+              :class="['px-4 py-2 rounded-xl border transition-all cursor-pointer text-sm font-semibold', prefs.language === 'en' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[EN]</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
+      <h2 class="text-2xl font-bold tracking-tight mb-2"><span class="font-mono text-indigo-400">[</span>{{ t('settings_auto_backups') }}<span class="font-mono text-indigo-400">]</span></h2>
+      <p class="text-zinc-400 mb-6 text-sm">{{ t('settings_auto_backups_hint') }}</p>
+
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_local') }}</p>
+            <p class="text-xs text-zinc-500">{{ t('settings_backup_local_desc') }}</p>
+          </div>
+          <button @click="backupToLocal = !backupToLocal" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToLocal ? 'bg-indigo-500' : 'bg-zinc-700'">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="backupToLocal ? 'translate-x-6' : 'translate-x-1'"></span>
+          </button>
+        </div>
+
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_tg') }}</p>
+            <p class="text-xs text-zinc-500">{{ t('settings_backup_tg_desc') }}</p>
+          </div>
+          <button @click="backupToTelegram = !backupToTelegram" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToTelegram ? 'bg-indigo-500' : 'bg-zinc-700'">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="backupToTelegram ? 'translate-x-6' : 'translate-x-1'"></span>
+          </button>
+        </div>
+
+        <div class="flex space-x-4">
+          <button @click="saveBackupSettings" :disabled="savingBackup" class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+            <span class="font-mono text-sm">[{{ t('save') }}]</span>
+          </button>
+        </div>
+
+        <div v-if="backupMessage" class="text-sm" :class="backupMessage.type === 'success' ? 'text-green-400' : 'text-red-400'">
+          {{ backupMessage.text }}
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_bot') }}<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
@@ -39,10 +114,6 @@
             <span class="font-mono text-sm" v-if="testing">[{{ t('settings_testing') }}]</span>
             <span class="font-mono text-sm" v-else>[{{ t('settings_test') }}]</span>
           </button>
-          <button @click="restoreAvatar" :disabled="avatarResetting" class="px-4 py-2 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
-            <span class="font-mono text-sm" v-if="avatarResetting">[{{ t('settings_restoring') }}]</span>
-            <span class="font-mono text-sm" v-else>[{{ t('settings_restore_avatar') }}]</span>
-          </button>
         </div>
 
         <div v-if="testResult" class="text-sm" :class="testResult.success ? 'text-green-400' : 'text-red-400'">
@@ -52,6 +123,28 @@
 
         <div v-if="saveMessage" class="text-sm" :class="saveMessage.type === 'success' ? 'text-green-400' : 'text-red-400'">
           {{ saveMessage.text }}
+        </div>
+
+        <div class="pt-4 border-t border-white/5">
+          <p class="text-sm font-medium text-zinc-300 mb-1">{{ t('settings_avatar_color') }}</p>
+          <p class="text-xs text-zinc-500 mb-3">{{ t('settings_avatar_color_hint') }}</p>
+          <div class="flex flex-wrap items-center gap-3">
+            <button v-for="(hex, id) in ACCENTS" :key="id" @click="botAvatarColor = id"
+              class="w-8 h-8 rounded-full border-2 transition-all cursor-pointer hover:scale-110"
+              :class="botAvatarColor === id ? 'border-white ring-2 ring-indigo-400/50' : 'border-white/20'"
+              :style="{ backgroundColor: hex }" :title="t('color_' + id)"></button>
+          </div>
+          <div class="mt-4 flex flex-wrap items-center gap-3">
+            <button @click="applyBotAvatar" :disabled="avatarApplying"
+              class="px-4 py-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+              <span class="font-mono text-sm" v-if="avatarApplying">[{{ t('settings_avatar_applying') }}]</span>
+              <span class="font-mono text-sm" v-else>[{{ t('settings_avatar_apply') }}]</span>
+            </button>
+            <button @click="restoreAvatar" :disabled="avatarResetting" class="px-4 py-2 bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-50">
+              <span class="font-mono text-sm" v-if="avatarResetting">[{{ t('settings_restoring') }}]</span>
+              <span class="font-mono text-sm" v-else>[{{ t('settings_restore_avatar') }}]</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -73,20 +166,60 @@
 <script>
 import { ref, onMounted, inject } from 'vue';
 
+const ACCENTS = {
+  indigo: '#6366f1',
+  emerald: '#10b981',
+  amber: '#f59e0b',
+  rose: '#f43f5e',
+  cyan: '#06b6d4',
+};
+
 export default {
   name: 'Settings',
   setup() {
     const t = inject('t') || ((k) => k);
+    const prefs = inject('prefs', ref({ accent_color: 'indigo', theme_mode: 'obsidian', language: 'ru' }));
+    const savePrefs = inject('savePrefs', null);
     const botEnabled = ref(false);
     const botToken = ref('');
     const adminChatId = ref('');
     const saving = ref(false);
     const testing = ref(false);
     const avatarResetting = ref(false);
+    const botAvatarColor = ref('indigo');
+    const avatarApplying = ref(false);
     const testResult = ref(null);
     const saveMessage = ref(null);
     const avatarToast = ref('');
+    const backupToLocal = ref(true);
+    const backupToTelegram = ref(false);
+    const savingBackup = ref(false);
+    const backupMessage = ref(null);
     let avatarToastTimer = null;
+
+    const setAccent = async (id) => {
+      if (savePrefs) {
+        await savePrefs({ accent_color: id });
+      } else {
+        prefs.value = { ...prefs.value, accent_color: id };
+      }
+    };
+
+    const setTheme = async (id) => {
+      if (savePrefs) {
+        await savePrefs({ theme_mode: id });
+      } else {
+        prefs.value = { ...prefs.value, theme_mode: id };
+      }
+    };
+
+    const setLanguage = async (lang) => {
+      if (savePrefs) {
+        await savePrefs({ language: lang });
+      } else {
+        prefs.value = { ...prefs.value, language: lang };
+      }
+    };
 
     const fetchSettings = async () => {
       try {
@@ -96,9 +229,37 @@ export default {
           botEnabled.value = data.tg_bot_enabled || false;
           botToken.value = data.tg_bot_token || '';
           adminChatId.value = data.tg_admin_chat_id || '';
+          backupToLocal.value = data.backup_to_local !== false;
+          backupToTelegram.value = data.backup_to_telegram === true;
+          botAvatarColor.value = data.bot_avatar_color || 'indigo';
         }
       } catch (e) {
         console.error('Failed to fetch settings:', e);
+      }
+    };
+
+    const saveBackupSettings = async () => {
+      savingBackup.value = true;
+      backupMessage.value = null;
+      try {
+        const resp = await fetch('/api/web/settings/backup', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            backup_to_local: backupToLocal.value,
+            backup_to_telegram: backupToTelegram.value,
+          }),
+        });
+        if (resp.ok) {
+          backupMessage.value = { type: 'success', text: t('settings_bot_saved') };
+        } else {
+          const err = await resp.text();
+          backupMessage.value = { type: 'error', text: t('settings_save_failed', { err }) };
+        }
+      } catch (e) {
+        backupMessage.value = { type: 'error', text: t('settings_error', { err: e.message }) };
+      } finally {
+        savingBackup.value = false;
       }
     };
 
@@ -116,13 +277,13 @@ export default {
           }),
         });
         if (resp.ok) {
-          saveMessage.value = { type: 'success', text: 'Bot settings saved. Bot is rebooting with new settings...' };
+          saveMessage.value = { type: 'success', text: t('settings_bot_saved') };
         } else {
           const err = await resp.text();
-          saveMessage.value = { type: 'error', text: 'Failed to save: ' + err };
+          saveMessage.value = { type: 'error', text: t('settings_save_failed', { err }) };
         }
       } catch (e) {
-        saveMessage.value = { type: 'error', text: 'Error: ' + e.message };
+        saveMessage.value = { type: 'error', text: t('settings_error', { err: e.message }) };
       } finally {
         saving.value = false;
       }
@@ -147,6 +308,25 @@ export default {
         testResult.value = { success: false, error: e.message };
       } finally {
         testing.value = false;
+      }
+    };
+
+    const applyBotAvatar = async () => {
+      avatarApplying.value = true;
+      try {
+        const resp = await fetch('/api/web/settings/bot/avatar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ color: botAvatarColor.value }),
+        });
+        if (!resp.ok) throw new Error((await resp.text()) || 'Failed to apply avatar');
+        avatarToast.value = t('settings_avatar_ok');
+      } catch (e) {
+        avatarToast.value = t('settings_avatar_fail') + ': ' + e.message;
+      } finally {
+        avatarApplying.value = false;
+        clearTimeout(avatarToastTimer);
+        avatarToastTimer = setTimeout(() => { avatarToast.value = ''; }, 4000);
       }
     };
 
@@ -178,7 +358,7 @@ export default {
         URL.revokeObjectURL(url);
       } catch (e) {
         console.error('Backup download failed:', e);
-        alert('Failed to download backup: ' + e.message);
+        alert(t('settings_backup_download_failed', { err: e.message }));
       }
     };
 
@@ -187,8 +367,11 @@ export default {
     });
 
     return {
-      botEnabled, botToken, adminChatId, saving, testing, avatarResetting, testResult, saveMessage, avatarToast,
-      saveBotSettings, testConnection, restoreAvatar, downloadBackup, t,
+      botEnabled, botToken, adminChatId, saving, testing, avatarResetting, avatarApplying, botAvatarColor, testResult, saveMessage, avatarToast,
+      saveBotSettings, testConnection, restoreAvatar, applyBotAvatar, downloadBackup,
+      ACCENTS, prefs, setAccent, setTheme, setLanguage,
+      backupToLocal, backupToTelegram, savingBackup, backupMessage, saveBackupSettings,
+      t,
     };
   },
 };

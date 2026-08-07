@@ -14,11 +14,11 @@
       <table class="min-w-full divide-y divide-white/5">
         <thead class="bg-white/[0.03]">
           <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">User</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">Role</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">Created At</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">{{ t('users_th_user') }}</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">{{ t('users_th_role') }}</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">{{ t('users_th_created') }}</th>
             <th scope="col" class="relative px-6 py-3">
-              <span class="sr-only">Actions</span>
+              <span class="sr-only">{{ t('users_th_actions') }}</span>
             </th>
           </tr>
         </thead>
@@ -35,16 +35,16 @@
                 {{ user.role_name || user.role }}
               </span>
               <span v-if="userRank(user) !== null" class="ml-2 px-2 py-1 inline-flex text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">
-                [ Rank: {{ userRank(user) }} ]
+                [ {{ t('users_rank') }}: {{ userRank(user) }} ]
               </span>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ new Date(user.created_at).toLocaleDateString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
               <div class="flex items-center justify-end space-x-3">
-                <button v-if="canEditUserRow(user)" @click="openEditUser(user)" class="text-blue-400 hover:text-blue-300 transition-colors" title="Edit User">
+                <button v-if="canEditUserRow(user)" @click="openEditUser(user)" class="text-blue-400 hover:text-blue-300 transition-colors" :title="t('users_edit_tt')">
                   <Edit class="w-5 h-5" />
                 </button>
-                <button v-if="canDeleteUserRow(user)" @click="confirmDeleteUser(user)" class="text-red-500 hover:text-red-700 transition-colors" title="Delete User">
+                <button v-if="canDeleteUserRow(user)" @click="confirmDeleteUser(user)" class="text-red-500 hover:text-red-700 transition-colors" :title="t('users_delete_tt')">
                   <Trash2 class="w-5 h-5" />
                 </button>
               </div>
@@ -61,23 +61,23 @@
         <form @submit.prevent="handleCreateUser">
           <div class="space-y-4">
             <div>
-              <label for="username" class="block text-sm font-medium text-zinc-400">Username</label>
+              <label for="username" class="block text-sm font-medium text-zinc-400">{{ t('users_username') }}</label>
               <input v-model="newUser.username" type="text" id="username" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50" required>
               <p v-if="createError" class="mt-1 text-sm text-red-400">{{ createError }}</p>
             </div>
             <div>
-              <label for="password" class="block text-sm font-medium text-zinc-400">Password</label>
+              <label for="password" class="block text-sm font-medium text-zinc-400">{{ t('users_password') }}</label>
               <input v-model="newUser.password" type="password" id="password" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50" required>
             </div>
              <div>
-                <label for="role" class="block text-sm font-medium text-zinc-400">Role</label>
+                <label for="role" class="block text-sm font-medium text-zinc-400">{{ t('users_role') }}</label>
                 <select v-model="newUser.role_id" id="role" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50" @change="onRoleSelectChange">
-                  <option value="" disabled selected>Select a role...</option>
+                  <option value="" disabled selected>{{ t('users_select_role') }}</option>
                   <option v-for="role in availableRoles" :key="role.id" :value="role.id">{{ role.name }}</option>
                 </select>
              </div>
             <div v-if="isOwner">
-              <label for="color_hex" class="block text-sm font-medium text-zinc-400">Role Color HEX</label>
+              <label for="color_hex" class="block text-sm font-medium text-zinc-400">{{ t('users_role_color') }}</label>
               <div class="flex items-center space-x-2 mt-1">
                 <input v-model="newUser.color_hex" type="color" id="color_picker" class="h-10 w-16 rounded cursor-pointer bg-zinc-800 border-white/10">
                 <input v-model="newUser.color_hex" type="text" id="color_hex" placeholder="#FF5733" class="flex-1 bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
@@ -85,8 +85,8 @@
             </div>
           </div>
           <div class="mt-8 flex justify-end space-x-4">
-            <button type="button" @click="showAddUserModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
-            <button type="submit" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">Create User</button>
+            <button type="button" @click="showAddUserModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('cancel') }}</button>
+            <button type="submit" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">{{ t('users_create_btn') }}</button>
           </div>
         </form>
       </div>
@@ -95,29 +95,29 @@
     <!-- Edit User Modal -->
     <div v-if="editingUser" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" @click.self="editingUser = null">
       <div class="bg-zinc-900/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-2xl p-6 sm:p-8 w-[95%] sm:w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>Edit User<span class="font-mono text-indigo-400">]</span>: {{ editingUser.username }}</h2>
+        <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('users_edit_title') }}<span class="font-mono text-indigo-400">]</span>: {{ editingUser.username }}</h2>
         <form @submit.prevent="handleEditUser">
           <div class="space-y-4">
             <div>
               <label for="edit_role" class="block text-sm font-medium text-zinc-400">
-                Role
-                <span v-if="editingUser.username === currentUser?.username" class="inline-flex items-center ml-1 text-zinc-500" title="Cannot modify your own session role">
+                {{ t('users_role') }}
+                <span v-if="editingUser.username === currentUser?.username" class="inline-flex items-center ml-1 text-zinc-500" :title="t('users_own_role_tt')">
                   <Lock class="w-3.5 h-3.5" />
                 </span>
               </label>
               <select v-model="editUserForm.role" id="edit_role" :disabled="editingUser.username === currentUser?.username" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 disabled:opacity-50 disabled:cursor-not-allowed" @change="onEditRoleSelectChange">
-                <option value="" disabled>Select a role...</option>
+                <option value="" disabled>{{ t('users_select_role') }}</option>
                 <option v-for="role in availableRoles" :key="role.name" :value="role.name">{{ role.name }}</option>
               </select>
             </div>
             <div>
-              <label for="edit_password" class="block text-sm font-medium text-zinc-400">New Password (leave empty to keep current)</label>
-              <input v-model="editUserForm.password" type="password" id="edit_password" placeholder="Enter new password" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+              <label for="edit_password" class="block text-sm font-medium text-zinc-400">{{ t('users_new_pass') }}</label>
+              <input v-model="editUserForm.password" type="password" id="edit_password" :placeholder="t('users_new_pass_ph')" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
             </div>
           </div>
           <div class="mt-8 flex justify-end space-x-4">
-            <button type="button" @click="editingUser = null" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">Cancel</button>
-            <button type="submit" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">Save Changes</button>
+            <button type="button" @click="editingUser = null" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('cancel') }}</button>
+            <button type="submit" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">{{ t('users_save') }}</button>
           </div>
         </form>
       </div>
@@ -226,7 +226,7 @@ export default {
         users.value = await response.json();
       } catch (error) {
         console.error('Error fetching users:', error);
-        alert('Could not fetch users.');
+        alert(t('users_fetch_failed'));
       }
     };
 
@@ -275,7 +275,7 @@ export default {
           body: JSON.stringify(payload),
         });
         if (!response.ok) {
-          let errMsg = 'Failed to update user';
+          let errMsg = t('users_update_failed');
           try {
             const errData = await response.json();
             if (errData.error) errMsg = errData.error;
@@ -286,17 +286,17 @@ export default {
         editingUser.value = null;
         editUserForm.value = { role: '', password: '' };
         await fetchUsers();
-        alert('User updated successfully!');
+        alert(t('users_updated_ok'));
       } catch (error) {
         console.error('Error updating user:', error);
-        alert(error.message || 'Could not update user.');
+        alert(error.message || t('users_update_failed'));
       }
     };
 
     const handleCreateUser = async () => {
       createError.value = '';
       if (!newUser.value.role_id) {
-        createError.value = 'Please select a role.';
+        createError.value = t('users_select_role_required');
         return;
       }
       try {
@@ -312,7 +312,7 @@ export default {
           body: JSON.stringify(payload),
         });
         if (!response.ok) {
-          let errMsg = 'Failed to create user';
+          let errMsg = t('users_create_failed');
           try {
             const errData = await response.json();
             if (errData.error) errMsg = errData.error;
@@ -324,15 +324,15 @@ export default {
         showAddUserModal.value = false;
         newUser.value = { username: '', password: '', role_id: '', color_hex: '#374151' };
         await fetchUsers();
-        alert('User created successfully!');
+        alert(t('users_created_ok'));
       } catch (error) {
         console.error('Error creating user:', error);
-        createError.value = error.message || 'Could not create user.';
+        createError.value = error.message || t('users_create_failed');
       }
     };
 
     const confirmDeleteUser = (user) => {
-      if (confirm(`Are you sure you want to delete the user "${user.username}"?`)) {
+      if (confirm(t('users_delete_confirm', { name: user.username }))) {
         deleteUser(user.id);
       }
     };
@@ -344,10 +344,10 @@ export default {
         });
         if (!response.ok) throw new Error('Failed to delete user');
         await fetchUsers();
-        alert('User deleted successfully!');
+        alert(t('users_deleted_ok'));
       } catch (error) {
         console.error('Error deleting user:', error);
-        alert('Could not delete user.');
+        alert(t('users_delete_failed'));
       }
     };
 

@@ -173,6 +173,15 @@ func (r *postgresRepository) Init() error {
 	// Migrate: Copy old bot settings keys to new tg_ prefixed keys
 	r.migrateBotSettings()
 
+	// Seed automated-backup routing defaults (idempotent). Missing values
+	// default to local-only storage; both are safe regardless of migration.
+	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
+		SELECT 'backup_to_local', 'true', NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_local')`)
+	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
+		SELECT 'backup_to_telegram', 'false', NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_telegram')`)
+
 	// Migrate: Ensure the system admin role carries every current permission key,
 	// including the granular log permissions introduced for server-side RBAC.
 	r.migrateSystemRolePermissions()

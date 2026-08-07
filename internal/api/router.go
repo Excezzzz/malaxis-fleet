@@ -30,6 +30,9 @@ type BotManager interface {
 	NotifyNewNode(id, name, ipLan string)
 	// SetDefaultAvatar re-uploads the embedded default profile photo.
 	SetDefaultAvatar() error
+	// SetAvatarColor applies one of the five themed avatar colors and persists
+	// the choice so it is re-applied on every bot start.
+	SetAvatarColor(colorName string) error
 }
 
 // API holds the dependencies for the API handlers.
@@ -215,6 +218,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// Web UI settings (Owner only)
 	webAPIRouter.Handle("/web/settings", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetSettingsHandler)))).Methods("GET")
+	webAPIRouter.Handle("/web/settings/backup", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateBackupSettingsHandler)))).Methods("PUT")
 	settingsWeb := webAPIRouter.PathPrefix("/settings").Subrouter()
 	settingsWeb.Use(auth.Middleware(cfg))
 	settingsWeb.Use(auth.RequireOwner(repo))
@@ -224,6 +228,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	webAPIRouter.Handle("/web/settings/bot", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateBotSettingsHandler)))).Methods("PUT")
 	webAPIRouter.Handle("/web/settings/bot/test", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.TestTelegramBotHandler)))).Methods("POST")
 	webAPIRouter.Handle("/web/settings/bot/reset-avatar", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.ResetBotAvatarHandler)))).Methods("POST")
+	webAPIRouter.Handle("/web/settings/bot/avatar", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.SetBotAvatarHandler)))).Methods("POST")
 	webAPIRouter.Handle("/web/user/preferences", auth.Middleware(cfg)(http.HandlerFunc(api.GetUserPreferencesHandler))).Methods("GET")
 	webAPIRouter.Handle("/web/user/preferences", auth.Middleware(cfg)(http.HandlerFunc(api.UpdateUserPreferencesHandler))).Methods("PUT")
 

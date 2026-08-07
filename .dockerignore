@@ -1,0 +1,8 @@
+data/
+backups/
+.git/
+node_modules/
+internal/api/web/dist/
+master_server
+*.log
+.env

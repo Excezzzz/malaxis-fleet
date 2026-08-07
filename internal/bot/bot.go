@@ -2,7 +2,7 @@ package bot
 
 import (
 	"bytes"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -29,6 +29,19 @@ import (
 
 //go:embed default_avatar.png
 var defaultAvatarPNG []byte
+
+//go:embed avatars/*.png
+var avatarsFS embed.FS
+
+// avatarColors maps the five dashboard accent colors to their embedded avatar
+// files. The bot's profile photo can be switched to match the site theme.
+var avatarColors = map[string]string{
+	"indigo":   "avatar_indigo.png",
+	"emerald":  "avatar_emerald.png",
+	"amber":    "avatar_amber.png",
+	"rose":     "avatar_rose.png",
+	"cyan":     "avatar_cyan.png",
+}
 
 // onlineWindow is how recent a LastSeen timestamp must be for a node to count
 // as online (mirrors the web dashboard).
@@ -169,6 +182,15 @@ func (b *Bot) Start() error {
 
 	go func() {
 		time.Sleep(2 * time.Second)
+		avatarColor, _ := b.repo.GetSetting("bot_avatar_color")
+		if avatarColor != "" {
+			if err := b.SetAvatarColor(avatarColor); err != nil {
+				log.Printf("Bot: failed to set profile photo: %v", err)
+			} else {
+				log.Printf("Bot: profile photo set (color=%s)", avatarColor)
+			}
+			return
+		}
 		if err := b.SetDefaultAvatar(); err != nil {
 			log.Printf("Bot: failed to set default profile photo: %v", err)
 		} else {
@@ -182,7 +204,33 @@ func (b *Bot) Start() error {
 // SetDefaultAvatar uploads the embedded default avatar to the Telegram bot via
 // setMyProfilePhoto (Bot API 7.0+ format: the photo field carries the JSON
 // input profile photo descriptor, the bytes travel in the attach:// file part).
+// It also clears any previously stored bot_avatar_color preference so the
+// default avatar is not re-applied on the next bot start.
 func (b *Bot) SetDefaultAvatar() error {
+	b.repo.SetSetting("bot_avatar_color", "")
+	return b.uploadAvatar(defaultAvatarPNG)
+}
+
+// SetAvatarColor applies one of the five themed avatar colors (indigo,
+// emerald, amber, rose, cyan) and persists the choice in the settings table so
+// it is automatically re-applied on every bot start.
+func (b *Bot) SetAvatarColor(colorName string) error {
+	file, ok := avatarColors[colorName]
+	if !ok {
+		return fmt.Errorf("unknown avatar color: %s", colorName)
+	}
+	avatarBytes, err := avatarsFS.ReadFile("avatars/" + file)
+	if err != nil {
+		return fmt.Errorf("embedded avatar %s not found: %w", file, err)
+	}
+	if err := b.uploadAvatar(avatarBytes); err != nil {
+		return err
+	}
+	return b.repo.SetSetting("bot_avatar_color", colorName)
+}
+
+// uploadAvatar sends the given PNG bytes as the bot's profile photo.
+func (b *Bot) uploadAvatar(avatarBytes []byte) error {
 	token := b.token
 	if token == "" {
 		return fmt.Errorf("bot token not configured")
@@ -202,7 +250,7 @@ func (b *Bot) SetDefaultAvatar() error {
 	if err != nil {
 		return err
 	}
-	if _, err := part.Write(defaultAvatarPNG); err != nil {
+	if _, err := part.Write(avatarBytes); err != nil {
 		return err
 	}
 	if err := writer.Close(); err != nil {
@@ -377,7 +425,24 @@ func (b *Bot) runBackupScheduler() {
 		select {
 		case <-ticker.C:
 			log.Println("Running scheduled backup...")
-			b.sendBackupDocument(b.chatID, "⏰ Scheduled daily backup")
+			toLocal, _ := b.repo.GetSetting("backup_to_local")
+			toTelegram, _ := b.repo.GetSetting("backup_to_telegram")
+			localEnabled := toLocal != "false"
+			telegramEnabled := toTelegram == "true"
+
+			switch {
+			case telegramEnabled:
+				// sendBackupDocument also stores the file locally.
+				b.sendBackupDocument(b.chatID, "⏰ Scheduled daily backup")
+			case localEnabled:
+				if _, err := b.backupEngine.CreateGzipBackup(); err != nil {
+					log.Printf("Bot: scheduled backup failed: %v", err)
+				} else {
+					log.Println("Scheduled backup saved to local backups directory")
+				}
+			default:
+				log.Println("Scheduled backup skipped: both backup destinations are disabled")
+			}
 		case <-stopCh:
 			return
 		}

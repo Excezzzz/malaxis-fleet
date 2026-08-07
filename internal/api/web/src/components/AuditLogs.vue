@@ -29,11 +29,11 @@
       <table class="min-w-full divide-y divide-white/5">
         <thead class="bg-white/[0.03]">
           <tr>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Timestamp</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Actor</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Action</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Target</th>
-            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Details</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ t('logs_th_timestamp') }}</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ t('logs_th_actor') }}</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ t('logs_th_action') }}</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ t('logs_th_target') }}</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ t('logs_th_details') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-white/5">
@@ -41,7 +41,7 @@
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ new Date(log.timestamp).toLocaleString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{{ log.actor }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-300">{{ log.action }}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ log.target || 'N/A' }}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ log.target || t('common_na') }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-500">{{ log.details }}</td>
           </tr>
         </tbody>
@@ -51,7 +51,7 @@
     <div v-else>
       <div class="flex flex-wrap justify-between items-center mb-4 gap-4">
         <div class="flex items-center gap-3">
-          <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>Master Server Logs<span class="font-mono text-indigo-400">]</span></h2>
+          <h2 class="text-2xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('logs_master_title') }}<span class="font-mono text-indigo-400">]</span></h2>
           <select v-model="masterContainer" @change="fetchMasterLogs"
             class="bg-zinc-900/60 border border-white/10 rounded-xl px-3 py-1.5 text-sm text-zinc-300 focus:outline-none">
             <option v-for="c in masterContainers" :key="c" :value="c">{{ c }}</option>
@@ -60,17 +60,17 @@
         <div class="flex items-center gap-3">
           <button @click="fetchMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
             <RefreshCw :class="['w-4 h-4', isLoadingMasterLogs ? 'animate-spin' : '']" />
-            <span class="font-mono text-sm">[Refresh]</span>
+            <span class="font-mono text-sm">[{{ t('logs_refresh') }}]</span>
           </button>
           <button @click="copyMasterLogs" class="flex items-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-xl transition-colors">
             <Copy class="w-4 h-4" />
-            <span class="font-mono text-sm">[Copy Logs]</span>
+            <span class="font-mono text-sm">[{{ t('logs_copy') }}]</span>
           </button>
         </div>
       </div>
       <div class="bg-black p-4 rounded-2xl border border-white/5 font-mono text-xs text-white/80 h-[36rem] overflow-y-auto whitespace-pre-wrap">
-        <div v-if="isLoadingMasterLogs && !masterLogs" class="flex items-center justify-center h-full text-zinc-400">Loading master logs...</div>
-        <pre v-else>{{ masterLogs || 'No master logs available yet. Press Refresh.' }}</pre>
+        <div v-if="isLoadingMasterLogs && !masterLogs" class="flex items-center justify-center h-full text-zinc-400">{{ t('logs_loading') }}</div>
+        <pre v-else>{{ masterLogs || t('logs_none') }}</pre>
       </div>
     </div>
   </div>
@@ -124,7 +124,7 @@ export default {
         masterLogs.value = data.logs || '';
       } catch (e) {
         console.error('Error fetching master logs:', e);
-        masterLogs.value = 'Failed to load master logs.';
+        masterLogs.value = t('logs_failed');
       } finally {
         isLoadingMasterLogs.value = false;
       }
@@ -134,7 +134,7 @@ export default {
       if (!masterLogs.value) return;
       try {
         await navigator.clipboard.writeText(masterLogs.value);
-        showToast('Master logs copied.');
+        showToast(t('logs_copied'));
       } catch (e) {
         console.error('Failed to copy master logs:', e);
       }
@@ -150,7 +150,7 @@ export default {
         const response = await fetch('/api/web/audit');
         if (!response.ok) throw new Error('Failed to fetch logs');
         const data = await response.json();
-        const rows = [['Timestamp', 'Actor', 'Action', 'Target', 'Details']];
+        const rows = [[t('logs_th_timestamp'), t('logs_th_actor'), t('logs_th_action'), t('logs_th_target'), t('logs_th_details')]];
         for (const log of data) {
           rows.push([
             new Date(log.timestamp).toISOString(),
@@ -170,7 +170,7 @@ export default {
         URL.revokeObjectURL(url);
       } catch (e) {
         console.error('Error exporting logs:', e);
-        alert('Could not export logs.');
+        alert(t('logs_export_failed'));
       }
     };
 
