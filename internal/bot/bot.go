@@ -666,8 +666,8 @@ func (b *Bot) emoji(label string) string {
 	_, enabled := b.botPrefs()
 	if !enabled {
 		label = strings.TrimLeftFunc(label, func(r rune) bool {
-			return r >= 0x1F000 && r <= 0x1FAFF || r >= 0x2600 && r <= 0x27BF || r == 0xFE0F ||
-				r >= 0x2B00 && r <= 0x2BFF || r >= 0x1F1E6 && r <= 0x1F1FF || r == 0x200D
+			return r >= 0x1F000 && r <= 0x1FAFF || r >= 0x2600 && r <= 0x27BF || r >= 0x2300 && r <= 0x23FF ||
+				r >= 0x2B00 && r <= 0x2BFF || r >= 0x1F1E6 && r <= 0x1F1FF || r == 0xFE0F || r == 0x200D
 		})
 		return strings.TrimSpace(label)
 	}
@@ -770,7 +770,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("📦 Скачать бэкап БД", "📦 Download DB Backup")), "backup:download"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("⏱️ Частота бэкапов", "⏱️ Backup Interval")), "backup:interval"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Частота бэкапов", "Backup Interval"), "⏱️", emojis), "backup:interval"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("👥 Пользователи", "👥 Manage Users")), "users:menu"),
