@@ -440,4 +440,25 @@ body {
 #app .border-red-500\/30, #app .border-red-500\/40, #app .border-red-500\/50 { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 #app .border-emerald-500\/30, #app .border-emerald-500\/40, #app .border-green-500\/30 { border-color: color-mix(in srgb, var(--success) 40%, transparent); }
 #app .border-amber-500\/30 { border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
+
+/* --- Terminal boxes: logs, command bars and code editors stay dark with
+   bright text in EVERY theme. The light-theme overrides above must never
+   apply inside them, otherwise black boxes get dark gray text. --- */
+#app .terminal { background-color: #09090b !important; border-color: rgba(255,255,255,0.1) !important; }
+#app .terminal { color: #34d399 !important; }
+#app .terminal.text-white\/80, #app .terminal .text-white\/80 { color: rgba(228,228,231,0.8) !important; }
+#app .terminal.text-zinc-100, #app .terminal .text-zinc-100 { color: #e4e4e7 !important; }
+#app .terminal.text-zinc-200, #app .terminal .text-zinc-200 { color: #d4d4d8 !important; }
+#app .terminal.text-zinc-300, #app .terminal .text-zinc-300 { color: #a1a1aa !important; }
+#app .terminal.text-zinc-400, #app .terminal .text-zinc-400 { color: #a1a1aa !important; }
+#app .terminal.text-zinc-500, #app .terminal .text-zinc-500 { color: #71717a !important; }
+#app .terminal.text-emerald-400, #app .terminal .text-emerald-400 { color: #34d399 !important; }
+#app .terminal.text-red-300, #app .terminal .text-red-300 { color: #f87171 !important; }
+#app .terminal.text-red-400, #app .terminal .text-red-400 { color: #f87171 !important; }
+#app .terminal.text-amber-300, #app .terminal .text-amber-300 { color: #fbbf24 !important; }
+#app .terminal.text-indigo-300, #app .terminal .text-indigo-300 { color: #818cf8 !important; }
+
+/* --- Action buttons: text on the accent stays white in every theme --- */
+#app .bg-indigo-600.text-white, #app .bg-indigo-500.text-white { color: #ffffff !important; }
+#app .hover\:bg-indigo-500:hover { background-color: color-mix(in srgb, var(--acc) 85%, #000); }
 </style>

@@ -68,7 +68,7 @@
           </button>
         </div>
       </div>
-      <div class="bg-black p-4 rounded-2xl border border-white/5 font-mono text-xs text-white/80 h-[36rem] overflow-y-auto whitespace-pre-wrap">
+      <div class="terminal bg-black p-4 rounded-2xl border border-white/5 font-mono text-xs text-emerald-400 h-[36rem] overflow-y-auto whitespace-pre-wrap shadow-inner">
         <div v-if="isLoadingMasterLogs && !masterLogs" class="flex items-center justify-center h-full text-zinc-400">{{ t('logs_loading') }}</div>
         <pre v-else>{{ masterLogs || t('logs_none') }}</pre>
       </div>

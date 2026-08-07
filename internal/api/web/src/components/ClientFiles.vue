@@ -27,8 +27,8 @@
       </div>
       <div class="flex flex-wrap items-stretch gap-2">
         <code v-if="installCommand"
-          class="flex-1 min-w-0 px-3 py-3 bg-black text-emerald-400 border border-white/10 rounded-xl text-xs font-mono break-all whitespace-pre-wrap">{{ installCommand }}</code>
-        <div v-else class="flex-1 min-w-0 px-3 py-3 bg-black text-zinc-500 border border-white/10 rounded-xl text-xs font-mono">
+          class="terminal flex-1 min-w-0 px-3 py-3 bg-black text-emerald-400 border border-white/10 rounded-xl text-xs font-mono break-all whitespace-pre-wrap">{{ installCommand }}</code>
+        <div v-else class="terminal flex-1 min-w-0 px-3 py-3 bg-black text-zinc-400 border border-white/10 rounded-xl text-xs font-mono">
           {{ commandError || t('client_loading_cmd') }}
         </div>
         <button @click="copyInstallCommand" :disabled="!installCommand"
@@ -71,7 +71,7 @@
           </div>
         </div>
         <textarea v-model="content" spellcheck="false"
-          class="p-5 flex-1 min-h-[70vh] bg-transparent text-xs leading-relaxed font-mono text-zinc-300 resize-none focus:outline-none overflow-x-auto whitespace-pre"
+          class="terminal p-5 flex-1 min-h-[70vh] bg-zinc-950 text-zinc-100 text-xs leading-relaxed font-mono resize-none focus:outline-none overflow-x-auto whitespace-pre"
           @input="markDirty"></textarea>
       </div>
     </div>
