@@ -2102,8 +2102,14 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	botChatIDStr, _ := a.repo.GetSetting("tg_admin_chat_id")
 	backupToLocal, _ := a.repo.GetSetting("backup_to_local")
 	backupToTelegram, _ := a.repo.GetSetting("backup_to_telegram")
+	backupIntervalStr, _ := a.repo.GetSetting("backup_interval_hours")
 	botAvatarColor, _ := a.repo.GetSetting("bot_avatar_color")
 	lowRAMMode := a.config.LowRAMMode
+
+	backupIntervalHours := 24
+	if v, err := strconv.Atoi(backupIntervalStr); err == nil && v > 0 {
+		backupIntervalHours = v
+	}
 
 	// Fall back to env-configured values so the settings page always reflects
 	// the token/chat_id the bot actually runs with.
@@ -2126,6 +2132,7 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		"tg_admin_chat_id":          botChatID,
 		"backup_to_local":           backupToLocal != "false",
 		"backup_to_telegram":        backupToTelegram == "true",
+		"backup_interval_hours":     backupIntervalHours,
 		"bot_avatar_color":          botAvatarColor,
 		"low_ram_mode":              lowRAMMode,
 		"join_domain":               a.config.JoinDomain,
@@ -2135,17 +2142,19 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateBackupSettingsHandler updates the automated-backup routing settings
-// (owner only). The values are persisted in the settings table and consumed by
-// the daily backup scheduler inside the bot.
+// UpdateBackupSettingsHandler updates the automated-backup settings: routing
+// (local / Telegram) and the backup interval in hours (owner only). The values
+// are persisted in the settings table and consumed by the backup scheduler
+// inside the bot, which re-reads them on every cycle.
 func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireOwner(w, r) {
 		return
 	}
 
 	var req struct {
-		BackupToLocal     *bool `json:"backup_to_local"`
-		BackupToTelegram *bool `json:"backup_to_telegram"`
+		BackupToLocal      *bool `json:"backup_to_local"`
+		BackupToTelegram   *bool `json:"backup_to_telegram"`
+		BackupIntervalHours *int  `json:"backup_interval_hours"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
@@ -2166,15 +2175,32 @@ func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	if req.BackupIntervalHours != nil {
+		if *req.BackupIntervalHours < 1 || *req.BackupIntervalHours > 24*31 {
+			http.Error(w, "backup_interval_hours must be between 1 and 744", http.StatusBadRequest)
+			return
+		}
+		if err := a.repo.SetSetting("backup_interval_hours", strconv.Itoa(*req.BackupIntervalHours)); err != nil {
+			log.Printf("Error saving backup_interval_hours: %v", err)
+			http.Error(w, "Failed to save settings", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	localVal, _ := a.repo.GetSetting("backup_to_local")
 	tgVal, _ := a.repo.GetSetting("backup_to_telegram")
+	intervalVal, _ := a.repo.GetSetting("backup_interval_hours")
+	intervalHours := 24
+	if v, err := strconv.Atoi(intervalVal); err == nil && v > 0 {
+		intervalHours = v
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":             "ok",
-		"backup_to_local":    localVal != "false",
-		"backup_to_telegram": tgVal == "true",
+		"status":                "ok",
+		"backup_to_local":       localVal != "false",
+		"backup_to_telegram":    tgVal == "true",
+		"backup_interval_hours": intervalHours,
 	})
 }
 

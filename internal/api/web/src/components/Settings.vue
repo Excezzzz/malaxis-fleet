@@ -52,7 +52,7 @@
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_local') }}</p>
             <p class="text-xs text-zinc-500">{{ t('settings_backup_local_desc') }}</p>
           </div>
-          <button @click="backupToLocal = !backupToLocal" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToLocal ? 'bg-indigo-500' : 'bg-zinc-700'">
+          <button @click="backupToLocal = !backupToLocal" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToLocal ? 'bg-indigo-500' : 'bg-zinc-500'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="backupToLocal ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>
@@ -62,9 +62,22 @@
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_tg') }}</p>
             <p class="text-xs text-zinc-500">{{ t('settings_backup_tg_desc') }}</p>
           </div>
-          <button @click="backupToTelegram = !backupToTelegram" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToTelegram ? 'bg-indigo-500' : 'bg-zinc-700'">
+          <button @click="backupToTelegram = !backupToTelegram" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="backupToTelegram ? 'bg-indigo-500' : 'bg-zinc-500'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="backupToTelegram ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
+        </div>
+
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <p class="text-sm font-medium text-zinc-300">{{ t('settings_backup_interval') }}</p>
+            <p class="text-xs text-zinc-500">{{ t('settings_backup_interval_desc') }}</p>
+          </div>
+          <select v-model="backupIntervalHours" class="w-auto bg-zinc-900 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
+            <option :value="6">{{ t('settings_backup_interval_6') }}</option>
+            <option :value="12">{{ t('settings_backup_interval_12') }}</option>
+            <option :value="24">{{ t('settings_backup_interval_24') }}</option>
+            <option :value="168">{{ t('settings_backup_interval_168') }}</option>
+          </select>
         </div>
 
         <div class="flex space-x-4">
@@ -88,7 +101,7 @@
             <p class="text-sm font-medium text-zinc-300">{{ t('settings_telegram_bot') }}</p>
             <p class="text-xs text-zinc-500">{{ botEnabled ? t('settings_bot_active') : t('settings_bot_disabled') }}</p>
           </div>
-          <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-500' : 'bg-zinc-700'">
+          <button @click="botEnabled = !botEnabled" class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors" :class="botEnabled ? 'bg-indigo-500' : 'bg-zinc-500'">
             <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="botEnabled ? 'translate-x-6' : 'translate-x-1'"></span>
           </button>
         </div>
@@ -193,6 +206,7 @@ export default {
     const avatarToast = ref('');
     const backupToLocal = ref(true);
     const backupToTelegram = ref(false);
+    const backupIntervalHours = ref(24);
     const savingBackup = ref(false);
     const backupMessage = ref(null);
     let avatarToastTimer = null;
@@ -231,6 +245,7 @@ export default {
           adminChatId.value = data.tg_admin_chat_id || '';
           backupToLocal.value = data.backup_to_local !== false;
           backupToTelegram.value = data.backup_to_telegram === true;
+          backupIntervalHours.value = data.backup_interval_hours || 24;
           botAvatarColor.value = data.bot_avatar_color || 'indigo';
         }
       } catch (e) {
@@ -248,6 +263,7 @@ export default {
           body: JSON.stringify({
             backup_to_local: backupToLocal.value,
             backup_to_telegram: backupToTelegram.value,
+            backup_interval_hours: parseInt(backupIntervalHours.value) || 24,
           }),
         });
         if (resp.ok) {
@@ -370,7 +386,7 @@ export default {
       botEnabled, botToken, adminChatId, saving, testing, avatarResetting, avatarApplying, botAvatarColor, testResult, saveMessage, avatarToast,
       saveBotSettings, testConnection, restoreAvatar, applyBotAvatar, downloadBackup,
       ACCENTS, prefs, setAccent, setTheme, setLanguage,
-      backupToLocal, backupToTelegram, savingBackup, backupMessage, saveBackupSettings,
+      backupToLocal, backupToTelegram, backupIntervalHours, savingBackup, backupMessage, saveBackupSettings,
       t,
     };
   },

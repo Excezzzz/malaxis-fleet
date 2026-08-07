@@ -181,6 +181,9 @@ func (r *postgresRepository) Init() error {
 	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
 		SELECT 'backup_to_telegram', 'false', NOW()
 		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_telegram')`)
+	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
+		SELECT 'backup_interval_hours', '24', NOW()
+		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_interval_hours')`)
 
 	// Migrate: Ensure the system admin role carries every current permission key,
 	// including the granular log permissions introduced for server-side RBAC.

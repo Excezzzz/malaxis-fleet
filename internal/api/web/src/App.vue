@@ -42,7 +42,7 @@
           </div>
           <div class="leading-tight">
             <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
-            <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v2.1.0</span>
+            <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v1.0.0</span>
           </div>
         </div>
 
@@ -153,6 +153,13 @@ export default {
       root.style.setProperty('--border-softer', light ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)');
       root.style.setProperty('--bg-input', light ? '#ffffff' : '#27272a');
       root.style.setProperty('--bg-input-2', light ? '#ffffff' : '#3f3f46');
+      root.style.setProperty('--danger', light ? '#b91c1c' : '#f87171');
+      root.style.setProperty('--danger-strong', light ? '#991b1b' : '#fca5a5');
+      root.style.setProperty('--success', light ? '#15803d' : '#4ade80');
+      root.style.setProperty('--success-strong', light ? '#166534' : '#86efac');
+      root.style.setProperty('--warning', light ? '#b45309' : '#fbbf24');
+      root.style.setProperty('--warning-strong', light ? '#92400e' : '#fde68a');
+      root.style.setProperty('--info', light ? '#0369a1' : '#38bdf8');
       document.body.style.backgroundColor = theme.base;
       localStorage.setItem('fleet_prefs', JSON.stringify(prefs.value));
     };
@@ -364,6 +371,8 @@ body {
 #app .bg-white\/5 { background-color: color-mix(in srgb, var(--text-main) 5%, transparent); }
 #app .bg-white\/10 { background-color: color-mix(in srgb, var(--text-main) 10%, transparent); }
 #app .bg-white\/\[0\.03\] { background-color: color-mix(in srgb, var(--text-main) 3%, transparent); }
+#app .bg-zinc-950\/80 { background-color: color-mix(in srgb, var(--bg-base) 80%, transparent); }
+#app .bg-black\/40 { background-color: var(--bg-input); }
 
 /* --- Theme variables: text --- */
 #app .text-white { color: var(--text-main); }
@@ -410,4 +419,25 @@ body {
 #app .shadow-indigo-900\/50 { --tw-shadow-color: var(--acc-dark); }
 #app .shadow-indigo-950\/50 { --tw-shadow-color: var(--acc-dark); }
 #app .shadow-\[0_0_8px_2px_rgba\(129\,140\,248\,0\.6\)\] { box-shadow: 0 0 8px 2px color-mix(in srgb, var(--acc) 60%, transparent); }
+
+/* --- Semantic colors: danger / success / warning / info ---
+   Pastel Tailwind tones (red-200..400, emerald-100..200, amber-200, etc.)
+   are unreadable on the light surface, so they map to darkened accents in
+   light mode while keeping the current palette in dark mode. */
+#app .text-red-200, #app .text-red-300, #app .text-red-400, #app .text-red-500, #app .text-red-700 { color: var(--danger); }
+#app .text-red-100 { color: var(--danger-strong); }
+#app .text-emerald-100, #app .text-emerald-200, #app .text-emerald-300, #app .text-emerald-400,
+#app .text-green-100, #app .text-green-400 { color: var(--success); }
+#app .text-amber-200, #app .text-amber-300, #app .text-yellow-300, #app .text-yellow-400 { color: var(--warning); }
+#app .text-blue-300, #app .text-blue-400 { color: var(--info); }
+
+#app .bg-red-900\/10, #app .bg-red-900\/20, #app .bg-red-950\/20, #app .bg-red-950\/30 { background-color: color-mix(in srgb, var(--danger) 12%, transparent); }
+#app .bg-red-500\/10, #app .bg-red-500\/15, #app .bg-red-500\/20, #app .bg-red-500\/30 { background-color: color-mix(in srgb, var(--danger) 12%, transparent); }
+#app .bg-emerald-500\/15, #app .bg-emerald-500\/20, #app .bg-emerald-500\/25, #app .bg-emerald-500\/30,
+#app .bg-green-500\/15, #app .bg-green-500\/25 { background-color: color-mix(in srgb, var(--success) 12%, transparent); }
+#app .bg-amber-500\/10, #app .bg-yellow-500\/15 { background-color: color-mix(in srgb, var(--warning) 12%, transparent); }
+
+#app .border-red-500\/30, #app .border-red-500\/40, #app .border-red-500\/50 { border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
+#app .border-emerald-500\/30, #app .border-emerald-500\/40, #app .border-green-500\/30 { border-color: color-mix(in srgb, var(--success) 40%, transparent); }
+#app .border-amber-500\/30 { border-color: color-mix(in srgb, var(--warning) 40%, transparent); }
 </style>

@@ -75,7 +75,6 @@ type Bot struct {
 	audit        *audit.Logger
 	userStates   map[int64]*userState
 	mainMenuID   map[int64]int
-	backupTicker *time.Ticker
 	stop         chan bool
 	mu           sync.Mutex
 	token        string
@@ -171,7 +170,6 @@ func (b *Bot) Start() error {
 	b.running = true
 	b.mu.Unlock()
 
-	b.backupTicker = time.NewTicker(24 * time.Hour)
 	go b.runBackupScheduler()
 
 	updates := make(chan tgbotapi.Update, 100)
@@ -393,10 +391,6 @@ func (b *Bot) Stop() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.backupTicker != nil {
-		b.backupTicker.Stop()
-		b.backupTicker = nil
-	}
 	b.running = false
 	select {
 	case b.stop <- true:
@@ -411,20 +405,36 @@ func (b *Bot) Reboot() error {
 	return b.Start()
 }
 
+// backupIntervalHours returns the configured automatic-backup interval in
+// hours (default 24, clamped to a sane range) from the settings table.
+func (b *Bot) backupIntervalHours() int {
+	raw, _ := b.repo.GetSetting("backup_interval_hours")
+	hours, err := strconv.Atoi(raw)
+	if err != nil || hours <= 0 {
+		return 24
+	}
+	if hours > 24*31 {
+		hours = 24 * 31
+	}
+	return hours
+}
+
 func (b *Bot) runBackupScheduler() {
 	for {
 		b.mu.Lock()
-		ticker := b.backupTicker
 		stopCh := b.stop
 		b.mu.Unlock()
 
-		if ticker == nil || stopCh == nil {
+		if stopCh == nil {
 			return
 		}
 
+		interval := time.Duration(b.backupIntervalHours()) * time.Hour
+		timer := time.NewTimer(interval)
+
 		select {
-		case <-ticker.C:
-			log.Println("Running scheduled backup...")
+		case <-timer.C:
+			log.Printf("Running scheduled backup (interval %d h)...", b.backupIntervalHours())
 			toLocal, _ := b.repo.GetSetting("backup_to_local")
 			toTelegram, _ := b.repo.GetSetting("backup_to_telegram")
 			localEnabled := toLocal != "false"
@@ -433,7 +443,7 @@ func (b *Bot) runBackupScheduler() {
 			switch {
 			case telegramEnabled:
 				// sendBackupDocument also stores the file locally.
-				b.sendBackupDocument(b.chatID, "⏰ Scheduled daily backup")
+				b.sendBackupDocument(b.chatID, "⏰ Scheduled backup")
 			case localEnabled:
 				if _, err := b.backupEngine.CreateGzipBackup(); err != nil {
 					log.Printf("Bot: scheduled backup failed: %v", err)
@@ -444,6 +454,7 @@ func (b *Bot) runBackupScheduler() {
 				log.Println("Scheduled backup skipped: both backup destinations are disabled")
 			}
 		case <-stopCh:
+			timer.Stop()
 			return
 		}
 	}
@@ -711,7 +722,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		emojiState = b.tr("ВЫКЛ", "OFF")
 	}
 
-	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v2.1.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
+	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v1.0.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
 		b.tr("Узлы", "Nodes"), onlineCount, b.tr("онлайн", "Online"), offlineCount, b.tr("офлайн", "Offline"))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
@@ -732,6 +743,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("📦 Скачать бэкап БД", "📦 Download DB Backup")), "backup:download"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("⏱️ Частота бэкапов", "⏱️ Backup Interval")), "backup:interval"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("👥 Пользователи", "👥 Manage Users")), "users:menu"),
@@ -899,8 +911,8 @@ func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 }
 
 // handlePrefsCallback answers callbacks for the preference toggles (language,
-// emoji rendering, avatar restore) with a visible toast and re-renders the
-// main menu.
+// emoji rendering, avatar restore, backup interval) with a visible toast and
+// re-renders the main menu.
 func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 	switch data {
 	case "prefs:lang":
@@ -916,8 +928,57 @@ func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 			return
 		}
 		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Фото профиля бота обновлено!", "Bot profile photo updated!")))
+	case "backup:interval":
+		b.showBackupIntervalPicker(q.Message.Chat.ID, q.Message.MessageID)
+		return
+	case "backup:download":
+		b.handleBackup(q.Message.Chat.ID, q.Message.MessageID)
+		return
+	}
+	if strings.HasPrefix(data, "backup:set:") {
+		hoursStr := strings.TrimPrefix(data, "backup:set:")
+		hours, err := strconv.Atoi(hoursStr)
+		if err != nil || hours <= 0 {
+			b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Некорректный интервал", "Invalid interval")))
+			b.showMainMenu(q.Message.Chat.ID)
+			return
+		}
+		if err := b.repo.SetSetting("backup_interval_hours", strconv.Itoa(hours)); err != nil {
+			b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Ошибка сохранения", "Failed to save")))
+			log.Printf("Bot: failed to save backup interval: %v", err)
+			b.showMainMenu(q.Message.Chat.ID)
+			return
+		}
+		b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Частота бэкапов: ", "Backup interval: ")+hoursStr+b.tr(" ч", " h")))
+		b.showMainMenu(q.Message.Chat.ID)
+		return
 	}
 	b.showMainMenu(q.Message.Chat.ID)
+}
+
+// showBackupIntervalPicker renders the backup-frequency picker keyboard.
+func (b *Bot) showBackupIntervalPicker(chatID int64, messageID int) {
+	interval := b.backupIntervalHours()
+	text := fmt.Sprintf("<b>⏱️ %s</b>\n\n%s: <b>%d %s</b>",
+		b.tr("Частота бэкапов", "Backup Interval"),
+		b.tr("Текущий интервал", "Current interval"),
+		interval, b.tr("ч", "h"))
+
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕐 6 "+b.tr("ч", "h")), "backup:set:6"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕜 12 "+b.tr("ч", "h")), "backup:set:12"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🕐 24 "+b.tr("ч", "h")+" ("+b.tr("1 раз в сутки", "daily")+")"), "backup:set:24"),
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("📅 168 "+b.tr("ч", "h")+" ("+b.tr("1 раз в неделю", "weekly")+")"), "backup:set:168"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.emoji("⬅️ "+b.tr("Главное меню", "Main Menu")), "menu:main"),
+		),
+	)
+
+	b.editMessage(chatID, messageID, text, &markup)
 }
 
 func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
@@ -947,7 +1008,7 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	// The preference toggles and the avatar restore answer their callbacks
 	// with a visible toast, so they are handled before the generic empty
 	// acknowledgment below.
-	if data == "avatar:restore" || data == "prefs:lang" || data == "prefs:emoji" {
+	if data == "avatar:restore" || data == "prefs:lang" || data == "prefs:emoji" || data == "backup:interval" || data == "backup:download" || strings.HasPrefix(data, "backup:set:") {
 		b.handlePrefsCallback(q, data)
 		return
 	}
@@ -974,8 +1035,6 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.handleRefreshAllSubs(chatID, messageID)
 	case data == "purge:go":
 		b.handlePurge(chatID, messageID)
-	case data == "backup:download":
-		b.handleBackup(chatID, messageID)
 	case data == "users:menu":
 		b.handleUsersMenu(chatID, messageID)
 	case data == "users:add":
