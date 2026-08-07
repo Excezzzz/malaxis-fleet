@@ -83,26 +83,26 @@
         <template v-if="canManage">
             <div class="flex flex-wrap gap-2">
                 <button v-if="canEditSubCard" @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
-                  <Link class="w-4 h-4" />
-                  <span class="font-mono text-sm">[{{ t('node_manage_sub') }}]</span>
+                  <Link class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_manage_sub') }}]</span>
                 </button>
                 <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
-                  <Shield class="w-4 h-4" />
-                  <span class="font-mono text-sm">[{{ t('node_switch_vpn') }}]</span>
+                  <Shield class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_switch_vpn') }}]</span>
                 </button>
             </div>
             <div class="flex flex-wrap gap-2">
                 <button v-if="canViewNodeLogs" @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
-                    <ScrollText class="w-4 h-4" />
-                    <span class="font-mono text-sm">[{{ t('node_view_logs') }}]</span>
+                    <ScrollText class="w-4 h-4 shrink-0" />
+                    <span class="font-mono text-sm truncate min-w-0">[{{ t('node_view_logs') }}]</span>
                 </button>
                 <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
-                  <Hourglass class="w-4 h-4" />
-                  <span class="font-mono text-sm">[{{ t('node_task_queue') }} ({{ pendingCommandCount }})]</span>
+                  <Hourglass class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_task_queue') }} ({{ pendingCommandCount }})]</span>
                 </button>
                 <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
-                  <RefreshCw class="w-4 h-4" />
-                  <span class="font-mono text-sm">[{{ t('node_push_client') }}]</span>
+                  <RefreshCw class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_push_client') }}]</span>
                 </button>
             </div>
             </template>
@@ -194,14 +194,14 @@
       <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-2 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_switch_title') }}<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-5">{{ t('node_currently') }} <strong>{{ node.active_server || t('common_none') }}</strong></p>
-        <div class="grid grid-cols-2 gap-3 mb-4">
-          <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold text-zinc-200"><Zap class="w-4 h-4 text-indigo-400" /><span>{{ t('node_fastest') }}</span></button>
-          <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors font-semibold text-zinc-200"><Scale class="w-4 h-4 text-indigo-400" /><span>{{ t('node_balanced') }}</span></button>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-4">
+          <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-semibold text-zinc-200"><Zap class="w-4 h-4 text-indigo-400 shrink-0" /><span class="truncate min-w-0">{{ t('node_fastest') }}</span></button>
+          <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-semibold text-zinc-200"><Scale class="w-4 h-4 text-indigo-400 shrink-0" /><span class="truncate min-w-0">{{ t('node_balanced') }}</span></button>
         </div>
         <p class="text-xs text-zinc-500 mb-2">{{ t('node_avail_configs', { n: (node.available_servers || []).length }) }}</p>
-        <div v-if="(node.available_servers || []).length" class="grid grid-cols-2 gap-3 max-h-56 overflow-y-auto pr-1">
+        <div v-if="(node.available_servers || []).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
           <button v-for="srv in node.available_servers" :key="srv" @click="switchTo(srv)"
-            :class="['px-4 py-3 rounded-xl transition-colors font-semibold truncate text-left', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
+            :class="['px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl font-semibold truncate', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
             {{ srv }}
           </button>
         </div>
