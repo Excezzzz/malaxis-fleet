@@ -218,7 +218,6 @@ const PERMISSION_SECTIONS = [
     perms: [
       ['can_view_audit_logs', 'perm_view_audit_logs'],
       ['can_view_master_logs', 'perm_view_master_logs'],
-      ['can_export_backups', 'perm_export_backups'],
     ],
   },
 ];
