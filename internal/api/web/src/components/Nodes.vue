@@ -21,7 +21,7 @@
       </div>
     </div>
 
-    <div v-if="toast" :class="['fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl md:backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-950/95 md:bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-950/95 md:bg-red-500/15 border-red-500/40 text-red-200']">
+    <div v-if="toast" :class="['fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-950/95 md:bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-950/95 md:bg-red-500/15 border-red-500/40 text-red-200']">
       {{ toast }}
     </div>
 
@@ -43,7 +43,7 @@
     </div>
 
     <!-- FAB backdrop overlay (dims & dismisses when menu is open) -->
-    <div v-if="fabOpen" :class="['fixed inset-0 z-40', fabBackdrop]" @click="fabOpen = false"></div>
+    <div v-if="fabOpen" :class="['fixed inset-0 z-40', fabBackdrop]" style="backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);" @click="fabOpen = false"></div>
 
     <!-- Floating Action Button -->
     <div class="fixed bottom-24 right-4 md:bottom-8 md:right-8 z-50 flex flex-col-reverse items-end gap-3">
@@ -70,7 +70,7 @@
         </div>
       </transition>
       <button @click="fabOpen = !fabOpen"
-        class="px-5 py-3 bg-zinc-900/95 hover:bg-zinc-800 md:bg-zinc-900/90 md:backdrop-blur-xl border border-white/10 hover:border-indigo-500/30 rounded-xl text-sm font-semibold font-mono shadow-2xl transition-all cursor-pointer flex items-center gap-2"
+        class="px-5 py-3 bg-zinc-900/90 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 hover:border-indigo-500/30 rounded-xl text-sm font-semibold font-mono shadow-2xl transition-all cursor-pointer flex items-center gap-2"
         :title="t('nodes_quick_actions_tt')" :aria-label="t('nodes_quick_actions_tt')">
         <span class="text-indigo-400 font-bold">[</span>
         <svg class="w-4 h-4 inline-block text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -80,8 +80,8 @@
     </div>
 
     <!-- Mass Update Subscription Domain Modal -->
-    <div v-if="showMassUpdateModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showMassUpdateModal = false">
-      <div class="bg-zinc-900/95 md:bg-zinc-900/90 md:backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
+    <div v-if="showMassUpdateModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" style="backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);" @click.self="showMassUpdateModal = false">
+      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('nodes_mass_domain') }}<span class="font-mono text-indigo-400">]</span></h2>
         <p class="text-zinc-400 mb-4">{{ t('nodes_mass_domain_hint') }}</p>
         <div class="space-y-4">
@@ -121,8 +121,8 @@ export default {
     const authCtx = inject('authCtx', {});
     const t = inject('t') || ((k) => k);
     const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
-    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/95 md:bg-zinc-900/25 md:backdrop-blur-md' : 'bg-black/95 md:bg-black/75 md:backdrop-blur-md');
-    const fabBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/95 md:bg-zinc-900/20' : 'bg-black/95 md:bg-black/75 md:backdrop-blur-md');
+    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/70 backdrop-blur-md' : 'bg-black/70 backdrop-blur-md');
+    const fabBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/60 backdrop-blur-sm' : 'bg-black/60 backdrop-blur-sm');
     const canEditSub = computed(() => authCtx.canEditSub?.value ?? false);
     const canPurgeNodes = computed(() => authCtx.canPurgeNodes?.value ?? false);
     const nodes = ref([]);

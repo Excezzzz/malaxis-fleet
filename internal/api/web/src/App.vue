@@ -5,7 +5,7 @@
     </div>
     <div v-else class="relative min-h-screen">
       <!-- Mobile top bar: logo / user badge / logout -->
-      <header class="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-zinc-900/95 md:bg-zinc-900/60 md:backdrop-blur-xl border-b border-white/10">
+      <header class="fixed top-0 left-0 right-0 z-50 md:hidden flex items-center justify-between gap-3 px-4 py-2.5 bg-zinc-900/60 backdrop-blur-xl border-b border-white/10" style="backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
         <div @click="currentView = 'Nodes'" class="cursor-pointer flex items-center gap-3 hover:opacity-80 transition-opacity">
           <div class="flex items-center space-x-2 shrink-0 min-w-0">
             <div class="p-1.5 rounded-lg bg-indigo-500/15 border border-indigo-400/20 shrink-0">
@@ -27,7 +27,7 @@
       </header>
 
       <!-- Mobile bottom island nav: floating capsule, icons only -->
-      <nav class="fixed bottom-4 left-4 right-4 z-50 md:hidden bg-zinc-900/95 md:bg-zinc-900/80 md:backdrop-blur-xl border border-white/10 rounded-full shadow-2xl px-4 py-2.5 flex justify-around items-center">
+      <nav class="fixed bottom-4 left-4 right-4 z-50 md:hidden bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl px-4 py-2.5 flex justify-around items-center" style="backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
         <template v-for="item in navItems" :key="item.view">
           <a @click.prevent="currentView = item.view" href="#"
              :title="item.label"
@@ -44,7 +44,7 @@
         </template>
       </nav>
 
-      <nav class="hidden md:flex fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/80 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40">
+      <nav class="hidden md:flex fixed top-4 left-4 right-4 z-50 max-w-[1600px] mx-auto items-center gap-2 sm:gap-3 px-4 sm:px-6 py-2.5 sm:py-4 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-full shadow-2xl shadow-black/40" style="backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);">
         <div @click="currentView = 'Nodes'" class="cursor-pointer flex items-center gap-3 hover:opacity-80 transition-opacity">
           <div class="flex items-center space-x-2 sm:space-x-3 shrink-0">
             <div class="p-1.5 sm:p-2 rounded-xl bg-indigo-500/15 border border-indigo-400/20">
