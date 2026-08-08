@@ -54,21 +54,29 @@ func main() {
 
 	// Persist auto-generated secrets to database for dynamic injection
 	if secretsGenerated {
-		repo.SetSetting("fleet_secret", cfg.FleetSecret)
-		repo.SetSetting("session_secret", cfg.SessionSecret)
+		if err := repo.SetSetting("fleet_secret", cfg.FleetSecret); err != nil {
+			log.Printf("ERROR: failed to persist fleet_secret: %v", err)
+		}
+		if err := repo.SetSetting("session_secret", cfg.SessionSecret); err != nil {
+			log.Printf("ERROR: failed to persist session_secret: %v", err)
+		}
 	} else {
 		// Always sync from DB in case it was set previously
-		dbSecret, _ := repo.GetSetting("fleet_secret")
-		if dbSecret != "" {
+		dbSecret, err := repo.GetSetting("fleet_secret")
+		if err != nil {
+			log.Printf("ERROR: failed to read fleet_secret from DB: %v", err)
+		} else if dbSecret != "" {
 			cfg.FleetSecret = dbSecret
-		} else {
-			repo.SetSetting("fleet_secret", cfg.FleetSecret)
+		} else if err := repo.SetSetting("fleet_secret", cfg.FleetSecret); err != nil {
+			log.Printf("ERROR: failed to persist fleet_secret: %v", err)
 		}
-		dbSessionSecret, _ := repo.GetSetting("session_secret")
-		if dbSessionSecret != "" {
+		dbSessionSecret, err := repo.GetSetting("session_secret")
+		if err != nil {
+			log.Printf("ERROR: failed to read session_secret from DB: %v", err)
+		} else if dbSessionSecret != "" {
 			cfg.SessionSecret = dbSessionSecret
-		} else {
-			repo.SetSetting("session_secret", cfg.SessionSecret)
+		} else if err := repo.SetSetting("session_secret", cfg.SessionSecret); err != nil {
+			log.Printf("ERROR: failed to persist session_secret: %v", err)
 		}
 	}
 

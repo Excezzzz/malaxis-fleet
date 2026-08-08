@@ -172,6 +172,37 @@ func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
+// actor resolves the acting user from the session context, logging any
+// resolution failure instead of silently ignoring it. Returns nil when the
+// actor cannot be loaded.
+func (a *API) actor(r *http.Request) *domain.User {
+	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
+	u, err := a.repo.GetUserByID(actorID)
+	if err != nil {
+		log.Printf("ERROR: failed to resolve actor %d for audit logging: %v", actorID, err)
+		return nil
+	}
+	return u
+}
+
+// actorName safely renders the acting user's username, never panicking on a
+// failed actor resolution.
+func (a *API) actorName(u *domain.User) string {
+	if u == nil {
+		return "unknown"
+	}
+	return u.Username
+}
+
+// actorRole safely renders the acting user's role, never panicking on a failed
+// actor resolution.
+func (a *API) actorRole(u *domain.User) string {
+	if u == nil {
+		return "unknown"
+	}
+	return u.Role
+}
+
 // writeForbidden writes a JSON 403 response with the given error message.
 func (a *API) writeForbidden(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -500,11 +531,12 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	if action == "" {
 		actionDisplay, _ = req["command"].(string)
 	}
-	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", actionDisplay)
+	if err := a.repo.UpdateNodePipelineStatus(nodeID, "Queued", actionDisplay); err != nil {
+		log.Printf("ERROR: failed to update pipeline status for node %s: %v", nodeID, err)
+	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, nodeID, "Sent command: "+string(cmdJSON))
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, nodeID, "Sent command: "+string(cmdJSON))
 
 	log.Printf("Command queued for node %s: %s", nodeID, string(cmdJSON))
 	w.Header().Set("Content-Type", "application/json")
@@ -812,9 +844,8 @@ func (a *API) UpdateNodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Updated node (name/sub_url)")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateDevice, nodeID, "Updated node (name/sub_url)")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(node)
@@ -878,9 +909,8 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 		a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub")
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Updated subscription URL to "+req.SubURL)
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateDevice, nodeID, "Updated subscription URL to "+req.SubURL)
 
 	log.Printf("Updated sub_url for node %s: %s", nodeID, req.SubURL)
 	w.Header().Set("Content-Type", "application/json")
@@ -948,9 +978,8 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "all_nodes", "Mass updated subscription URL for all nodes")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "all_nodes", "Mass updated subscription URL for all nodes")
 
 	log.Printf("Mass updated sub_url for %d nodes, queued commands for %d nodes", len(nodes), queuedCount)
 	w.Header().Set("Content-Type", "application/json")
@@ -1006,10 +1035,9 @@ func (a *API) MassUpdateDomainHandler(w http.ResponseWriter, r *http.Request) {
 		updatedCount++
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
+	actorUser := a.actor(r)
 	auditDetails := "Mass updated subscription domain to: " + req.Domain
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "all_nodes", auditDetails)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "all_nodes", auditDetails)
 
 	log.Printf("Mass updated domain to %s for %d/%d nodes", req.Domain, updatedCount, len(nodes))
 	w.Header().Set("Content-Type", "application/json")
@@ -1062,9 +1090,8 @@ func (a *API) DeleteNodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteDevice, nodeID, "Node deleted")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionDeleteDevice, nodeID, "Node deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1090,9 +1117,8 @@ func (a *API) PurgeOfflineNodesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteDevice, "all_nodes", "Purged "+strconv.FormatInt(deleted, 10)+" offline nodes (older than "+strconv.Itoa(days)+" days)")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionDeleteDevice, "all_nodes", "Purged "+strconv.FormatInt(deleted, 10)+" offline nodes (older than "+strconv.Itoa(days)+" days)")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "ok", "deleted": deleted})
@@ -1119,13 +1145,12 @@ func (a *API) AssignNodeToUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
+	actorUser := a.actor(r)
 	targetName := userIDStr
 	if targetUser != nil {
 		targetName = targetUser.Username
 	}
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Assigned node to user "+targetName)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateDevice, nodeID, "Assigned node to user "+targetName)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -1282,7 +1307,7 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	user.RoleName = user.Role
 	user.RoleColor = user.ColorHex
 
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionCreateUser, user.Username, "Role: "+user.Role)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionCreateUser, user.Username, "Role: "+user.Role)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1493,8 +1518,8 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorUser, _ = a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteUser, user.Username, "User deleted")
+	actorUser = a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionDeleteUser, user.Username, "User deleted")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1565,7 +1590,7 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 	if targetUser != nil {
 		targetName = targetUser.Username
 	}
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdatePassword, targetName, "Password reset by "+actorUser.Role)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdatePassword, targetName, "Password reset by "+a.actorRole(actorUser))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -1642,7 +1667,7 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	role.ID = id
 
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionCreateUser, role.Name, "Created custom role")
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionCreateUser, role.Name, "Created custom role")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -1764,7 +1789,7 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, existing.Name, "Updated custom role")
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, existing.Name, "Updated custom role")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(existing)
@@ -1827,7 +1852,7 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteUser, role.Name, "Deleted custom role")
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionDeleteUser, role.Name, "Deleted custom role")
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1898,9 +1923,8 @@ func (a *API) UpdateBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "bot", "Bot settings updated")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "bot", "Bot settings updated")
 
 	if a.botManager != nil {
 		if err := a.botManager.Reboot(); err != nil {
@@ -2026,9 +2050,8 @@ func (a *API) ResetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "bot", "Bot profile photo reset to default")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "bot", "Bot profile photo reset to default")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -2065,9 +2088,8 @@ func (a *API) SetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "bot", "Bot profile photo set to color "+req.Color)
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "bot", "Bot profile photo set to color "+req.Color)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2306,7 +2328,10 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 	secret := a.config.FleetSecret
 	if secret == "" {
 		// Fallback: try to read from database
-		dbSecret, _ := a.repo.GetSetting("fleet_secret")
+		dbSecret, err := a.repo.GetSetting("fleet_secret")
+		if err != nil {
+			log.Printf("ERROR: failed to read fleet_secret from DB for docker-compose: %v", err)
+		}
 		if dbSecret != "" {
 			secret = dbSecret
 		} else {
@@ -2374,7 +2399,10 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 
 	secret := a.config.FleetSecret
 	if secret == "" {
-		dbSecret, _ := a.repo.GetSetting("fleet_secret")
+		dbSecret, err := a.repo.GetSetting("fleet_secret")
+		if err != nil {
+			log.Printf("ERROR: failed to read fleet_secret from DB for node agent: %v", err)
+		}
 		if dbSecret != "" {
 			secret = dbSecret
 		}
@@ -2467,9 +2495,8 @@ func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("WARN: Could not write template %s to disk: %v", filename, err)
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateTemplate, filename, "Overwrote client template ("+strconv.Itoa(len(req.Content))+" bytes)")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateTemplate, filename, "Overwrote client template ("+strconv.Itoa(len(req.Content))+" bytes)")
 
 	log.Printf("Template %s updated (%d bytes)", filename, len(req.Content))
 	w.Header().Set("Content-Type", "application/json")
@@ -2549,9 +2576,8 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "all_nodes", "Queued update_client_files for "+strconv.Itoa(queuedCount)+" nodes")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "all_nodes", "Queued update_client_files for "+strconv.Itoa(queuedCount)+" nodes")
 
 	log.Printf("Queued update_client_files for %d nodes", queuedCount)
 	w.Header().Set("Content-Type", "application/json")
@@ -2590,9 +2616,8 @@ func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, "all_nodes", "Queued update_sub for "+strconv.Itoa(queuedCount)+" nodes")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "all_nodes", "Queued update_sub for "+strconv.Itoa(queuedCount)+" nodes")
 
 	log.Printf("Queued update_sub for %d nodes", queuedCount)
 	w.Header().Set("Content-Type", "application/json")
@@ -2633,9 +2658,8 @@ func (a *API) RenameNodeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateDevice, nodeID, "Renamed node to "+req.Name)
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateDevice, nodeID, "Renamed node to "+req.Name)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2699,9 +2723,8 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "terminate")
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionDeleteDevice, nodeID, "Queued terminate (self-destruct) command")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionDeleteDevice, nodeID, "Queued terminate (self-destruct) command")
 
 	log.Printf("Terminate queued for node %s", nodeID)
 	w.Header().Set("Content-Type", "application/json")
@@ -2728,9 +2751,8 @@ func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	a.repo.UpdateNodePipelineStatus(nodeID, "Idle", "Command cancelled")
 
-	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
-	actorUser, _ := a.repo.GetUserByID(actorID)
-	a.auditLogger.LogFromRequest(r, actorUser.Username, audit.ActionUpdateSettings, nodeID, "Cleared pending command")
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, nodeID, "Cleared pending command")
 
 	log.Printf("Pending command cleared for node %s", nodeID)
 	w.Header().Set("Content-Type", "application/json")
