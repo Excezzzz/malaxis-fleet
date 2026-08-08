@@ -1,4 +1,9 @@
-# Malaxis Fleet Manager
+# 🚀 Malaxis Fleet Manager v1.0.0
+
+![Release](https://img.shields.io/badge/Release-v1.0.0-brightgreen)
+![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
+![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
+![Vue](https://img.shields.io/badge/Vue-3-42b883)
 
 Malaxis Fleet Manager is a self-hosted fleet orchestration platform for
 deploying and operating VPN proxy nodes at scale. A single Go control plane
@@ -12,21 +17,62 @@ aggressive filtering.
 
 ---
 
-## Table of Contents
+## ⚡ 1. Step-by-Step Installation Guide
 
-- [Overview & Architecture](#overview--architecture)
-- [Features](#features)
-- [Server Administration Guide](#server-administration-guide)
-- [End-User Guide](#end-user-guide)
-- [Security & RBAC](#security--rbac)
-- [Telegram Bot Reference](#telegram-bot-reference)
-- [Project Layout](#project-layout)
-- [Development](#development)
-- [License](#license)
+### Step 1: DNS & Subdomain Setup
+
+Point 4 A-records (or a wildcard `*.yourdomain.com`) to your VPS IP address in Cloudflare or your DNS provider:
+
+- `dash.yourdomain.com` -> VPS IP (Dashboard UI)
+- `api.yourdomain.com` -> VPS IP (Agent API)
+- `join.yourdomain.com` -> VPS IP (Bootstrap installer)
+- `sub.yourdomain.com` -> VPS IP (Client file delivery)
+
+### Step 2: Deploy Master Server on VPS
+
+Run this single command on a fresh Linux VPS (Ubuntu/Debian) as root:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.sh | bash
+```
+
+- The script automatically checks system resources (creates a 2GB SWAP if memory is < 2GB).
+- Installs Docker & Docker Compose automatically.
+- Prompts for your domain name and admin credentials, configures `.env`, and launches the master server stack.
+
+### Step 3: Access Admin Dashboard & Retrieve Tokenized Join Command
+
+1. Open `https://dash.yourdomain.com` in your browser.
+2. Log in with initial credentials (`admin` / `admin`).
+3. Go to the **Client Files** tab (or Nodes page) to view your automatically generated, tokenized installation command:
+
+```bash
+curl -sSL https://join.yourdomain.com/?t=YOUR_SECRET_TOKEN | bash
+```
+
+### Step 4: Connect Client Nodes
+
+On any client host (Windows/Linux PC, home server, ARM board) with Docker installed, run the tokenized join command copied from Step 3:
+
+```bash
+curl -sSL https://join.yourdomain.com/?t=YOUR_SECRET_TOKEN | bash
+```
+
+- Enter your **Subscription URL** when prompted (or skip and add it later via the Web Dashboard or CLI).
+- Optional: Accept auto-installing the systemd background service.
+- The node instantly registers on your Web Dashboard and Telegram bot!
+
+### Step 5: Telegram Bot Setup (Optional)
+
+1. Open your Web Dashboard -> **Settings** tab -> **Telegram Bot** section.
+2. Enter your **Telegram Bot Token** (from @BotFather) and your **Admin Chat ID**.
+3. Click **Save**. The bot starts instantly with single-message inline UI, instant onboarding alerts, and DB backup delivery!
 
 ---
 
-## Overview & Architecture
+## 📖 2. System Overview & Features
+
+### Overview & Architecture
 
 The deployment is split into four DNS names, all pointed at a single Caddy
 server that routes by Host header and terminates TLS:
@@ -62,16 +108,16 @@ commands on a shared-secret bearer token, and report health and benchmark
 results at regular intervals. The control plane never exposes a host port:
 PostgreSQL and the Go backend are reachable only over internal bridge networks.
 
-## Features
+### Features
 
-### XHTTP stream multiplexing (xmux)
+#### XHTTP stream multiplexing (xmux)
 
 Xray outbound connections use XHTTP `xmux` with `maxConnections: 4` and
 adaptive request windows (800–900 ms). This eliminates the single-stream media
 bottleneck by multiplexing a channel over multiple parallel HTTP requests, at
 the cost of a bounded increase in memory per connection.
 
-### DPI evasion
+#### DPI evasion
 
 - **`xPaddingBytes`** and randomized TLS fingerprints defeat passive
   fingerprinting.
@@ -84,7 +130,7 @@ the cost of a bounded increase in memory per connection.
 - **Aggressive dead-link detection** (`tcpNoDelay`, `tcpKeepAliveInterval`,
   `tcpUserTimeout`) drops stale connections in ~15 seconds.
 
-### Dual engine orchestration
+#### Dual engine orchestration
 
 Xray and sing-box run collocated on a Docker-in-Docker bridge network. The
 agent generates engine configs at runtime for VLESS, VMess, Trojan,
@@ -93,20 +139,20 @@ httpupgrade/xhttp transports, and falls back from sing-box to Xray for
 transports sing-box cannot carry natively. Both engines expose a local
 `SOCKS5 :6357` / `HTTP :6358` interface.
 
-### Hardware deduplication
+#### Hardware deduplication
 
 Each node computes a SHA-256 hardware fingerprint from the hostname, primary
 MAC, and system serial. Reinstalls keep the canonical node ID: duplicate
 registrations are merged instead of creating ghost nodes, which prevents
 double-counting and state confusion.
 
-### Smart routing modes
+#### Smart routing modes
 
 - **Fastest** — selects the lowest-latency server via live TCP/UDP probing.
 - **Balanced** — selects the lowest jitter/loss.
 - Cached benchmark results (TTL 10 min) avoid ping spam on every switch.
 
-### Operational tooling
+#### Operational tooling
 
 - **OTA client updates** — push fresh `node_agent.py`, compose, Dockerfile,
   and engine configs fleet-wide from the dashboard or bot in one action.
@@ -118,103 +164,9 @@ double-counting and state confusion.
 - **Task queuing** — per-node commands queue with live pipeline status
   (`queued / running / done / failed`).
 
-### Stealth Mode & Active Probing Defense
+### End-User Guide
 
-- 🥷 **Stealth Mode & Active Probing Defense** — The web dashboard is fully
-  camouflaged. Unauthenticated visitors see a generic, unnamed "System Sign
-  In" page with no branding, preventing automated DPI scanners or government
-  firewalls from identifying the VPN panel.
-- 🔐 **Tokenized Payload Delivery** — Client installation scripts
-  (`node_agent.py`, `join.sh`) cannot be downloaded without a dynamically
-  generated `SECRET_TOKEN`, protecting the infrastructure from unauthorized
-  access and reverse engineering.
-
-## Server Administration Guide
-
-### Prerequisites
-
-| Requirement | Version / Notes |
-|-------------|-----------------|
-| Go toolchain | 1.22+ (for cross-compiling the control plane) |
-| Node.js + npm | 18+ (for building the Vue 3 dashboard) |
-| VPS / dedicated server | Docker Engine + Docker Compose; one public IPv4 |
-| DNS | `dash`, `api`, `join`, `sub` A records pointing at the server |
-| TLS | Caddy terminates TLS automatically (with a CF cert pair if you use Cloudflare proxying; paths configured via `SSL_CERT_PATH` / `SSL_KEY_PATH`) |
-
-The server requires no exposed ports beyond `443` (Caddy). PostgreSQL and the
-control plane live on internal Docker networks only.
-
-### 1. Configure the environment
-
-```bash
-cp .env.example .env
-```
-
-Set at minimum the following values:
-
-```ini
-BOT_TOKEN="1234567890:AA..."          # Telegram bot token
-ADMIN_CHAT_ID="123456789"             # admin chat ID for bot notifications
-ADMIN_USER="admin"                    # initial administrator account
-ADMIN_PASS="replace-with-strong-pass" # initial administrator password
-SECRET_TOKEN="replace-with-random"    # shared agent auth secret
-SESSION_SECRET="replace-with-random"  # session signing secret
-POSTGRES_PASSWORD="replace-with-strong-pass"
-
-API_DOMAIN="api.yourdomain.com"       # DNS A records -> Caddy server
-DASHBOARD_DOMAIN="dash.yourdomain.com"
-JOIN_DOMAIN="join.yourdomain.com"
-SUB_DOMAIN="sub.yourdomain.com"
-```
-
-`.env` is git-ignored and must never be committed. Use `.env.example` as the
-template only. Every value above is consumed at runtime by the control plane
-and substituted into the client deployment assets served to nodes. The
-`SECRET_TOKEN` doubles as the payload-delivery key: the bootstrap script and
-all client templates are only served to requests carrying
-`?t=<SECRET_TOKEN>`, and the token is injected into the script at serve time.
-
-### 2. Deploy
-
-**Option A — One-line server installer (Debian/Ubuntu VPS):**
-
-```bash
-curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.sh | bash
-```
-
-The installer (run as root) verifies the account, checks RAM and disk space
-(offering to create a 2 GB swap file below 2 GB RAM and running a cleanup
-pass below 5 GB free disk), installs `git`, `curl`, and Docker, clones the
-repository into `/opt/malaxis-fleet`, prompts for your four domains and the
-master credentials, generates random `SECRET_TOKEN` / `SESSION_SECRET` /
-`POSTGRES_PASSWORD` values into `.env`, and launches the fleet with
-`docker compose up -d --build`.
-
-**Option B — From a Windows workstation with Go and Node.js installed:**
-
-```powershell
-.\build_and_deploy.ps1 admin@your-server-ip
-```
-
-The script performs the following steps:
-
-1. Installs dependencies and builds the Vue 3 frontend.
-2. Cross-compiles the Go backend for `linux/amd64`.
-3. Copies the binary, Dockerfile, compose file, and `.env` to the server.
-4. Starts `fleet-master` and `fleet-postgres` on an internal network, with
-   Caddy forwarding the four subdomains to `fleet-master:8000`.
-
-### 3. Log in
-
-Open `https://dash.yourdomain.com` and sign in with the `ADMIN_USER` /
-`ADMIN_PASS` values from `.env` (defaults: `admin` / `admin` if not set).
-The seeded account is the fleet owner (rank 100) and is the only strictly
-immutable account in the system. Change the password immediately after the
-first login.
-
-## End-User Guide
-
-### Joining a fleet
+#### Joining a fleet
 
 On any host with Docker installed, run the one-line bootstrap. The fleet
 secret (`SECRET_TOKEN` from the server's `.env`) is required: it is passed as
@@ -251,7 +203,7 @@ on:
 - `SOCKS5 127.0.0.1:6357`
 - `HTTP   127.0.0.1:6358`
 
-### Using the local CLI
+#### Using the local CLI
 
 Run the interactive CLI to inspect the node and change its routing locally:
 
@@ -285,9 +237,90 @@ All switches are reported back to the control plane and reflected on the
 dashboard. Server changes can also be triggered remotely by the administrator
 from the web dashboard or the Telegram bot.
 
-## Security & RBAC
+### Server Administration Guide (Advanced)
 
-### Access control
+#### Prerequisites
+
+| Requirement | Version / Notes |
+|-------------|-----------------|
+| Go toolchain | 1.22+ (for cross-compiling the control plane) |
+| Node.js + npm | 18+ (for building the Vue 3 dashboard) |
+| VPS / dedicated server | Docker Engine + Docker Compose; one public IPv4 |
+| DNS | `dash`, `api`, `join`, `sub` A records pointing at the server |
+| TLS | Caddy terminates TLS automatically (with a CF cert pair if you use Cloudflare proxying; paths configured via `SSL_CERT_PATH` / `SSL_KEY_PATH`) |
+
+The server requires no exposed ports beyond `443` (Caddy). PostgreSQL and the
+control plane live on internal Docker networks only.
+
+#### Configure the environment
+
+```bash
+cp .env.example .env
+```
+
+Set at minimum the following values:
+
+```ini
+BOT_TOKEN="1234567890:AA..."          # Telegram bot token
+ADMIN_CHAT_ID="123456789"             # admin chat ID for bot notifications
+ADMIN_USER="admin"                    # initial administrator account
+ADMIN_PASS="replace-with-strong-pass" # initial administrator password
+SECRET_TOKEN="replace-with-random"    # shared agent auth secret
+SESSION_SECRET="replace-with-random"  # session signing secret
+POSTGRES_PASSWORD="replace-with-strong-pass"
+
+API_DOMAIN="api.yourdomain.com"       # DNS A records -> Caddy server
+DASHBOARD_DOMAIN="dash.yourdomain.com"
+JOIN_DOMAIN="join.yourdomain.com"
+SUB_DOMAIN="sub.yourdomain.com"
+```
+
+`.env` is git-ignored and must never be committed. Use `.env.example` as the
+template only. Every value above is consumed at runtime by the control plane
+and substituted into the client deployment assets served to nodes. The
+`SECRET_TOKEN` doubles as the payload-delivery key: the bootstrap script and
+all client templates are only served to requests carrying
+`?t=<SECRET_TOKEN>`, and the token is injected into the script at serve time.
+
+#### Deploy (alternative to Step 2)
+
+**Option A — One-line server installer (Debian/Ubuntu VPS):**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.sh | bash
+```
+
+The installer (run as root) verifies the account, checks RAM and disk space
+(offering to create a 2 GB swap file below 2 GB RAM and running a cleanup
+pass below 5 GB free disk), installs `git`, `curl`, and Docker, clones the
+repository into `/opt/malaxis-fleet`, prompts for your four domains and the
+master credentials, generates random `SECRET_TOKEN` / `SESSION_SECRET` /
+`POSTGRES_PASSWORD` values into `.env`, and launches the fleet with
+`docker compose up -d --build`.
+
+**Option B — From a Windows workstation with Go and Node.js installed:**
+
+```powershell
+.\build_and_deploy.ps1 admin@your-server-ip
+```
+
+The script performs the following steps:
+
+1. Installs dependencies and builds the Vue 3 frontend.
+2. Cross-compiles the Go backend for `linux/amd64`.
+3. Copies the binary, Dockerfile, compose file, and `.env` to the server.
+4. Starts `fleet-master` and `fleet-postgres` on an internal network, with
+   Caddy forwarding the four subdomains to `fleet-master:8000`.
+
+#### Log in
+
+Open `https://dash.yourdomain.com` and sign in with the `ADMIN_USER` /
+`ADMIN_PASS` values from `.env` (defaults: `admin` / `admin` if not set).
+The seeded account is the fleet owner (rank 100) and is the only strictly
+immutable account in the system. Change the password immediately after the
+first login.
+
+### Access Control & RBAC Hierarchy
 
 Access is enforced through a role hierarchy based on a numeric rank:
 
@@ -309,29 +342,7 @@ resolve permissions from their `permissions_json`, covering nodes, users,
 roles, logs, and backups. Role creation includes an escalation guard: a role
 cannot grant permissions the actor does not hold.
 
-### Network posture
-
-- PostgreSQL is never exposed outside the internal Docker network.
-- `fleet-master` publishes no host ports; all ingress is Caddy-terminated.
-- Agent-to-master traffic uses a shared-secret bearer token plus
-  hardware-fingerprinted node identity to prevent spoofing.
-- Login is rate-limited per IP; SQL is fully parameterized.
-- Telegram bot actions are gated on the authoritative admin chat ID.
-
-### Stealth behavior
-
-The public surface is deliberately uninformative to unauthenticated visitors:
-
-- The join/bootstrap script, client templates, engine configs, and the agent
-  source are served only to requests carrying `?t=<SECRET_TOKEN>`; all other
-  requests receive a stock nginx-style 404 page.
-- `GET /api/health` returns only `{"status":"ok"}` and discloses no
-  application identity, database, or bot state.
-- The unauthenticated login page and document title carry no product
-  branding, and the management UI (including branding) renders only after a
-  successful session is established.
-
-## Telegram Bot Reference
+### Telegram Bot Reference
 
 ```
 /start                          -> main menu
@@ -344,7 +355,7 @@ Download DB Backup              -> PostgreSQL ZIP via bot
 Terminate & Self-Destruct       -> remote wipe of the node
 ```
 
-## Project Layout
+### Project Layout
 
 ```
 malaxis-fleet/
@@ -365,7 +376,7 @@ malaxis-fleet/
 └── build_and_deploy.ps1       # build -> scp -> compose deployment
 ```
 
-## Development
+### Development
 
 ```bash
 go vet ./... && go test ./internal/...   # backend sanity checks
@@ -381,7 +392,44 @@ npm install
 npm run build
 ```
 
-## License
+---
+
+## 🛡️ 3. Security & Stealth Mode
+
+### Stealth Mode & Active Probing Defense
+
+- 🥷 **Stealth Mode & Active Probing Defense** — The web dashboard is fully
+  camouflaged. Unauthenticated visitors see a generic, unnamed "System Sign
+  In" page with no branding, preventing automated DPI scanners or government
+  firewalls from identifying the VPN panel.
+- 🔐 **Tokenized Payload Delivery** — Client installation scripts
+  (`node_agent.py`, `join.sh`) cannot be downloaded without a dynamically
+  generated `SECRET_TOKEN`, protecting the infrastructure from unauthorized
+  access and reverse engineering.
+
+### Stealth behavior
+
+The public surface is deliberately uninformative to unauthenticated visitors:
+
+- The join/bootstrap script, client templates, engine configs, and the agent
+  source are served only to requests carrying `?t=<SECRET_TOKEN>`; all other
+  requests receive a stock nginx-style 404 page.
+- `GET /api/health` returns only `{"status":"ok"}` and discloses no
+  application identity, database, or bot state.
+- The unauthenticated login page and document title carry no product
+  branding, and the management UI (including branding) renders only after a
+  successful session is established.
+
+### Network posture
+
+- PostgreSQL is never exposed outside the internal Docker network.
+- `fleet-master` publishes no host ports; all ingress is Caddy-terminated.
+- Agent-to-master traffic uses a shared-secret bearer token plus
+  hardware-fingerprinted node identity to prevent spoofing.
+- Login is rate-limited per IP; SQL is fully parameterized.
+- Telegram bot actions are gated on the authoritative admin chat ID.
+
+### License
 
 **Version: v1.0.0 — Official First Stable Release.**
 
