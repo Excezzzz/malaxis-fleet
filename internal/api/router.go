@@ -178,7 +178,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// GET /api/web/backup/download - backup download (owner only; DB backups
 	// contain user hashes, session secrets and tokens)
-	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Only the owner can manage or download backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
+	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Backups are strictly restricted to the system Owner.")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
 
 	// POST /api/web/devices/{id}/command - send a command to a specific node (permission can_switch_vpn)
 	webAPIRouter.Handle("/web/devices/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
@@ -219,7 +219,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// Web UI settings (Owner only)
 	webAPIRouter.Handle("/web/settings", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetSettingsHandler)))).Methods("GET")
-	webAPIRouter.Handle("/web/settings/backup", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Only the owner can manage or download backups")(http.HandlerFunc(api.UpdateBackupSettingsHandler)))).Methods("PUT")
+	webAPIRouter.Handle("/web/settings/backup", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Backups are strictly restricted to the system Owner.")(http.HandlerFunc(api.UpdateBackupSettingsHandler)))).Methods("PUT")
 	settingsWeb := webAPIRouter.PathPrefix("/settings").Subrouter()
 	settingsWeb.Use(auth.Middleware(cfg))
 	settingsWeb.Use(auth.RequireOwner(repo))

@@ -59,7 +59,6 @@ const (
 	PermViewNodeLogs   = "can_view_node_logs"
 	PermViewMasterLogs = "can_view_master_logs"
 	PermViewAuditLogs  = "can_view_audit_logs"
-	PermExportBackups  = "can_export_backups"
 	// Deprecated: kept for backwards compatibility with roles seeded before
 	// the granular split. Migrated to PermViewUsers/CreateUsers/EditUsers/
 	// DeleteUsers.
@@ -68,13 +67,14 @@ const (
 
 // AllPermissions is the complete set of permission keys granted implicitly to
 // the owner and admin accounts. Used for /me responses and middleware checks.
+// NOTE: backups are NOT in this list — DB backup access is hardcoded to the
+// owner role only (see router.go / DownloadBackupHandler).
 var AllPermissions = []string{
 	PermViewNodes, PermSwitchVPN, PermEditSub, PermRenameNode,
 	PermTerminateNode, PermUpdateClient, PermPurgeNodes,
 	PermViewUsers, PermCreateUsers, PermEditUsers, PermDeleteUsers,
 	PermViewRoles, PermManageRoles,
 	PermViewAudit, PermViewNodeLogs, PermViewMasterLogs, PermViewAuditLogs,
-	PermExportBackups,
 }
 
 // PermissionsGrantedBy maps a coarse/deprecated permission to the granular

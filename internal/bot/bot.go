@@ -975,6 +975,13 @@ func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 // emoji rendering, backup interval) with a visible toast and re-renders the
 // main menu.
 func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
+	// Backup operations are strictly restricted to the primary owner chat
+	// (tg_admin_chat_id) — pollUpdates already filters every update, this is
+	// explicit defense-in-depth for the DB-backup surface.
+	if (data == "backup:download" || data == "backup:interval" || strings.HasPrefix(data, "backup:set:")) && !b.isAdminChat(q.Message.Chat.ID) {
+		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Доступ только владельцу", "Owner only")))
+		return
+	}
 	switch data {
 	case "prefs:lang":
 		b.toggleBotLanguage()
@@ -1008,6 +1015,15 @@ func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 		return
 	}
 	b.showMainMenu(q.Message.Chat.ID)
+}
+
+// isAdminChat reports whether the given Telegram chat is the primary owner
+// chat (the configured tg_admin_chat_id). Backup operations are strictly
+// restricted to it.
+func (b *Bot) isAdminChat(chatID int64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.chatID != 0 && chatID == b.chatID
 }
 
 // showBackupIntervalPicker renders the backup-frequency picker keyboard.
@@ -1715,8 +1731,12 @@ func (b *Bot) handlePurge(chatID int64, messageID int) {
 }
 
 // handleBackup creates a pg_dump + gzip backup and sends it as a Telegram
-// document, then restores the main menu in the single bot message.
+// document, then restores the main menu in the single bot message. Strictly
+// owner-only: it exits silently for any chat other than tg_admin_chat_id.
 func (b *Bot) handleBackup(chatID int64, messageID int) {
+	if !b.isAdminChat(chatID) {
+		return
+	}
 	if messageID > 0 {
 		b.editMessage(chatID, messageID, "<b>📦 "+b.tr("Создание резервной копии БД...", "Creating database backup...")+"</b>", nil)
 	} else {

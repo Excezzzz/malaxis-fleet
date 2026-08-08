@@ -160,13 +160,13 @@ func (r *postgresRepository) Init() error {
 		// Ensure the built-in system roles exist even on upgraded deployments whose
 		// roles table was seeded before the owner/viewer rows were introduced.
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-			SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 80, NOW()
+			SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 80, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin')`},
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'client', '#3B82F6', 'system', '{"can_view_nodes":true}', 30, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'client')`},
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-			SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 100, NOW()
+			SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 100, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'owner')`},
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()

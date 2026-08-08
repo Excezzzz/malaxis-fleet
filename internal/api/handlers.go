@@ -2254,7 +2254,21 @@ func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (a *API) DownloadBackupHandler(w http.ResponseWriter, r *http.Request) {
-	if !a.enforcePermission(w, r, domain.PermExportBackups) {
+	// Defense-in-depth: DB backups contain user hashes, session secrets and
+	// tokens, so access is hardcoded to the owner role regardless of any
+	// permission list. The router additionally enforces RequireOwner.
+	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
+	if !ok || userID == 0 {
+		http.Error(w, "Unauthorized: Not authenticated", http.StatusUnauthorized)
+		return
+	}
+	user, err := a.repo.GetUserByID(userID)
+	if err != nil {
+		http.Error(w, "Forbidden: User not found", http.StatusForbidden)
+		return
+	}
+	if user.Role != domain.RoleOwner {
+		http.Error(w, "Forbidden: Backups are strictly restricted to the system Owner.", http.StatusForbidden)
 		return
 	}
 
