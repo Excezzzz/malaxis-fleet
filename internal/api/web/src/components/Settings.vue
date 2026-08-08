@@ -4,7 +4,7 @@
       <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('settings_title') }}<span class="font-mono text-indigo-400">]</span></h1>
     </div>
 
-    <div class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/95 md:bg-zinc-900/60 md:backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
+    <div class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_appearance') }}<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
@@ -42,7 +42,7 @@
       </div>
     </div>
 
-    <div v-if="isOwner" class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/95 md:bg-zinc-900/60 md:backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
+    <div v-if="isOwner" class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-2"><span class="font-mono text-indigo-400">[</span>{{ t('settings_auto_backups') }}<span class="font-mono text-indigo-400">]</span></h2>
       <p class="text-zinc-400 mb-6 text-sm">{{ t('settings_auto_backups_hint') }}</p>
 
@@ -92,7 +92,7 @@
       </div>
     </div>
 
-    <div v-if="canManageBot" class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/95 md:bg-zinc-900/60 md:backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
+    <div v-if="canManageBot" class="max-w-full overflow-hidden p-4 sm:p-6 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl mb-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_bot') }}<span class="font-mono text-indigo-400">]</span></h2>
 
       <div class="space-y-6">
@@ -158,11 +158,11 @@
       </div>
     </div>
 
-    <div v-if="avatarToast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-950/95 md:bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl md:backdrop-blur-md shadow-2xl">
+    <div v-if="avatarToast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-950/95 md:bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
       {{ avatarToast }}
     </div>
 
-    <div v-if="isOwner" class="bg-zinc-900/95 md:bg-zinc-900/40 md:backdrop-blur-md border border-white/5 rounded-2xl p-6">
+    <div v-if="isOwner" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6">
       <h2 class="text-2xl font-bold tracking-tight mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('settings_backup') }}<span class="font-mono text-indigo-400">]</span></h2>
       <p class="text-zinc-400 mb-4">{{ t('settings_backup_hint') }}</p>
       <button @click="downloadBackup" class="inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all bg-indigo-600 hover:bg-indigo-500 text-white shadow-md">
