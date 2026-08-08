@@ -726,13 +726,18 @@ func (b *Bot) saveBotPrefs(lang string, emojis int) {
 	if emojis >= 0 {
 		prefs.BotEmojisEnabled = emojis == 1
 	}
-	_ = b.repo.UpdateUserPreferences(user.ID, *prefs)
+	if err := b.repo.UpdateUserPreferences(user.ID, *prefs); err != nil {
+		log.Printf("ERROR: failed to persist preferences for user %d: %v", user.ID, err)
+	}
 }
 
 // getMainMenuContent builds the main menu: node online/offline counters and
 // the fleet action buttons.
 func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
-	nodes, _ := b.repo.GetAllNodes()
+	nodes, err := b.repo.GetAllNodes()
+	if err != nil {
+		log.Printf("ERROR: failed to load nodes for main menu: %v", err)
+	}
 	onlineCount := 0
 	for _, n := range nodes {
 		if time.Since(n.LastSeen) < onlineWindow {
