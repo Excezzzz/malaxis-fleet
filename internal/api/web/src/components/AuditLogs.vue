@@ -21,11 +21,11 @@
       </button>
     </div>
 
-    <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border bg-emerald-500/15 border-emerald-500/40 text-emerald-200">
+    <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl md:backdrop-blur-md shadow-2xl border bg-emerald-950/95 md:bg-emerald-500/15 border-emerald-500/40 text-emerald-200">
       {{ toast }}
     </div>
 
-    <div v-if="activeTab === 'audit'" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-x-auto">
+    <div v-if="activeTab === 'audit'" class="bg-zinc-900/95 md:bg-zinc-900/40 md:backdrop-blur-md border border-white/5 rounded-2xl overflow-x-auto">
       <table class="min-w-full divide-y divide-white/5">
         <thead class="bg-white/[0.03]">
           <tr>

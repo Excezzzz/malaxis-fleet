@@ -18,7 +18,7 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
+    <div class="bg-zinc-900/95 md:bg-zinc-900/40 md:backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
         <div>
           <h2 class="text-lg font-bold text-white">{{ t('client_add_device') }}</h2>
@@ -39,7 +39,7 @@
       </div>
     </div>
 
-    <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl">
+    <div v-if="toast" class="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 bg-emerald-950/95 md:bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 px-5 py-3 rounded-xl md:backdrop-blur-md shadow-2xl">
       {{ toast }}
     </div>
 
@@ -55,7 +55,7 @@
         </button>
       </div>
 
-      <div class="lg:col-span-4 bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden flex flex-col">
+      <div class="lg:col-span-4 bg-zinc-900/95 md:bg-zinc-900/40 md:backdrop-blur-md border border-white/5 rounded-2xl overflow-hidden flex flex-col">
         <div class="flex flex-wrap items-center justify-between gap-2 px-5 py-3 border-b border-white/5 bg-zinc-900/60">
           <span class="font-mono text-sm text-indigo-300 min-w-0 truncate">{{ selected }}</span>
           <div class="flex flex-wrap items-center gap-3">

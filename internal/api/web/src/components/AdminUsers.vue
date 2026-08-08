@@ -10,7 +10,7 @@
       </div>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl overflow-x-auto">
+    <div class="bg-zinc-900/95 md:bg-zinc-900/40 md:backdrop-blur-md border border-white/5 rounded-2xl overflow-x-auto">
       <table class="min-w-full divide-y divide-white/5">
         <thead class="bg-white/[0.03]">
           <tr>
@@ -55,8 +55,8 @@
     </div>
 
     <!-- Add User Modal -->
-    <div v-if="showAddUserModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" style="backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);" @click.self="showAddUserModal = false">
-      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
+    <div v-if="showAddUserModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showAddUserModal = false">
+      <div class="bg-zinc-900/95 md:bg-zinc-900/90 md:backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ showEditUserModal ? t('edit_user') : t('add_user') }}<span class="font-mono text-indigo-400">]</span></h2>
         <form @submit.prevent="handleCreateUser">
           <div class="space-y-4">
@@ -93,8 +93,8 @@
     </div>
 
     <!-- Edit User Modal -->
-    <div v-if="editingUser" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" style="backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);" @click.self="editingUser = null">
-      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
+    <div v-if="editingUser" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="editingUser = null">
+      <div class="bg-zinc-900/95 md:bg-zinc-900/90 md:backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('users_edit_title') }}<span class="font-mono text-indigo-400">]</span>: {{ editingUser.username }}</h2>
         <form @submit.prevent="handleEditUser">
           <div class="space-y-4">
@@ -148,7 +148,7 @@ export default {
     const authCtxRaw = inject('authCtx', {});
     const t = inject('t') || ((k) => k);
     const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
-    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/25 backdrop-blur-sm' : 'bg-black/75 backdrop-blur-md');
+    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/95 md:bg-zinc-900/25 md:backdrop-blur-md' : 'bg-black/95 md:bg-black/75 md:backdrop-blur-md');
     const actorRole = computed(() => authCtxRaw.user?.value?.role || '');
     const canCreateUsers = computed(() => authCtxRaw.canCreateUsers?.value ?? false);
     const canEditUsers = computed(() => authCtxRaw.canEditUsers?.value ?? false);

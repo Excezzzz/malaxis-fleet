@@ -176,8 +176,9 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// GET /api/web/logs/master - master server logs (permission can_view_master_logs)
 	webAPIRouter.Handle("/web/logs/master", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewMasterLogs)(http.HandlerFunc(api.GetMasterLogsHandler)))).Methods("GET")
 
-	// GET /api/web/backup/download - backup download (permission can_export_backups)
-	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_export_backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
+	// GET /api/web/backup/download - backup download (owner only; DB backups
+	// contain user hashes, session secrets and tokens)
+	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Only the owner can manage or download backups")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
 
 	// POST /api/web/devices/{id}/command - send a command to a specific node (permission can_switch_vpn)
 	webAPIRouter.Handle("/web/devices/{id}/command", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_switch_vpn")(http.HandlerFunc(api.SendCommandHandler)))).Methods("POST")
@@ -218,7 +219,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 
 	// Web UI settings (Owner only)
 	webAPIRouter.Handle("/web/settings", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.GetSettingsHandler)))).Methods("GET")
-	webAPIRouter.Handle("/web/settings/backup", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.UpdateBackupSettingsHandler)))).Methods("PUT")
+	webAPIRouter.Handle("/web/settings/backup", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Only the owner can manage or download backups")(http.HandlerFunc(api.UpdateBackupSettingsHandler)))).Methods("PUT")
 	settingsWeb := webAPIRouter.PathPrefix("/settings").Subrouter()
 	settingsWeb.Use(auth.Middleware(cfg))
 	settingsWeb.Use(auth.RequireOwner(repo))
