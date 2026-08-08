@@ -84,6 +84,15 @@ func Middleware(cfg *config.Config) func(http.Handler) http.Handler {
 
 // RequireRole returns middleware that ensures the authenticated user has one of the required roles.
 func RequireRole(repo repository.Repository, allowedRoles ...string) func(http.Handler) http.Handler {
+	return requireRoleWithMessage(repo, allowedRoles, "Forbidden: Insufficient permissions")
+}
+
+// RequireRoleWithMessage is RequireRole with a custom 403 response body.
+func RequireRoleWithMessage(repo repository.Repository, message string, allowedRoles ...string) func(http.Handler) http.Handler {
+	return requireRoleWithMessage(repo, allowedRoles, message)
+}
+
+func requireRoleWithMessage(repo repository.Repository, allowedRoles []string, message string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Get user ID from context (set by Middleware)
@@ -110,7 +119,7 @@ func RequireRole(repo repository.Repository, allowedRoles ...string) func(http.H
 			}
 
 			if !authorized {
-				http.Error(w, "Forbidden: Insufficient permissions", http.StatusForbidden)
+				http.Error(w, message, http.StatusForbidden)
 				return
 			}
 
@@ -131,6 +140,11 @@ func RequireRole(repo repository.Repository, allowedRoles ...string) func(http.H
 // RequireOwner is a convenience wrapper for RequireRole(repo, domain.RoleOwner)
 func RequireOwner(repo repository.Repository) func(http.Handler) http.Handler {
 	return RequireRole(repo, domain.RoleOwner)
+}
+
+// RequireOwnerWithMessage is RequireOwner with a custom 403 response body.
+func RequireOwnerWithMessage(repo repository.Repository, message string) func(http.Handler) http.Handler {
+	return RequireRoleWithMessage(repo, message, domain.RoleOwner)
 }
 
 // RequireAdminOrOwner is a convenience wrapper for RequireRole(repo, domain.RoleAdmin, domain.RoleOwner)

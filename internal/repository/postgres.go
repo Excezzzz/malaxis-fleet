@@ -110,80 +110,87 @@ func (r *postgresRepository) Init() error {
 		}
 	}
 
-	// Migrate: Add color_hex column if it doesn't exist (idempotent)
-	r.db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS color_hex VARCHAR(7) DEFAULT ''`)
-	// Migrate: User personalization columns (accent color, theme, language, bot emoji rendering)
-	r.db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS accent_color VARCHAR(20) NOT NULL DEFAULT 'indigo'`)
-	r.db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(20) NOT NULL DEFAULT 'obsidian'`)
-	r.db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) NOT NULL DEFAULT 'ru'`)
-	r.db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_emojis_enabled BOOLEAN NOT NULL DEFAULT TRUE`)
-	// Migrate: Add user_id column if it doesn't exist
-	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL`)
-	// Migrate: Add available_servers column if it doesn't exist
-	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS available_servers TEXT NOT NULL DEFAULT '[]'`)
-	// Migrate: Add hardware_hash column for hardware fingerprint dedup
-	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS hardware_hash TEXT`)
-	r.db.Exec(`CREATE INDEX IF NOT EXISTS idx_nodes_hardware_hash ON nodes(hardware_hash)`)
-	// Migrate: Add node_logs column (JSON map of container -> last log tail)
-	r.db.Exec(`ALTER TABLE nodes ADD COLUMN IF NOT EXISTS node_logs TEXT`)
-
-	// Migrate: Set default value for device_type and update existing NULL values
-	r.db.Exec(`ALTER TABLE nodes ALTER COLUMN device_type SET DEFAULT 'node'`)
-	r.db.Exec(`UPDATE nodes SET device_type = 'node' WHERE device_type IS NULL`)
-
-	// Migrate: Ensure roles table has all required columns (idempotent for upgrades)
-	r.db.Exec(`ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions_json TEXT NOT NULL DEFAULT '{}'`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN permissions_json SET DEFAULT '{}'`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN color_hex TYPE VARCHAR(7)`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN color_hex SET DEFAULT '#6B7280'`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN name TYPE VARCHAR(255)`)
-	r.db.Exec(`ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_owner_id_fkey`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN owner_id TYPE TEXT`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN owner_id DROP NOT NULL`)
-
-	// Migrate: Add configurable rank column (int hierarchy) if it doesn't exist
-	r.db.Exec(`ALTER TABLE roles ADD COLUMN IF NOT EXISTS rank INT NOT NULL DEFAULT 10`)
-	r.db.Exec(`ALTER TABLE roles ALTER COLUMN rank SET DEFAULT 10`)
-
-	// Backfill ranks for the built-in system roles. Idempotent: only roles
-	// found in the DB are touched, so existing deployments keep their data.
-	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'owner'`, domain.RoleRankOwner)
-	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'admin'`, domain.RoleRankAdmin)
-	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'client'`, domain.RoleRankClient)
-	r.db.Exec(`UPDATE roles SET rank = $1 WHERE name = 'viewer'`, domain.RoleRankViewer)
-	// Any non-system/custom role that still defaults to the client rank keeps
-	// its stored value; only NULL/zero ranks are normalized to the default.
-	r.db.Exec(`UPDATE roles SET rank = 10 WHERE rank IS NULL OR rank < 1 OR rank > 100`)
-
-	// Ensure the built-in system roles exist even on upgraded deployments whose
-	// roles table was seeded before the owner/viewer rows were introduced.
-	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-		SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 80, NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin')`)
-	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-		SELECT 'client', '#3B82F6', 'system', '{"can_view_nodes":true}', 30, NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'client')`)
-	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-		SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 100, NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'owner')`)
-	r.db.Exec(`INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-		SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer')`)
+	// Idempotent migrations. Every statement is error-checked and logged with
+	// its SQL so schema drift can never fail silently.
+	type migration struct {
+		query string
+		args  []interface{}
+	}
+	migrations := []migration{
+		// Migrate: Add color_hex column if it doesn't exist (idempotent)
+		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS color_hex VARCHAR(7) DEFAULT ''`},
+		// Migrate: User personalization columns (accent color, theme, language, bot emoji rendering)
+		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS accent_color VARCHAR(20) NOT NULL DEFAULT 'indigo'`},
+		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(20) NOT NULL DEFAULT 'obsidian'`},
+		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) NOT NULL DEFAULT 'ru'`},
+		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_emojis_enabled BOOLEAN NOT NULL DEFAULT TRUE`},
+		// Migrate: Add user_id column if it doesn't exist
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL`},
+		// Migrate: Add available_servers column if it doesn't exist
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS available_servers TEXT NOT NULL DEFAULT '[]'`},
+		// Migrate: Add hardware_hash column for hardware fingerprint dedup
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS hardware_hash TEXT`},
+		{query: `CREATE INDEX IF NOT EXISTS idx_nodes_hardware_hash ON nodes(hardware_hash)`},
+		// Migrate: Add node_logs column (JSON map of container -> last log tail)
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS node_logs TEXT`},
+		// Migrate: Set default value for device_type and update existing NULL values
+		{query: `ALTER TABLE nodes ALTER COLUMN device_type SET DEFAULT 'node'`},
+		{query: `UPDATE nodes SET device_type = 'node' WHERE device_type IS NULL`},
+		// Migrate: Ensure roles table has all required columns (idempotent for upgrades)
+		{query: `ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions_json TEXT NOT NULL DEFAULT '{}'`},
+		{query: `ALTER TABLE roles ALTER COLUMN permissions_json SET DEFAULT '{}'`},
+		{query: `ALTER TABLE roles ALTER COLUMN color_hex TYPE VARCHAR(7)`},
+		{query: `ALTER TABLE roles ALTER COLUMN color_hex SET DEFAULT '#6B7280'`},
+		{query: `ALTER TABLE roles ALTER COLUMN name TYPE VARCHAR(255)`},
+		{query: `ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_owner_id_fkey`},
+		{query: `ALTER TABLE roles ALTER COLUMN owner_id TYPE TEXT`},
+		{query: `ALTER TABLE roles ALTER COLUMN owner_id DROP NOT NULL`},
+		// Migrate: Add configurable rank column (int hierarchy) if it doesn't exist
+		{query: `ALTER TABLE roles ADD COLUMN IF NOT EXISTS rank INT NOT NULL DEFAULT 10`},
+		{query: `ALTER TABLE roles ALTER COLUMN rank SET DEFAULT 10`},
+		// Backfill ranks for the built-in system roles. Idempotent: only roles
+		// found in the DB are touched, so existing deployments keep their data.
+		{query: `UPDATE roles SET rank = $1 WHERE name = 'owner'`, args: []interface{}{domain.RoleRankOwner}},
+		{query: `UPDATE roles SET rank = $1 WHERE name = 'admin'`, args: []interface{}{domain.RoleRankAdmin}},
+		{query: `UPDATE roles SET rank = $1 WHERE name = 'client'`, args: []interface{}{domain.RoleRankClient}},
+		{query: `UPDATE roles SET rank = $1 WHERE name = 'viewer'`, args: []interface{}{domain.RoleRankViewer}},
+		// Any non-system/custom role that still defaults to the client rank keeps
+		// its stored value; only NULL/zero ranks are normalized to the default.
+		{query: `UPDATE roles SET rank = 10 WHERE rank IS NULL OR rank < 1 OR rank > 100`},
+		// Ensure the built-in system roles exist even on upgraded deployments whose
+		// roles table was seeded before the owner/viewer rows were introduced.
+		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+			SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 80, NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin')`},
+		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+			SELECT 'client', '#3B82F6', 'system', '{"can_view_nodes":true}', 30, NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'client')`},
+		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+			SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true,"can_export_backups":true}', 100, NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'owner')`},
+		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
+			SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer')`},
+		// Seed automated-backup routing defaults (idempotent). Missing values
+		// default to local-only storage; both are safe regardless of migration.
+		{query: `INSERT INTO settings (key, value, updated_at)
+			SELECT 'backup_to_local', 'true', NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_local')`},
+		{query: `INSERT INTO settings (key, value, updated_at)
+			SELECT 'backup_to_telegram', 'false', NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_telegram')`},
+		{query: `INSERT INTO settings (key, value, updated_at)
+			SELECT 'backup_interval_hours', '24', NOW()
+			WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_interval_hours')`},
+	}
+	for _, m := range migrations {
+		if _, err := r.db.Exec(m.query, m.args...); err != nil {
+			log.Printf("ERROR: migration statement failed: %v\nquery: %s", err, m.query)
+		}
+	}
 
 	// Migrate: Copy old bot settings keys to new tg_ prefixed keys
 	r.migrateBotSettings()
-
-	// Seed automated-backup routing defaults (idempotent). Missing values
-	// default to local-only storage; both are safe regardless of migration.
-	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
-		SELECT 'backup_to_local', 'true', NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_local')`)
-	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
-		SELECT 'backup_to_telegram', 'false', NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_telegram')`)
-	r.db.Exec(`INSERT INTO settings (key, value, updated_at)
-		SELECT 'backup_interval_hours', '24', NOW()
-		WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_interval_hours')`)
 
 	// Migrate: Ensure the system admin role carries every current permission key,
 	// including the granular log permissions introduced for server-side RBAC.
@@ -250,19 +257,25 @@ func (r *postgresRepository) migrateBotSettings() {
 	if err1 == nil && oldEnabled != "" {
 		newVal, _ := r.GetSetting("tg_bot_enabled")
 		if newVal == "" {
-			r.SetSetting("tg_bot_enabled", oldEnabled)
+			if err := r.SetSetting("tg_bot_enabled", oldEnabled); err != nil {
+				log.Printf("ERROR: failed to migrate bot_enabled setting: %v", err)
+			}
 		}
 	}
 	if err2 == nil && oldToken != "" {
 		newVal, _ := r.GetSetting("tg_bot_token")
 		if newVal == "" {
-			r.SetSetting("tg_bot_token", oldToken)
+			if err := r.SetSetting("tg_bot_token", oldToken); err != nil {
+				log.Printf("ERROR: failed to migrate bot_token setting: %v", err)
+			}
 		}
 	}
 	if err3 == nil && oldChatID != "" {
 		newVal, _ := r.GetSetting("tg_admin_chat_id")
 		if newVal == "" {
-			r.SetSetting("tg_admin_chat_id", oldChatID)
+			if err := r.SetSetting("tg_admin_chat_id", oldChatID); err != nil {
+				log.Printf("ERROR: failed to migrate bot_chat_id setting: %v", err)
+			}
 		}
 	}
 }
@@ -274,6 +287,16 @@ func (r *postgresRepository) Close() error {
 
 // --- Node Methods ---
 
+// unmarshalAvailableServers parses the stored JSON array of available servers,
+// logging (never silently ignoring) a corrupted value.
+func unmarshalAvailableServers(raw string) []string {
+	var servers []string
+	if err := json.Unmarshal([]byte(raw), &servers); err != nil {
+		log.Printf("ERROR: invalid available_servers JSON %q: %v", raw, err)
+	}
+	return servers
+}
+
 func (r *postgresRepository) GetNodeByID(id string) (*domain.Node, error) {
 	var n domain.Node
 	var availRaw string
@@ -282,7 +305,7 @@ func (r *postgresRepository) GetNodeByID(id string) (*domain.Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	json.Unmarshal([]byte(availRaw), &n.AvailableServers)
+	n.AvailableServers = unmarshalAvailableServers(availRaw)
 	return &n, nil
 }
 
@@ -300,7 +323,7 @@ func (r *postgresRepository) GetAllNodes() ([]domain.Node, error) {
 		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &n.SubURL, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(availRaw), &n.AvailableServers)
+		n.AvailableServers = unmarshalAvailableServers(availRaw)
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
@@ -320,7 +343,7 @@ func (r *postgresRepository) GetNodesByUserID(userID int64) ([]domain.Node, erro
 		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &n.SubURL, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
 			return nil, err
 		}
-		json.Unmarshal([]byte(availRaw), &n.AvailableServers)
+		n.AvailableServers = unmarshalAvailableServers(availRaw)
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
@@ -337,7 +360,9 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 	// different id (reinstall creates a fresh node_id), remove the stale one —
 	// but only if it has been offline for a while, so a live duplicate is kept.
 	if node.Hostname != "" {
-		_, _ = r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID)
+		if _, err := r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID); err != nil {
+			log.Printf("ERROR: ghost-node cleanup failed for hostname %q: %v", node.Hostname, err)
+		}
 	}
 
 	// Hardware fingerprint dedup: a reinstalled node (fresh node_id.txt) whose
@@ -419,7 +444,10 @@ func (r *postgresRepository) UpdateNodeStatus(id, ipLan string) error {
 func (r *postgresRepository) SetNodeLogs(id, logsJSON string) error {
 	existing := map[string]string{}
 	if raw, err := r.GetNodeLogs(id); err == nil && raw != "" {
-		json.Unmarshal([]byte(raw), &existing)
+		if err := json.Unmarshal([]byte(raw), &existing); err != nil {
+			log.Printf("ERROR: stored node_logs for %q is invalid JSON, resetting: %v", id, err)
+			existing = map[string]string{}
+		}
 	}
 	incoming := map[string]string{}
 	if err := json.Unmarshal([]byte(logsJSON), &incoming); err != nil {

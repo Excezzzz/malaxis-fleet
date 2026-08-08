@@ -10,7 +10,7 @@
 
     <!-- Existing Roles -->
     <div v-if="customRoles.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-      <div v-for="role in sortedRoles" :key="role.id" class="bg-zinc-900/40 backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-lg shadow-black/10 hover:border-indigo-500/20 transition-colors">
+      <div v-for="role in sortedRoles" :key="role.id" class="bg-zinc-900/95 md:bg-zinc-900/40 md:backdrop-blur-md border border-white/5 rounded-2xl p-6 shadow-lg shadow-black/10 hover:border-indigo-500/20 transition-colors">
           <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
               <span class="w-5 h-5 rounded-full shrink-0" :style="{ backgroundColor: role.color_hex }"></span>
@@ -58,8 +58,8 @@
     </div>
 
     <!-- Create Role Modal -->
-    <div v-if="showCreateModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" style="backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);" @click.self="showCreateModal = false">
-      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
+    <div v-if="showCreateModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="showCreateModal = false">
+      <div class="bg-zinc-900/95 md:bg-zinc-900/90 md:backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ editingRole ? t('edit_role') : t('add_role') }}<span class="font-mono text-indigo-400">]</span></h2>
 
         <form @submit.prevent="handleCreateRole">
@@ -114,8 +114,8 @@
     </div>
 
     <!-- Edit Role Modal -->
-    <div v-if="editingRole" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" style="backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);" @click.self="editingRole = null">
-      <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
+    <div v-if="editingRole" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" @click.self="editingRole = null">
+      <div class="bg-zinc-900/95 md:bg-zinc-900/90 md:backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6"><span class="font-mono text-indigo-400">[</span>{{ t('edit_role') }}<span class="font-mono text-indigo-400">]</span>: {{ editingRole.name }}</h2>
 
         <form @submit.prevent="handleEditRole">
@@ -232,7 +232,7 @@ export default {
     const authCtx = inject('authCtx', {});
     const t = inject('t') || ((k) => k);
     const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
-    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/25 backdrop-blur-sm' : 'bg-black/75 backdrop-blur-md');
+    const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/95 md:bg-zinc-900/25 md:backdrop-blur-md' : 'bg-black/95 md:bg-black/75 md:backdrop-blur-md');
     const actorRole = computed(() => authCtx.user?.value?.role || '');
     const canManageRoles = computed(() => authCtx.canManageRoles?.value ?? false);
 
