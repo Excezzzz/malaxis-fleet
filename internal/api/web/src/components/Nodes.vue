@@ -50,19 +50,19 @@
       <transition name="slide-up">
         <div v-if="fabOpen" class="flex flex-col items-end gap-3">
           <button v-if="canPurgeNodes" @click="handlePurgeOffline"
-            class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300 max-w-full"
+            class="max-w-[calc(100vw-3rem)] sm:max-w-xs truncate flex items-center space-x-2 px-4 py-2.5 rounded-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-sm font-semibold shadow-lg shadow-red-500/10 transition-all duration-300"
             :title="t('nodes_purge_tt')">
             <Trash2 class="w-4 h-4 shrink-0" />
             <span class="font-mono truncate min-w-0">[{{ t('nodes_purge') }}]</span>
           </button>
           <button v-if="canEditSub" @click="handleRefreshAllSubs"
-            class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 text-sm font-semibold shadow-lg shadow-indigo-500/10 transition-all duration-300 max-w-full"
+            class="max-w-[calc(100vw-3rem)] sm:max-w-xs truncate text-xs px-3.5 py-2.5 bg-zinc-900/90 hover:bg-zinc-800 backdrop-blur-xl border border-white/10 rounded-2xl text-white shadow-2xl transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             :title="t('nodes_refresh_subs_tt')" :disabled="refreshingSubs">
             <RefreshCw :class="['w-4 h-4 shrink-0', refreshingSubs ? 'animate-spin' : '']" />
             <span class="font-mono truncate min-w-0">{{ refreshingSubs ? `[${t('nodes_updating')}]` : `[${t('nodes_update_all')}]` }}</span>
           </button>
           <button v-if="canEditSub" @click="showMassUpdateModal = true"
-            class="flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 text-sm font-semibold shadow-lg shadow-emerald-500/10 transition-all duration-300 max-w-full"
+            class="max-w-[calc(100vw-3rem)] sm:max-w-xs truncate flex items-center space-x-2 px-4 py-2.5 rounded-full bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-100 text-sm font-semibold shadow-lg shadow-emerald-500/10 transition-all duration-300"
             :title="t('nodes_mass_domain_tt')">
             <Link class="w-4 h-4 shrink-0" />
             <span class="font-mono truncate min-w-0">[{{ t('nodes_mass_domain_btn') }}]</span>

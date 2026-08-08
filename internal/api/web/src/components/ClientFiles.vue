@@ -1,12 +1,12 @@
 <template>
   <div>
-    <div class="flex flex-wrap justify-between items-center mb-8 gap-4">
+    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 w-full mb-8">
       <div>
         <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('client_files_title') }}<span class="font-mono text-indigo-400">]</span></h1>
         <p class="text-zinc-500 mt-1 text-sm">{{ t('client_files_subtitle') }} <span class="text-indigo-300 font-mono">/node_agent.py</span>, <span class="text-indigo-300 font-mono">/fleet-cli.sh</span>.</p>
       </div>
       <button @click="pushFiles" :disabled="pushing"
-        :class="['flex items-center space-x-2 px-5 py-2.5 rounded-xl font-semibold transition-all duration-300 border', pushing ? 'bg-white/5 border-white/10 text-zinc-400 cursor-wait' : 'bg-indigo-500/15 hover:bg-indigo-500/25 border-indigo-500/30 text-indigo-100']">
+        :class="['w-full sm:w-auto max-w-[calc(100vw-2rem)] truncate text-xs sm:text-sm px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-950/50 transition-all flex items-center justify-center gap-2 cursor-pointer', pushing ? 'opacity-60 cursor-wait' : '']">
         <Rocket v-if="!pushing" class="w-5 h-5 shrink-0" />
         <RefreshCw v-else class="w-5 h-5 shrink-0 animate-spin" />
         <span class="font-mono text-sm truncate min-w-0">{{ pushing ? `[${t('client_push_queued')}]` : `[${t('client_push')}]` }}</span>
