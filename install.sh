@@ -41,21 +41,7 @@ TOTAL_RAM_MB=$(free -m | awk '/^Mem:/{print $2}')
 DISK_AVAIL_MB=$(df -Pm / | awk 'NR==2 {print $4}')
 
 if [[ "$TOTAL_RAM_MB" -lt 2048 ]]; then
-  warn "Detected RAM: ${TOTAL_RAM_MB}MB (< 2048MB recommended)."
-  read -r -p "Create a 2GB swap file to continue? [Y/n] " SWAP_ANS
-  if [[ "$SWAP_ANS" =~ ^[Nn]$ ]]; then
-    warn "Continuing without swap. Low-memory mode will be enabled by the master server."
-  else
-    say "Creating 2GB swap file..."
-    fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048
-    chmod 600 /swapfile
-    mkswap /swapfile >/dev/null
-    swapon /swapfile
-    grep -q "/swapfile" /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
-    say "Swap enabled."
-  fi
-else
-  say "RAM: ${TOTAL_RAM_MB}MB"
+  warn "Detected RAM: ${TOTAL_RAM_MB}MB (< 2048MB)."
 fi
 
 if [[ "$DISK_AVAIL_MB" -lt 5120 ]]; then
@@ -91,6 +77,36 @@ if [[ ! -d "$INSTALL_DIR/.git" ]]; then
   }
 fi
 cd "$INSTALL_DIR"
+
+# ------------------------------------------------------------
+# 4. Installation method
+# ------------------------------------------------------------
+echo ""
+echo -e "${CYAN}How would you like to install?${NC}"
+echo -e "  [1] Pre-built Docker Image (Fast, Low RAM - Recommended)"
+echo -e "  [2] Build from Source"
+read -r -p "Select [1-2, default 1]: " METHOD
+METHOD="${METHOD:-1}"
+BUILD_FROM_SOURCE=0
+if [[ "$METHOD" == "2" ]]; then
+  BUILD_FROM_SOURCE=1
+  say "Selected: Build from Source."
+else
+  say "Selected: Pre-built Docker Image (ghcr.io/excezzzz/malaxis-fleet)."
+fi
+
+# Temporary swap lifecycle: created only for source builds on low-RAM hosts,
+# never persisted in /etc/fstab, and ALWAYS removed when the script exits
+# (success or failure).
+SWAP_CREATED=0
+cleanup_swap() {
+  if [[ "$SWAP_CREATED" == "1" ]]; then
+    swapoff /swapfile 2>/dev/null || true
+    rm -f /swapfile 2>/dev/null || true
+    say "Temporary SWAP removed."
+  fi
+}
+trap cleanup_swap EXIT
 
 # ------------------------------------------------------------
 # 4. Configure .env
@@ -138,8 +154,33 @@ DASH_DOMAIN="${DASH_DOMAIN:-dash.yourdomain.com}"
 # ------------------------------------------------------------
 # 5. Build & start
 # ------------------------------------------------------------
-say "Building and starting containers (this takes a few minutes)..."
-docker compose up -d --build
+if [[ "$BUILD_FROM_SOURCE" == "1" ]]; then
+  if [[ "$TOTAL_RAM_MB" -lt 2048 ]]; then
+    echo ""
+    read -r -p "Building from source requires ~2GB RAM. Create a temporary 2GB SWAP file? [Y/n] " SWAP_ANS
+    if [[ "$SWAP_ANS" =~ ^[Nn]$ ]]; then
+      warn "Continuing without swap. Low-memory mode will be enabled by the master server."
+    else
+      say "Creating temporary 2GB swap file..."
+      fallocate -l 2G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=2048
+      chmod 600 /swapfile
+      mkswap /swapfile >/dev/null
+      swapon /swapfile
+      SWAP_CREATED=1
+      say "Temporary swap enabled. It will be removed automatically when the build finishes."
+    fi
+  fi
+  say "Building and starting containers (this takes a few minutes)..."
+  docker compose up -d --build
+else
+  say "Pulling pre-built image and starting containers (no compilation needed)..."
+  docker compose up -d
+fi
+
+# Global "malaxis-master" convenience CLI
+ln -sf "$INSTALL_DIR/scripts/master-cli.sh" /usr/local/bin/malaxis-master
+chmod +x "$INSTALL_DIR/scripts/master-cli.sh"
+say "Global command 'malaxis-master' installed."
 
 # ------------------------------------------------------------
 # 6. Summary & exit

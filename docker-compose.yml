@@ -2,6 +2,10 @@ version: '3.8'
 
 services:
   fleet-master:
+    # Pre-built image (fast install, low RAM). When 'docker compose up -d --build'
+    # is used instead, the image is built from source and tagged with the same
+    # name locally.
+    image: ghcr.io/excezzzz/malaxis-fleet:latest
     build: .
     container_name: fleet-master
     restart: always
