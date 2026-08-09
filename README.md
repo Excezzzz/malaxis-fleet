@@ -17,6 +17,25 @@ aggressive filtering.
 
 ---
 
+## ✨ What's New in v1.1.0
+
+- **Modular Python Agent** — the monolithic `node_agent.py` is now a thin
+  bootstrap over the `agent_src/` package (`agent`, `network`, `subscriptions`,
+  `config_builder`, `docker_utils`, `engine`, `main`). The whole package is
+  served by the master as a dynamically generated **`agent_src.zip`** and can
+  be pushed fleet-wide over the OTA flow.
+- **DB Connection Pooling** — the PostgreSQL access layer now runs a bounded
+  connection pool (max 25 open / 10 idle, 5-minute max lifetime) for
+  high-concurrency execution.
+- **Anti-Spam Rate Limiting** — subscription URL updates are limited to
+  **3 per minute per node**, with format validation and a live reachability
+  probe before any URL is saved.
+- **Full Telegram Bot RBAC Management** — users, roles, ranks, and nodes are
+  all manageable from the bot with one-button-per-row inline keyboards;
+  owner/admin accounts are protected from deletion and role changes.
+
+---
+
 ## ⚡ 1. Step-by-Step Installation Guide
 
 ### Step 1: DNS & Subdomain Setup
@@ -38,7 +57,8 @@ curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.
 
 - The script automatically checks system resources (creates a 2GB SWAP if memory is < 2GB).
 - Installs Docker & Docker Compose automatically.
-- Prompts for your domain name and admin credentials, configures `.env`, and launches the master server stack.
+- Prompts for your domain names and admin credentials, configures `.env` interactively, and launches the master server stack.
+- Installs the global **`malaxis-master`** management CLI (see the Server Administration Guide below).
 
 ### Step 3: Access Admin Dashboard & Retrieve Tokenized Join Command
 
@@ -72,6 +92,11 @@ All choices are written to `configs/agent_state.json` *before* the stack starts,
 1. Open your Web Dashboard -> **Settings** tab -> **Telegram Bot** section.
 2. Enter your **Telegram Bot Token** (from @BotFather) and your **Admin Chat ID**.
 3. Click **Save**. The bot starts instantly with single-message inline UI, instant onboarding alerts, and DB backup delivery!
+
+The bot manages the whole fleet from Telegram: nodes (switch VPN, set Sub URL,
+rename, delete, OTA update, terminate), **users & roles** (create, reassign
+roles, reset passwords, rank management — owner/admin accounts are protected),
+and downloads of the latest DB backup as a `.zip`.
 
 ---
 
@@ -159,15 +184,21 @@ double-counting and state confusion.
 
 #### Operational tooling
 
-- **OTA client updates** — push fresh `node_agent.py`, compose, Dockerfile,
-  and engine configs fleet-wide from the dashboard or bot in one action.
+- **OTA client updates** — push fresh `agent_src/` modules (as `agent_src.zip`),
+  `node_agent.py`, compose, Dockerfile, and engine configs fleet-wide from the
+  dashboard or bot in one action; every module is syntax-checked before the
+  atomic swap, and the agent restarts gracefully with the new code.
 - **Terminate & self-destruct** — remote wipe for decommissioned hardware.
 - **Audit trail** — every administrative action is recorded with actor,
   target, and timestamp.
 - **Backups** — on-demand PostgreSQL ZIP backup, downloadable from the
-  dashboard or Telegram.
+  dashboard or Telegram, with local retention (default 3 files).
 - **Task queuing** — per-node commands queue with live pipeline status
   (`queued / running / done / failed`).
+- **DB connection pooling** — bounded PostgreSQL pool (max 25 open / 10 idle
+  connections, 5-minute max lifetime) for high-concurrency fleets.
+- **Anti-spam sub updates** — per-node rate limit of 3 updates/minute plus
+  URL format and live-reachability validation.
 
 ### End-User Guide
 
@@ -225,12 +256,15 @@ on:
 - `SOCKS5 127.0.0.1:6357`
 - `HTTP   127.0.0.1:6358`
 
-#### Using the local CLI
+#### Using the client CLI (`malaxis-fleet`)
 
-Run the interactive CLI to inspect the node and change its routing locally:
+The installer creates a global `malaxis-fleet` command, so you can type it in
+any terminal (from any directory) to open the interactive client menu:
 
 ```bash
-cd fleet-agent && bash fleet-cli.sh   # from the install directory
+malaxis-fleet        # works from anywhere; symlinked to <install-dir>/fleet-cli.sh
+# Fallback (Windows Git Bash / manual installs):
+cd fleet-agent && bash fleet-cli.sh
 ```
 
 The menu shows the active server, protocol, selection mode, and container
@@ -239,21 +273,26 @@ status, then offers the following actions:
 | Option | Purpose |
 |--------|---------|
 | 1. Set / Update Subscription URL | Point the node at a new subscription |
-| 2. Update Client Files | Pull the latest client assets from the fleet |
-| 3. Switch Server | Select a server manually, or pick a mode |
+| 2. Update Client Files | Pull the latest client assets (incl. `agent_src.zip`) from the fleet |
+| 3. Switch Server | Select a server manually, or pick a Smart Mode |
 | 4. Toggle Auto-Update | Enable/disable automatic client updates |
 | 5. View Agent Logs | Tail the last 30 lines of `node-agent` |
 | 6. Rename Node | Change the node's display name |
 | 7. Terminate & Self-Destruct | Tear down and wipe the node (requires typing `TERMINATE`) |
 
+On a **terminated / rejected** node the menu collapses to a single
+**Send Re-join Request** option that re-registers the device with the fleet.
+
 Within the **Switch Server** menu:
 
-- `F` — **Fastest**: benchmarks all cached servers and selects the
+- `F` — **Smart Mode: Fastest**: benchmarks all cached servers and selects the
   lowest-latency path.
-- `B` — **Balanced**: benchmarks and selects the path with the lowest jitter
-  and loss.
+- `B` — **Smart Mode: Balanced**: benchmarks and selects the path with the
+  lowest jitter and loss (recommended default).
 - `1..N` — selects a specific server by its number in the list.
 
+Smart-mode switches are non-interactive and safe to run from scripts; both
+modes keep the current server unless an alternative is at least 25% better.
 All switches are reported back to the control plane and reflected on the
 dashboard. Server changes can also be triggered remotely by the administrator
 from the web dashboard or the Telegram bot.
@@ -302,6 +341,69 @@ and substituted into the client deployment assets served to nodes. The
 `SECRET_TOKEN` doubles as the payload-delivery key: the bootstrap script and
 all client templates are only served to requests carrying
 `?t=<SECRET_TOKEN>`, and the token is injected into the script at serve time.
+
+##### Full `.env` reference
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DASHBOARD_DOMAIN` | `dash.yourdomain.com` | Web dashboard host (Vue 3 SPA) |
+| `API_DOMAIN` | `api.yourdomain.com` | Agent poll/report API host |
+| `JOIN_DOMAIN` | `join.yourdomain.com` | `join.sh` / `join.ps1` bootstrap host |
+| `SUB_DOMAIN` | `sub.yourdomain.com` | Client file / OTA delivery host |
+| `ADMIN_USER` | `owner` | Initial administrator account (rank 100) |
+| `ADMIN_PASS` | `owner` | Initial administrator password (change immediately) |
+| `SECRET_TOKEN` | *(generated)* | Shared agent-master auth + payload-delivery token |
+| `SESSION_SECRET` | *(generated)* | Web session cookie signing secret (32/64 bytes) |
+| `BOT_TOKEN` | *(empty)* | Telegram bot token from @BotFather |
+| `ADMIN_CHAT_ID` | *(empty)* | Telegram admin chat ID for bot notifications |
+| `POSTGRES_USER` | `fleet_internal` | PostgreSQL role (internal network only) |
+| `POSTGRES_PASSWORD` | `changeme` | PostgreSQL password (**must** be overridden) |
+| `POSTGRES_DB` | `fleet_db` | PostgreSQL database name |
+| `LOGIN_RATE_LIMIT` | `30` | Web login attempts allowed per minute per IP |
+| `MAX_BACKUP_RETENTION` | `3` | Number of `.zip` backups kept in `/app/backups` |
+| `SSL_CERT_PATH` | `/cf-certs/cf.crt` | Cloudflare origin certificate path (Caddy) |
+| `SSL_KEY_PATH` | `/cf-certs/cf.key` | Cloudflare origin key path (Caddy) |
+| `WEB_PORT` | `8000` | Internal Go HTTP port (Caddy proxies to it) |
+| `POSTGRES_HOST` / `POSTGRES_PORT` | `postgres` / `5432` | DB endpoint for local runs / diagnostics |
+| `LOW_RAM_MODE` | `false` | Tune container limits for small VPS instances |
+| `OWNER_ROLE_NAME` | `Owner` | Display name of the immutable owner role |
+| `OWNER_COLOR_HEX` | `#FF5733` | Owner role color in the UI |
+| `MASTER_LOG_FILE` | `data/logs/master.log` | Master log path (Logs & Audit tab) |
+
+#### Master Admin CLI (`malaxis-master`)
+
+`install.sh` symlinks `scripts/master-cli.sh` to `/usr/local/bin/malaxis-master`,
+so typing `malaxis-master` anywhere on the VPS opens a management menu:
+
+```
+============================================
+      Malaxis Master CLI
+============================================
+
+ 1) View Master Logs
+ 2) View Caddy Proxy Logs
+ 3) Restart Master Server Stack
+ 4) Manual Database Backup
+ 5) Exit
+```
+
+- **View Master / Caddy Logs** — streams `docker logs -f` for `fleet-master`
+  or the Caddy proxy container (Ctrl+C to stop).
+- **Restart Server Stack** — runs `docker compose restart` in the install
+  directory (`/opt/malaxis-fleet` by default).
+- **Manual Database Backup** — dumps `fleet-postgres` via `pg_dump` into
+  `backups/manual-<timestamp>.sql` without stopping any service.
+
+#### Automated backups & retention
+
+- The stack mounts `./backups` into the container as `/app/backups`.
+- Every backup (scheduled, manual, or bot-triggered) is stored there as a
+  timestamped `.zip` (`malaxis_fleet_backup_<timestamp>.zip`).
+- Retention is enforced automatically: only the newest
+  `MAX_BACKUP_RETENTION` (default **3**) files are kept.
+- Backups can be created and downloaded from the **dashboard**, delivered as a
+  `.zip` straight to Telegram via the bot, or dumped manually with
+  `malaxis-master` (option 4).
 
 #### Deploy (alternative to Step 2)
 
@@ -383,7 +485,11 @@ malaxis-fleet/
 ├── cmd/server/                # Go entrypoint
 ├── internal/
 │   ├── api/                   # HTTP API, router, embedded frontend
-│   │   ├── deploy/            # node_agent.py, join.sh, engine configs
+│   │   ├── deploy/            # client templates + modular agent
+│   │   │   ├── agent_src/     # modular Python agent package (OTA zip)
+│   │   │   ├── node_agent.py  # thin bootstrap launcher
+│   │   │   ├── join.sh|ps1    # tokenized onboarding installers
+│   │   │   └── fleet-cli.sh|ps1, entrypoint.sh, compose, configs
 │   │   └── web/               # Vue 3 + Tailwind dashboard
 │   ├── auth/                  # session middleware, RBAC checks
 │   ├── bot/                   # Telegram bot (inline keyboard UI)
@@ -401,7 +507,7 @@ malaxis-fleet/
 
 ```bash
 go vet ./... && go test ./internal/...   # backend sanity checks
-python -m py_compile internal/api/deploy/node_agent.py
+python -m py_compile internal/api/deploy/node_agent.py internal/api/deploy/agent_src/*.py
 ```
 
 The frontend builds separately and is embedded into the Go binary at compile
@@ -415,6 +521,57 @@ npm run build
 
 ---
 
+## ❓ Troubleshooting / FAQ
+
+### Docker Desktop is not running on Windows
+
+`join.ps1` pre-flights the host before installing: if `docker info` fails, the
+installer stops with a clear message instead of writing a broken stack.
+
+```powershell
+# 1. Start Docker Desktop from the Start menu and wait for
+#    "Engine running" in the tray icon (or the whale to stop animating).
+# 2. Verify the CLI can reach the daemon:
+docker info
+# 3. If it still fails, restart Docker Desktop entirely:
+#    right-click tray icon -> Restart. Then re-run your join command.
+# 4. If the daemon stays down, check WSL2:
+wsl --status
+wsl --update
+```
+
+Once `docker info` succeeds, re-run the tokenized join command — the installer
+picks up from the pre-flight check.
+
+### Why sing-box & XHTTP `xmux` are preferred for anti-DPI in Russia
+
+Russian DPI systems (RKN) primarily fingerprint proxy traffic by passive
+signature and by detecting single long-lived TLS streams. This stack
+counters both:
+
+- **XHTTP `xmux`** breaks one connection into a channel multiplexed over
+  multiple parallel HTTP requests (`maxConnections: 4`, adaptive 800–900 ms
+  request windows), so no single stream dominates long enough to be classified
+  as a proxy tunnel.
+- **sing-box** is the preferred engine for modern protocols (Hysteria2, TUIC,
+  WireGuard, and XHTTP variants) because its implementation is stricter about
+  padding, frame pacing, and legacy DNS fallbacks; the agent falls back to
+  Xray only for transports sing-box cannot carry natively.
+- TLS fingerprints are randomized and `xPaddingBytes` is enabled, defeating
+  passive JA3/JA4-style fingerprinting; Telegram paths are pinned directly
+  through the tunnel without sniffing.
+
+### How `hardware_hash` prevents duplicate nodes on reinstall
+
+Each node derives a stable SHA-256 fingerprint from the hostname, primary MAC
+address, and system serial number. When a node rejoins — even after a full
+wipe and reinstall, or a change of IP — the master matches the incoming
+fingerprint against existing nodes and **adopts the canonical `node_id`**
+instead of creating a new row. Reinstallations are merged, not duplicated,
+which prevents ghost nodes, double counting, and confused fleet state.
+
+---
+
 ## 🛡️ 3. Security & Stealth Mode
 
 ### Stealth Mode & Active Probing Defense
@@ -424,9 +581,9 @@ npm run build
   In" page with no branding, preventing automated DPI scanners or government
   firewalls from identifying the VPN panel.
 - 🔐 **Tokenized Payload Delivery** — Client installation scripts
-  (`node_agent.py`, `join.sh`) cannot be downloaded without a dynamically
-  generated `SECRET_TOKEN`, protecting the infrastructure from unauthorized
-  access and reverse engineering.
+  (`join.sh`, `join.ps1`, `node_agent.py`, `agent_src.zip`) cannot be
+  downloaded without a dynamically generated `SECRET_TOKEN`, protecting the
+  infrastructure from unauthorized access and reverse engineering.
 
 ### Stealth behavior
 
