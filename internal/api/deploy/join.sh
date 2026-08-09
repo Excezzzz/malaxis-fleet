@@ -95,6 +95,9 @@ if [ "$lang" = "en" ]; then
     T_Q_STATUS="View status:"
     T_Q_LOGS="View logs:"
     T_Q_STOP="Stop agent:"
+    T_SUMMARY_TITLE="✅ Malaxis Fleet Agent installed successfully!"
+    T_SUMMARY_SOCKS="SOCKS5 Proxy"
+    T_SUMMARY_HTTP="HTTP Proxy"
 else
     T_PREFLIGHT="Проверка системных требований..."
     T_DOCKER_NOT_INSTALLED="Docker не установлен! Установите Docker (https://docs.docker.com/get-docker/), затем запустите скрипт заново."
@@ -135,6 +138,9 @@ else
     T_Q_STATUS="Статус:"
     T_Q_LOGS="Логи:"
     T_Q_STOP="Остановить:"
+    T_SUMMARY_TITLE="✅ Malaxis Fleet Agent успешно установлен!"
+    T_SUMMARY_SOCKS="SOCKS5 Прокси"
+    T_SUMMARY_HTTP="HTTP Прокси"
 fi
 
 # Prompts with values only known at ask-time (hostname, defaults, node/mode)
@@ -369,6 +375,22 @@ docker compose create singbox-node 2>/dev/null || true
 
 echo ""
 echo "$T_DONE"
+echo ""
+
+# Success summary box with local proxy ports
+box_line() { printf '║  %s' "$1"; local pad=$((BOX_WIDTH - ${#1} - 2)); printf '%*s║\n' "$pad" ""; }
+BOX_WIDTH=$(( $(printf '%s\n' "$T_SUMMARY_TITLE" "" "  $T_SUMMARY_SOCKS : 127.0.0.1:6357" "  $T_SUMMARY_HTTP  : 127.0.0.1:6358" | wc -L) + 4 ))
+printf '╔'
+printf '═%.0s' $(seq 1 "$BOX_WIDTH")
+printf '╗\n'
+box_line "$T_SUMMARY_TITLE"
+box_line ""
+box_line "  $T_SUMMARY_SOCKS : 127.0.0.1:6357"
+box_line "  $T_SUMMARY_HTTP  : 127.0.0.1:6358"
+printf '╚'
+printf '═%.0s' $(seq 1 "$BOX_WIDTH")
+printf '╝\n'
+
 echo ""
 echo "$T_QUICK"
 echo "   $T_Q_STATUS  cd \"$AGENT_DIR\" && bash fleet-cli.sh"

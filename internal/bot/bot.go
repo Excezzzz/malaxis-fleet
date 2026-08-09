@@ -485,7 +485,7 @@ func (b *Bot) SendCriticalErrorAlert(errorMessage string) {
 
 // NotifyNewNode sends an instant onboarding notification to the admin the
 // moment a brand-new device registers for the first time. The message carries
-// quick-setup inline buttons: set sub URL, balanced mode, or reject/delete.
+// quick-setup inline buttons: set sub URL, or reject (queues a terminate).
 func (b *Bot) NotifyNewNode(id, name, ipLan string) {
 	b.mu.Lock()
 	api := b.api
@@ -515,10 +515,7 @@ func (b *Bot) NotifyNewNode(id, name, ipLan string) {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Установить Sub URL", "Set Sub URL"), "🔗", emojis), "node:set_sub:"+id),
-		),
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Баланс", "Balanced"), "⚖️", emojis), "node:switch:"+id+":balanced"),
-			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Отклонить и удалить", "Reject & Delete"), "❌", emojis), "node:delete:"+id),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Отклонить и удалить", "Reject & Delete"), "❌", emojis), "node:reject:"+id),
 		),
 	)
 
@@ -1297,6 +1294,8 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 				b.tr("Отправьте URL подписки для", "Please reply/send the Subscription URL for"),
 				b.nodeLabel(nodeID)),
 			b.cancelMarkup())
+	case strings.HasPrefix(data, "node:reject:"):
+		b.handleRejectNode(chatID, messageID, strings.TrimPrefix(data, "node:reject:"))
 	case strings.HasPrefix(data, "node:delete:"):
 		b.handleDeleteMenu(chatID, messageID, strings.TrimPrefix(data, "node:delete:"))
 	case strings.HasPrefix(data, "node:switch:"):
@@ -1641,6 +1640,34 @@ func (b *Bot) handleSwitch(chatID int64, messageID int, nodeID, target string) {
 	b.showNodeDetail(chatID, messageID, nodeID, "🛡️ "+b.tr("Переключение на", "Switch to")+" <b>"+target+"</b> "+b.tr("поставлено в очередь", "queued"))
 }
 
+// handleRejectNode is the onboarding "Reject & Delete" action. Instead of only
+// dropping the DB row, it queues a full TERMINATE command so the unwanted
+// client actually stops its Docker containers and destroys its local config on
+// its next poll. The DB row is left for the offline-cleanup cron to reap.
+func (b *Bot) handleRejectNode(chatID int64, messageID int, nodeID string) {
+	name := b.nodeLabel(nodeID)
+	command, _ := json.Marshal(map[string]string{"action": "terminate"})
+	cmdMessageID := time.Now().Unix()
+	if err := b.repo.SetPendingCommand(nodeID, string(command), cmdMessageID); err != nil {
+		log.Printf("Bot: failed to queue reject-terminate for node %s: %v", nodeID, err)
+		if err == repository.ErrNodeNotFound {
+			b.editMessage(chatID, messageID,
+				"❌ "+b.tr("Узел не найден", "Node not found"), b.cancelMarkup())
+			return
+		}
+		b.editMessage(chatID, messageID,
+			"❌ "+b.tr("Не удалось поставить команду завершения", "Failed to queue terminate"), b.cancelMarkup())
+		return
+	}
+	b.repo.UpdateNodePipelineStatus(nodeID, "Queued", "terminate")
+	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Rejected node "+name+": queued terminate (self-destruct) command (via Telegram bot)")
+	b.editMessage(chatID, messageID,
+		"❌ "+b.tr("Устройство отклонено. Команда завершения отправлена. Клиент остановит и удалит свои контейнеры.", "Device rejected. Termination command sent. The client will stop and remove its containers."),
+		b.cancelMarkup())
+}
+
+// handleSoftDelete is the node-menu "Soft Delete" action: it removes the DB
+// row only, without touching the client (for nodes you simply want gone).
 func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 	name := b.nodeLabel(nodeID)
 	if err := b.repo.DeleteNode(nodeID); err != nil {

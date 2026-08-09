@@ -4,6 +4,11 @@
 #  Run with:  irm https://<join-domain>/join.ps1?t=<SECRET_TOKEN> | iex
 # ============================================================
 
+# Force UTF-8 so localized (Russian) text renders correctly on any
+# console codepage (e.g. cp866 / cp437).
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
+
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -79,6 +84,9 @@ if ($lang -eq "en") {
     $T_Q_LOGS               = "View logs:"
     $T_Q_STOP               = "Stop agent:"
     $T_Q_CLI                = "CLI (Git Bash):"
+    $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent installed successfully!"
+    $T_SUMMARY_SOCKS        = "SOCKS5 Proxy"
+    $T_SUMMARY_HTTP         = "HTTP Proxy"
 } else {
     $T_PREFLIGHT            = "Проверка системных требований..."
     $T_DOCKER_NOT_INSTALLED = "Docker не установлен! Установите Docker Desktop (https://www.docker.com/products/docker-desktop), затем запустите скрипт заново."
@@ -123,6 +131,9 @@ if ($lang -eq "en") {
     $T_Q_LOGS               = "Логи:"
     $T_Q_STOP               = "Остановить:"
     $T_Q_CLI                = "CLI (Git Bash):"
+    $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent успешно установлен!"
+    $T_SUMMARY_SOCKS        = "SOCKS5 Прокси"
+    $T_SUMMARY_HTTP         = "HTTP Прокси"
 }
 
 Write-Host ""
@@ -351,6 +362,21 @@ Pop-Location
 
 Write-Host ""
 Write-Host $T_DONE -ForegroundColor Green
+Write-Host ""
+
+$summaryLines = @(
+    $T_SUMMARY_TITLE,
+    "",
+    "  $($T_SUMMARY_SOCKS) : 127.0.0.1:6357",
+    "  $($T_SUMMARY_HTTP)  : 127.0.0.1:6358"
+)
+$boxWidth = ($summaryLines | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum + 4
+Write-Host ("╔" + ("═" * $boxWidth) + "╗") -ForegroundColor Cyan
+foreach ($l in $summaryLines) {
+    $pad = $boxWidth - $l.Length + 2
+    Write-Host ("║  " + $l + (" " * $pad) + "║") -ForegroundColor Cyan
+}
+Write-Host ("╚" + ("═" * $boxWidth) + "╝") -ForegroundColor Cyan
 Write-Host ""
 Write-Host $T_QUICK
 Write-Host "   $T_Q_LOGS    docker logs -f node-agent"
