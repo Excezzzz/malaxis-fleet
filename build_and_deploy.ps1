@@ -75,7 +75,12 @@ Check-Error
 Write-Host ">>> Uploading source tree..."
 scp (Join-Path $Staging "fleet-src.tar") "$VpsTarget`:$RemotePath/"
 Check-Error
-ssh -t $VpsTarget "cd $RemotePath && tar -xf fleet-src.tar && rm fleet-src.tar"
+# Extract on the remote. Plain `tar -xf` never deletes files that are gone
+# from the archive (e.g. files removed by a refactor), so the remote tree is
+# first purged of everything except the persistent ./data and ./backups
+# directories, then repopulated from the fresh tarball.
+Write-Host ">>> Extracting and syncing source tree (purge stale files)..."
+ssh -t $VpsTarget "cd $RemotePath && (test -d data && mv data /tmp/fleet-deploy-data) ; (test -d backups && mv backups /tmp/fleet-deploy-backups) ; find . -mindepth 1 -maxdepth 1 ! -name fleet-src.tar -exec rm -rf {} + ; (test -d /tmp/fleet-deploy-data && mv /tmp/fleet-deploy-data data) ; (test -d /tmp/fleet-deploy-backups && mv /tmp/fleet-deploy-backups backups) ; tar -xf fleet-src.tar && rm fleet-src.tar"
 Check-Error
 
 # Upload .env separately (secrets stay out of the archive)

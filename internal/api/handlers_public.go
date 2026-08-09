@@ -69,6 +69,15 @@ func (a *API) serveAgentPackage(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
+	// go:embed silently skips files whose names start with "_", so the Python
+	// package marker __init__.py is never part of the embedded FS. It must be
+	// injected explicitly or the extracted agent_src/ would not be a package.
+	fh := &zip.FileHeader{Name: "agent_src/__init__.py", Method: zip.Deflate}
+	fh.SetModTime(time.Now())
+	if f, err := zw.CreateHeader(fh); err == nil {
+		f.Write([]byte("# -*- coding: utf-8 -*-\n\"\"\"Malaxis Fleet - modular node agent package.\"\"\"\n__version__ = \"1.1.0\"\n"))
+	}
+
 	entries, err := deployFS.ReadDir("deploy/agent_src")
 	if err != nil {
 		http.Error(w, "Internal Server Error: agent package not found", http.StatusInternalServerError)

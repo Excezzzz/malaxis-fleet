@@ -750,7 +750,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		emojiState = b.tr("ВЫКЛ", "OFF")
 	}
 
-	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v1.0.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
+	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v1.1.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
 		b.tr("Узлы", "Nodes"), onlineCount, b.tr("онлайн", "Online"), offlineCount, b.tr("офлайн", "Offline"))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
