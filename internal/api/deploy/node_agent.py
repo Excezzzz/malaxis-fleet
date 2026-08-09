@@ -33,7 +33,7 @@ SERVER_URL = os.environ.get("SERVER_URL", "https://__API_DOMAIN__")
 SECRET_TOKEN = os.environ.get("SECRET_TOKEN", "__FLEET_SECRET__")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "30"))
 HEALTH_INTERVAL = int(os.environ.get("HEALTH_INTERVAL", "60"))
-HEALTH_FAIL_THRESHOLD = int(os.environ.get("HEALTH_FAIL_THRESHOLD", "3"))
+HEALTH_FAIL_THRESHOLD = int(os.environ.get("HEALTH_FAIL_THRESHOLD", "5"))
 BENCH_TTL = int(os.environ.get("BENCH_TTL", "600"))
 BENCH_PROBES = int(os.environ.get("BENCH_PROBES", "2"))
 BENCH_TIMEOUT = float(os.environ.get("BENCH_TIMEOUT", "1.5"))
@@ -718,7 +718,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             "streamSettings": {
                 "network": net_type if net_type else "tcp",
                 "security": "reality" if security_str == "reality" else "none",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15},
             },
         }
 
@@ -741,7 +741,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                     "mode": "auto",
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        "maxConnections": 4,
+                        "maxConnections": 16,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
@@ -1237,7 +1237,7 @@ def parse_url_to_outbound(url_str: str, engine: str = "xray") -> Tuple[str, dict
             "streamSettings": {
                 "network": net_type,
                 "security": security,
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15},
             },
         }
 
@@ -1261,7 +1261,7 @@ def parse_url_to_outbound(url_str: str, engine: str = "xray") -> Tuple[str, dict
                     "mode": params.get("mode", "auto"),
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        "maxConnections": 1,
+                        "maxConnections": 16,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
@@ -1512,7 +1512,7 @@ def test_proxy() -> Tuple[bool, str]:
         # DNS entry, so probe the shared netns (xray-node) for port 6357.
         ip = socket.gethostbyname("xray-node")
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(3)
+        s.settimeout(5.0)
         s.connect((ip, 6357))
         s.close()
         return True, "Healthy"
@@ -1988,13 +1988,18 @@ def health_loop() -> None:
                 fail_count = 0
             else:
                 fail_count += 1
-                log(f"Health check failed ({fail_count}): {status}")
-                if fail_count >= HEALTH_FAIL_THRESHOLD:
+                if fail_count < HEALTH_FAIL_THRESHOLD:
+                    # Transient blip: hold off on alarming/restarting until the
+                    # proxy has failed N CONSECUTIVE checks (N x interval = N
+                    # minutes of total silence). Never kill a working socket
+                    # over a single spike.
+                    log(f"Health check warning ({fail_count}/{HEALTH_FAIL_THRESHOLD}): transient probe miss, holding restart")
+                else:
                     # Conservative recovery: only treat the proxy as dead and
-                    # attempt a restart after N consecutive failed checks, so a
-                    # single transient drop never resets the proxy socket.
+                    # attempt a restart after N consecutive failed checks.
                     state = load_state()
                     container = "singbox-node" if state.get("active_engine", "xray") == "singbox" else "xray-node"
+                    log(f"Health check failed ({fail_count}): {status}")
                     log(f"Proxy considered dead after {fail_count} consecutive failures, restarting {container}")
                     report(status="Proxy dead", message=f"Health check failed {fail_count} times consecutively, restarted {container}")
                     docker_restart(container)
