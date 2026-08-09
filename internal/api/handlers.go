@@ -96,6 +96,7 @@ type UpdateUserRequest struct {
 	RoleID   interface{} `json:"role_id,omitempty"`
 	ColorHex string      `json:"color_hex"`
 	Password string      `json:"password,omitempty"`
+	Username string      `json:"username,omitempty"`
 }
 
 type ErrResponse struct {
@@ -131,7 +132,7 @@ func (a *API) enforcePermission(w http.ResponseWriter, r *http.Request, permissi
 	}
 
 	// Owner (and the original admin account) implicitly holds every permission.
-	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" {
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" || user.Username == "owner" {
 		return true
 	}
 
@@ -164,7 +165,7 @@ func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
-	if user.Role == domain.RoleOwner || user.Username == "admin" {
+	if user.Role == domain.RoleOwner || user.Username == "admin" || user.Username == "owner" {
 		return true
 	}
 
@@ -249,7 +250,7 @@ func (a *API) parsePermissionsJSON(raw string) []string {
 // bypass checks (implicitly granted all permissions); custom roles read their
 // permissions_json, supporting both array and map storage formats.
 func (a *API) permissionsForUser(user *domain.User) []string {
-	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" {
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" || user.Username == "owner" {
 		return domain.AllPermissions
 	}
 
@@ -1334,15 +1335,6 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 
-	// Nobody may modify their own active session role or lower their own
-	// privileges through the management endpoint.
-	if actorID == id {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(ErrResponse{Error: "Cannot modify your own account through this endpoint"})
-		return
-	}
-
 	actorUser, errGet := a.repo.GetUserByID(actorID)
 	if errGet != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -1359,7 +1351,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(ErrResponse{Error: "Bad Request: " + err.Error()})
 		return
 	}
-	log.Printf("[UpdateUser] Body: role=%q role_id=%v color_hex=%q has_password=%v", req.Role, req.RoleID, req.ColorHex, req.Password != "")
+	log.Printf("[UpdateUser] Body: role=%q role_id=%v color_hex=%q has_password=%v username=%q", req.Role, req.RoleID, req.ColorHex, req.Password != "", req.Username)
 
 	user, err := a.repo.GetUserByID(id)
 	if err != nil {
@@ -1370,54 +1362,86 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE HIERARCHY: an actor may only edit a target whose role rank is
-	// STRICTLY LOWER than their own. Editing an equal/higher rank (an admin
-	// demoting another admin, or anything touching the owner) is forbidden.
-	if a.roleRank(user.Role) >= a.roleRank(actorUser.Role) {
-		a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
-		return
-	}
+	isSelf := actorID == id
 
-	if req.RoleID != nil {
-		if rid := toInt64(req.RoleID); rid != nil {
-			roleLookup, err := a.repo.GetRoleByID(*rid)
-			if err == nil {
-				req.Role = roleLookup.Name
-				if req.ColorHex == "" {
-					user.ColorHex = roleLookup.ColorHex
-				}
-			}
-		} else if roleName, ok := req.RoleID.(string); ok && roleName != "" {
-			roleLookup, err := a.repo.GetRoleByName(roleName)
-			if err == nil {
-				req.Role = roleLookup.Name
-				if req.ColorHex == "" {
-					user.ColorHex = roleLookup.ColorHex
-				}
-			}
-		}
-	}
-	if req.Role != "" {
-		// An actor may not grant a target a role with an equal/higher rank
-		// than themselves, even when the target currently ranks lower.
-		if a.roleRank(req.Role) >= a.roleRank(actorUser.Role) {
-			a.writeForbidden(w, "Forbidden: Cannot assign a role with equal or higher role rank")
+	if isSelf {
+		// Self-editing is allowed for username, password and color, but the
+		// RBAC self-demotion protection still holds: nobody may change their
+		// own role through this endpoint.
+		if req.Role != "" || req.RoleID != nil {
+			a.writeForbidden(w, "Forbidden: Cannot change your own role")
 			return
 		}
-		user.Role = req.Role
+	} else {
+		// ROLE HIERARCHY: an actor may only edit a target whose role rank is
+		// STRICTLY LOWER than their own. Editing an equal/higher rank (an admin
+		// demoting another admin, or anything touching the owner) is forbidden.
+		if a.roleRank(user.Role) >= a.roleRank(actorUser.Role) {
+			a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
+			return
+		}
+
+		if req.RoleID != nil {
+			if rid := toInt64(req.RoleID); rid != nil {
+				roleLookup, err := a.repo.GetRoleByID(*rid)
+				if err == nil {
+					req.Role = roleLookup.Name
+					if req.ColorHex == "" {
+						user.ColorHex = roleLookup.ColorHex
+					}
+				}
+			} else if roleName, ok := req.RoleID.(string); ok && roleName != "" {
+				roleLookup, err := a.repo.GetRoleByName(roleName)
+				if err == nil {
+					req.Role = roleLookup.Name
+					if req.ColorHex == "" {
+						user.ColorHex = roleLookup.ColorHex
+					}
+				}
+			}
+		}
+		if req.Role != "" {
+			// An actor may not grant a target a role with an equal/higher rank
+			// than themselves, even when the target currently ranks lower.
+			if a.roleRank(req.Role) >= a.roleRank(actorUser.Role) {
+				a.writeForbidden(w, "Forbidden: Cannot assign a role with equal or higher role rank")
+				return
+			}
+			user.Role = req.Role
+		}
+
+		// Owner role protection: the original admin account (seeded by
+		// UpsertAdminUser) is the sole owner and cannot be demoted; no other user
+		// may ever be assigned the owner role.
+		if user.Role == domain.RoleOwner {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(ErrResponse{Error: "The owner role is reserved for the original admin account"})
+			return
+		}
 	}
+
 	if req.ColorHex != "" {
 		user.ColorHex = req.ColorHex
 	}
 
-	// Owner role protection: the original admin account (seeded by
-	// UpsertAdminUser) is the sole owner and cannot be demoted; no other user
-	// may ever be assigned the owner role.
-	if user.Role == domain.RoleOwner {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(ErrResponse{Error: "The owner role is reserved for the original admin account"})
-		return
+	// A user may rename themselves (or an admin a lower-rank user) via the
+	// management endpoint; username conflicts are rejected explicitly.
+	if req.Username != "" && req.Username != user.Username {
+		if existing, errUniq := a.repo.GetUserByUsername(req.Username); errUniq == nil && existing != nil && existing.ID != id {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(ErrResponse{Error: "Username already taken"})
+			return
+		}
+		if err := a.repo.UpdateUserUsername(id, req.Username); err != nil {
+			log.Printf("[UpdateUser] username update error: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(ErrResponse{Error: "Failed to update username: " + err.Error()})
+			return
+		}
+		user.Username = req.Username
 	}
 
 	if req.Password != "" {
@@ -1878,7 +1902,7 @@ func (a *API) rolePermissionsAllowed(w http.ResponseWriter, r *http.Request, per
 	}
 
 	// Owner and admin implicitly hold every permission.
-	if actorUser.Role == domain.RoleOwner || actorUser.Username == "admin" {
+	if actorUser.Role == domain.RoleOwner || actorUser.Username == "admin" || actorUser.Username == "owner" {
 		return true
 	}
 

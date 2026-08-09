@@ -171,6 +171,17 @@ func (r *postgresRepository) Init() error {
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer')`},
+		// Migrate: Rename the legacy 'admin' account to 'owner' so existing
+		// deployments keep dashboard access under the new default credential
+		// (ADMIN_USER=owner). Guarded against a unique-conflict when a user
+		// named 'owner' was already created manually.
+		{query: `UPDATE users SET username = 'owner' WHERE username = 'admin' AND NOT EXISTS (SELECT 1 FROM users WHERE username = 'owner')`},
+		// Migrate: When both an 'admin' and an 'owner' account exist (an old
+		// deployment where UpsertAdminUser previously re-seeded 'admin' as an
+		// owner), the 'admin' row is a duplicate owner: demote it to the
+		// regular admin role so the canonical ADMIN_USER account stays the
+		// sole owner and ADMIN_PASS keeps force-syncing.
+		{query: `UPDATE users SET role = 'admin' WHERE username = 'admin' AND role = 'owner' AND EXISTS (SELECT 1 FROM users WHERE username = 'owner')`},
 		// Seed automated-backup routing defaults (idempotent). Missing values
 		// default to local-only storage; both are safe regardless of migration.
 		{query: `INSERT INTO settings (key, value, updated_at)
@@ -626,6 +637,13 @@ func (r *postgresRepository) UpdateUser(user *domain.User) error {
 
 func (r *postgresRepository) UpdateUserPassword(id int64, passwordHash string) error {
 	_, err := r.db.Exec("UPDATE users SET password_hash = $1 WHERE id = $2", passwordHash, id)
+	return err
+}
+
+// UpdateUserUsername renames a user account. The unique constraint on
+// username is enforced by the database; a conflicting rename returns an error.
+func (r *postgresRepository) UpdateUserUsername(id int64, username string) error {
+	_, err := r.db.Exec("UPDATE users SET username = $1 WHERE id = $2", username, id)
 	return err
 }
 

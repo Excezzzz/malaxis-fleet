@@ -125,10 +125,10 @@ func createInitialAdmin(repo repository.Repository, username, password string) e
 	username = strings.TrimSpace(username)
 	password = strings.TrimSpace(password)
 	if username == "" {
-		username = "admin"
+		username = "owner"
 	}
 	if password == "" {
-		password = "admin"
+		password = "owner"
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

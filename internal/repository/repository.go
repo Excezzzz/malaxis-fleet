@@ -54,6 +54,7 @@ type Repository interface {
 	UpsertAdminUser(username, passwordHash string) error
 	UpdateUser(user *domain.User) error
 	UpdateUserPassword(id int64, passwordHash string) error
+	UpdateUserUsername(id int64, username string) error
 	DeleteUser(id int64) error
 	IsUsersEmpty() (bool, error)
 	CountUsersByRole(role string) (int, error)

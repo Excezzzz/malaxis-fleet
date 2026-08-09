@@ -298,7 +298,7 @@ export default {
     const modalBackdrop = computed(() => prefs.value.theme_mode === 'light' ? 'bg-zinc-900/70 backdrop-blur-md' : 'bg-black/70 backdrop-blur-md');
     const { user, hasPermission, isReadOnly } = inject('authCtx', { user: ref(null), hasPermission: () => false, isReadOnly: ref(false) });
 
-    const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'admin');
+    const isOwner = computed(() => user.value?.role?.name === 'owner' || user.value?.role === 'owner' || user.value?.username === 'owner' || user.value?.username === 'admin');
     const canRename = computed(() => isOwner.value || hasPermission('can_rename_node'));
     const canSoftDelete = computed(() => isOwner.value || hasPermission('can_edit_sub'));
     const canDelete = computed(() => isOwner.value || hasPermission('can_terminate_node') || hasPermission('can_edit_sub'));

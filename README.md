@@ -43,8 +43,12 @@ curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.
 ### Step 3: Access Admin Dashboard & Retrieve Tokenized Join Command
 
 1. Open `https://dash.yourdomain.com` in your browser.
-2. Log in with initial credentials (`admin` / `admin`).
-3. Go to the **Client Files** tab (or Nodes page) to view your automatically generated, tokenized installation commands for both platforms:
+2. Log in with the credentials you set during `install.sh` (defaults: `owner` / `owner`).
+3. Go to the **Client Files** tab (or Nodes page) to view your automatically generated, tokenized installation commands for both platforms. Copy your unique command (it already contains your `SECRET_TOKEN`) — you will need it in the next step.
+
+### Step 4: Connect Client Nodes
+
+On any client host (Windows PC, Linux/macOS machine, home server, ARM board) with Docker installed, run the matching tokenized join command copied from Step 3:
 
 ```bash
 # Linux / macOS / Git Bash
@@ -54,9 +58,7 @@ curl -sSL https://join.yourdomain.com/join.sh?t=YOUR_SECRET_TOKEN | bash
 irm https://join.yourdomain.com/join.ps1?t=YOUR_SECRET_TOKEN | iex
 ```
 
-### Step 4: Connect Client Nodes
-
-On any client host (Windows PC, Linux/macOS machine, home server, ARM board) with Docker installed, run the matching tokenized join command copied from Step 3. The installer runs dependency pre-flight checks (Docker daemon, Compose plugin, master reachability), asks where to install, and collects your setup preferences:
+The installer runs dependency pre-flight checks (Docker daemon, Compose plugin, master reachability), asks where to install, and collects your setup preferences:
 
 - **Install location** — Documents (default), Desktop, Home, or a custom path.
 - **Device name** — a friendly alias (defaults to the hostname).
@@ -289,7 +291,7 @@ Set at minimum the following values:
 ```ini
 BOT_TOKEN="1234567890:AA..."          # Telegram bot token
 ADMIN_CHAT_ID="123456789"             # admin chat ID for bot notifications
-ADMIN_USER="admin"                    # initial administrator account
+ADMIN_USER="owner"                     # initial administrator account
 ADMIN_PASS="replace-with-strong-pass" # initial administrator password
 SECRET_TOKEN="replace-with-random"    # shared agent auth secret
 SESSION_SECRET="replace-with-random"  # session signing secret
@@ -341,7 +343,7 @@ The script performs the following steps:
 #### Log in
 
 Open `https://dash.yourdomain.com` and sign in with the `ADMIN_USER` /
-`ADMIN_PASS` values from `.env` (defaults: `admin` / `admin` if not set).
+`ADMIN_PASS` values from `.env` (defaults: `owner` / `owner` if not set).
 The seeded account is the fleet owner (rank 100) and is the only strictly
 immutable account in the system. Change the password immediately after the
 first login.

@@ -64,8 +64,8 @@ func LoadConfig() *Config {
 		// User-facing secrets & IDs from .env
 		BotToken:      getStringDefault("BOT_TOKEN", ""),
 		AdminChatID:   getInt64Default("ADMIN_CHAT_ID", 0),
-		AdminUser:     getStringDefault("ADMIN_USER", "admin"),
-		AdminPass:     getStringDefault("ADMIN_PASS", "admin"),
+		AdminUser:     getStringDefault("ADMIN_USER", "owner"),
+		AdminPass:     getStringDefault("ADMIN_PASS", "owner"),
 		FleetSecret:   getStringDefault("SECRET_TOKEN", ""),
 		SessionSecret: getStringDefault("SESSION_SECRET", ""),
 

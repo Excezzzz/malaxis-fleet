@@ -99,6 +99,10 @@
         <form @submit.prevent="handleEditUser">
           <div class="space-y-4">
             <div>
+              <label for="edit_username" class="block text-sm font-medium text-zinc-400">{{ t('users_username') }}</label>
+              <input v-model="editUserForm.username" type="text" id="edit_username" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+            </div>
+            <div>
               <label for="edit_role" class="block text-sm font-medium text-zinc-400">
                 {{ t('users_role') }}
                 <span v-if="editingUser.username === currentUser?.username" class="inline-flex items-center ml-1 text-zinc-500" :title="t('users_own_role_tt')">
@@ -259,15 +263,19 @@ export default {
 
     const openEditUser = (user) => {
       editingUser.value = user;
-      editUserForm.value = { role: user.role || user.role_name || '', password: '' };
+      editUserForm.value = { role: user.role || user.role_name || '', password: '', username: user.username };
     };
 
     const handleEditUser = async () => {
       if (!editingUser.value) return;
       try {
-        const payload = {
-          role: editUserForm.value.role,
-        };
+        const payload = {};
+        if (editingUser.value.username !== currentUser.value?.username) {
+          payload.role = editUserForm.value.role;
+        }
+        if (editUserForm.value.username && editUserForm.value.username !== editingUser.value.username) {
+          payload.username = editUserForm.value.username;
+        }
         if (editUserForm.value.password) {
           payload.password = editUserForm.value.password;
         }
