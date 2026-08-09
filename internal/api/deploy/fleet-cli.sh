@@ -3,7 +3,17 @@
 
 set -e
 
-AGENT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Resolve the real install directory when invoked through the global
+# /usr/local/bin/malaxis-fleet symlink (readlink chain, relative-safe).
+SCRIPT_PATH="$0"
+while [ -L "$SCRIPT_PATH" ]; do
+    LINK_TARGET="$(readlink "$SCRIPT_PATH")"
+    case "$LINK_TARGET" in
+        /*) SCRIPT_PATH="$LINK_TARGET" ;;
+        *) SCRIPT_PATH="$(dirname "$SCRIPT_PATH")/$LINK_TARGET" ;;
+    esac
+done
+AGENT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 CONFIG_DIR="$AGENT_DIR/configs"
 STATE_FILE="$CONFIG_DIR/agent_state.json"
 SUBCACHE_FILE="$CONFIG_DIR/subscription_cache.json"

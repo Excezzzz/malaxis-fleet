@@ -15,8 +15,8 @@
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 min-w-0">
               <span class="w-5 h-5 rounded-full shrink-0" :style="{ backgroundColor: role.color_hex }"></span>
               <h3 class="text-xl font-bold text-white break-all min-w-0">{{ role.name }}</h3>
-              <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 text-xs font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">{{ t('roles_rank_immutable') }}</span>
-              <span v-else class="px-2 py-1 text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ {{ t('roles_rank') }}: {{ role.rank ?? 10 }} ]</span>
+              <span v-if="role.rank === 100 || role.name === 'owner'" class="px-2 py-1 inline-flex text-xs leading-none font-semibold rounded-full bg-red-500/15 border border-red-500/30 text-red-300">{{ t('roles_rank_immutable') }}</span>
+              <span v-else class="px-2 py-1 inline-flex text-xs leading-none font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">[ {{ t('roles_rank') }}: {{ role.rank ?? 10 }} ]</span>
             </div>
             <div class="flex space-x-2 shrink-0">
               <button v-if="canManageRole(role)" @click="openEditModal(role)" class="text-blue-400 hover:text-blue-300 transition-colors" :title="t('roles_edit_tt')">

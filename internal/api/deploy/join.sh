@@ -95,6 +95,7 @@ if [ "$lang" = "en" ]; then
     T_Q_STATUS="View status:"
     T_Q_LOGS="View logs:"
     T_Q_STOP="Stop agent:"
+    T_GLOBAL_CMD="You can now run 'malaxis-fleet' from anywhere!"
     T_LAUNCH_CLI="Launching fleet-cli..."
     T_SUMMARY_TITLE="✅ Malaxis Fleet Agent installed successfully!"
     T_SUMMARY_SOCKS="SOCKS5 Proxy"
@@ -139,6 +140,7 @@ else
     T_Q_STATUS="Статус:"
     T_Q_LOGS="Логи:"
     T_Q_STOP="Остановить:"
+    T_GLOBAL_CMD="Теперь команду 'malaxis-fleet' можно запускать откуда угодно!"
     T_LAUNCH_CLI="Запуск fleet-cli..."
     T_SUMMARY_TITLE="✅ Malaxis Fleet Agent успешно установлен!"
     T_SUMMARY_SOCKS="SOCKS5 Прокси"
@@ -349,6 +351,13 @@ say "$T_DL_CLI"
 curl -sSL "https://__JOIN_DOMAIN__/fleet-cli?t=__SECRET_TOKEN__" -o fleet-cli.sh
 chmod +x fleet-cli.sh
 
+# Create a global "malaxis-fleet" command so the CLI works from any directory
+if [ -w "/usr/local/bin" ]; then
+    ln -sf "$AGENT_DIR/fleet-cli.sh" /usr/local/bin/malaxis-fleet
+else
+    sudo ln -sf "$AGENT_DIR/fleet-cli.sh" /usr/local/bin/malaxis-fleet 2>/dev/null || true
+fi
+
 # ------------------------------------------------------------
 # 6. Persist onboarding choices BEFORE starting the stack
 # ------------------------------------------------------------
@@ -381,7 +390,7 @@ echo ""
 
 # Success summary box with local proxy ports
 box_line() { printf '║  %s' "$1"; local pad=$((BOX_WIDTH - ${#1} - 2)); printf '%*s║\n' "$pad" ""; }
-BOX_WIDTH=$(( $(printf '%s\n' "$T_SUMMARY_TITLE" "" "  $T_SUMMARY_SOCKS : 127.0.0.1:6357" "  $T_SUMMARY_HTTP  : 127.0.0.1:6358" | wc -L) + 4 ))
+BOX_WIDTH=$(( $(printf '%s\n' "$T_SUMMARY_TITLE" "" "  $T_SUMMARY_SOCKS : 127.0.0.1:6357" "  $T_SUMMARY_HTTP  : 127.0.0.1:6358" "  $T_GLOBAL_CMD" | wc -L) + 4 ))
 printf '╔'
 printf '═%.0s' $(seq 1 "$BOX_WIDTH")
 printf '╗\n'
@@ -389,6 +398,8 @@ box_line "$T_SUMMARY_TITLE"
 box_line ""
 box_line "  $T_SUMMARY_SOCKS : 127.0.0.1:6357"
 box_line "  $T_SUMMARY_HTTP  : 127.0.0.1:6358"
+box_line ""
+box_line "  $T_GLOBAL_CMD"
 printf '╚'
 printf '═%.0s' $(seq 1 "$BOX_WIDTH")
 printf '╝\n'

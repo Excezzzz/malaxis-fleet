@@ -30,13 +30,15 @@
               </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap">
-              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full"
-                    :style="{ backgroundColor: user.role_color || user.color_hex || '#374151', color: '#ffffff' }">
-                {{ user.role_name || user.role }}
-              </span>
-              <span v-if="userRank(user) !== null" class="ml-2 px-2 py-1 inline-flex text-xs font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">
-                [ {{ t('users_rank') }}: {{ userRank(user) }} ]
-              </span>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-1 inline-flex text-xs leading-none font-semibold rounded-full"
+                      :style="{ backgroundColor: user.role_color || user.color_hex || '#374151', color: '#ffffff' }">
+                  {{ user.role_name || user.role }}
+                </span>
+                <span v-if="userRank(user) !== null" class="px-2 py-1 inline-flex text-xs leading-none font-semibold rounded-full bg-zinc-700/40 border border-white/10 text-zinc-300">
+                  [ {{ t('users_rank') }}: {{ userRank(user) }} ]
+                </span>
+              </div>
             </td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-zinc-400">{{ new Date(user.created_at).toLocaleDateString() }}</td>
             <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

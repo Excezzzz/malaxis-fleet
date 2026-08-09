@@ -89,6 +89,7 @@ if ($lang -eq "en") {
     $T_Q_LOGS               = "View logs:"
     $T_Q_STOP               = "Stop agent:"
     $T_Q_CLI                = "CLI:"
+    $T_GLOBAL_CMD           = "You can now run 'malaxis-fleet' from any new terminal!"
     $T_LAUNCH_CLI           = "Launching fleet-cli..."
     $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent installed successfully!"
     $T_SUMMARY_SOCKS        = "SOCKS5 Proxy"
@@ -137,6 +138,7 @@ if ($lang -eq "en") {
     $T_Q_LOGS               = "Логи:"
     $T_Q_STOP               = "Остановить:"
     $T_Q_CLI                = "CLI:"
+    $T_GLOBAL_CMD           = "Теперь команду 'malaxis-fleet' можно запускать из любого нового окна терминала!"
     $T_LAUNCH_CLI           = "Запуск fleet-cli..."
     $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent успешно установлен!"
     $T_SUMMARY_SOCKS        = "SOCKS5 Прокси"
@@ -338,6 +340,20 @@ Write-Host ""
 Say $T_DL_CLI
 Download-File "$joinBase/fleet-cli.ps1?t=$token" (Join-Path $installDir "fleet-cli.ps1")
 
+# Create a global "malaxis-fleet" command: a .cmd wrapper in the install dir
+# plus the install dir registered in the user's PATH so the CLI works from
+# any terminal window (PATH applies to newly opened terminals).
+$BatPath = Join-Path $installDir "malaxis-fleet.cmd"
+Write-Utf8 $BatPath "@powershell -ExecutionPolicy Bypass -File ""$installDir\fleet-cli.ps1"""
+$UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($UserPath -notlike "*$installDir*") {
+    if ([string]::IsNullOrEmpty($UserPath)) {
+        [Environment]::SetEnvironmentVariable("Path", $installDir, "User")
+    } else {
+        [Environment]::SetEnvironmentVariable("Path", "$UserPath;$installDir", "User")
+    }
+}
+
 # ------------------------------------------------------------
 # 6. Persist onboarding choices BEFORE starting the stack
 # ------------------------------------------------------------
@@ -375,7 +391,9 @@ $summaryLines = @(
     $T_SUMMARY_TITLE,
     "",
     "  $($T_SUMMARY_SOCKS) : 127.0.0.1:6357",
-    "  $($T_SUMMARY_HTTP)  : 127.0.0.1:6358"
+    "  $($T_SUMMARY_HTTP)  : 127.0.0.1:6358",
+    "",
+    "  $T_GLOBAL_CMD"
 )
 $boxWidth = ($summaryLines | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum + 4
 Write-Host ("╔" + ("═" * $boxWidth) + "╗") -ForegroundColor Cyan
