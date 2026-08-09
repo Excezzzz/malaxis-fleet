@@ -19,23 +19,41 @@
     </div>
 
     <div class="bg-zinc-900/40 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
-      <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div>
           <h2 class="text-lg font-bold text-white">{{ t('client_add_device') }}</h2>
           <p class="text-sm text-zinc-400">{{ t('client_add_device_hint') }}</p>
         </div>
       </div>
-      <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
-        <code v-if="installCommand" class="terminal w-full sm:flex-1 bg-zinc-950 text-emerald-400 p-3.5 rounded-xl font-mono text-xs overflow-x-auto border border-white/10 break-all whitespace-pre-wrap">{{ installCommand }}</code>
-        <div v-else :class="['terminal w-full sm:flex-1 bg-zinc-950 p-3.5 rounded-xl font-mono text-xs overflow-x-auto border border-white/10', prefs.theme_mode === 'light' ? 'text-zinc-900' : 'text-zinc-400']">
-          {{ commandError || t('client_loading_cmd') }}
+
+      <div class="space-y-4 w-full">
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+          <div class="w-full sm:w-44 shrink-0">
+            <div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{{ t('client_os_linux') }}</div>
+            <div class="text-xs font-mono text-indigo-300 mt-0.5">join.sh</div>
+          </div>
+          <code class="terminal w-full sm:flex-1 bg-zinc-950 text-emerald-400 p-3.5 rounded-xl font-mono text-xs overflow-x-auto border border-white/10 break-all whitespace-pre-wrap">{{ installCommand || t('client_loading_cmd') }}</code>
+          <button @click="copyInstallCommand('linux')" :disabled="!installCommand"
+            class="w-full sm:w-auto shrink-0 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <Copy v-if="copied !== 'linux'" class="w-4 h-4 shrink-0" />
+            <Check v-else class="w-4 h-4 shrink-0" />
+            <span class="truncate min-w-0">{{ copied === 'linux' ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
+          </button>
         </div>
-        <button @click="copyInstallCommand" :disabled="!installCommand"
-          class="w-full sm:w-auto shrink-0 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-          <Copy v-if="!copied" class="w-4 h-4 shrink-0" />
-          <Check v-else class="w-4 h-4 shrink-0" />
-          <span class="truncate min-w-0">{{ copied ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
-        </button>
+
+        <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full">
+          <div class="w-full sm:w-44 shrink-0">
+            <div class="text-[10px] font-bold uppercase tracking-widest text-zinc-500">{{ t('client_os_windows') }}</div>
+            <div class="text-xs font-mono text-indigo-300 mt-0.5">join.ps1</div>
+          </div>
+          <code class="terminal w-full sm:flex-1 bg-zinc-950 text-emerald-400 p-3.5 rounded-xl font-mono text-xs overflow-x-auto border border-white/10 break-all whitespace-pre-wrap">{{ installCommandPs || t('client_loading_cmd') }}</code>
+          <button @click="copyInstallCommand('windows')" :disabled="!installCommandPs"
+            class="w-full sm:w-auto shrink-0 py-2.5 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-medium text-xs rounded-xl flex items-center justify-center gap-2 border border-white/10 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+            <Copy v-if="copied !== 'windows'" class="w-4 h-4 shrink-0" />
+            <Check v-else class="w-4 h-4 shrink-0" />
+            <span class="truncate min-w-0">{{ copied === 'windows' ? `[${t('client_copied')}]` : `[${t('client_copy')}]` }}</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -101,8 +119,9 @@ export default {
     const dirty = ref(false);
     const toast = ref('');
     const installCommand = ref('');
+    const installCommandPs = ref('');
     const commandError = ref('');
-    const copied = ref(false);
+    const copied = ref('');
     let toastTimer = null;
 
     const showToast = (msg) => {
@@ -111,12 +130,13 @@ export default {
       toastTimer = setTimeout(() => { toast.value = ''; }, 4000);
     };
 
-    const copyInstallCommand = async () => {
-      if (!installCommand.value) return;
+    const copyInstallCommand = async (key) => {
+      const cmd = key === 'windows' ? installCommandPs.value : installCommand.value;
+      if (!cmd) return;
       try {
-        await navigator.clipboard.writeText(installCommand.value);
-        copied.value = true;
-        setTimeout(() => { copied.value = false; }, 2000);
+        await navigator.clipboard.writeText(cmd);
+        copied.value = key;
+        setTimeout(() => { copied.value = ''; }, 2000);
       } catch (e) {
         showToast(t('client_toast_copy_failed'));
       }
@@ -126,6 +146,7 @@ export default {
       try {
         const response = await axios.get('/api/web/install-command');
         installCommand.value = response.data.command || '';
+        installCommandPs.value = response.data.command_windows || '';
         commandError.value = '';
       } catch (e) {
         console.error("Failed to fetch install command:", e);
@@ -218,6 +239,7 @@ export default {
       dirty,
       toast,
       installCommand,
+      installCommandPs,
       commandError,
       copied,
       copyInstallCommand,

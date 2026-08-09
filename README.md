@@ -44,23 +44,27 @@ curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.
 
 1. Open `https://dash.yourdomain.com` in your browser.
 2. Log in with initial credentials (`admin` / `admin`).
-3. Go to the **Client Files** tab (or Nodes page) to view your automatically generated, tokenized installation command:
+3. Go to the **Client Files** tab (or Nodes page) to view your automatically generated, tokenized installation commands for both platforms:
 
 ```bash
-curl -sSL https://join.yourdomain.com/?t=YOUR_SECRET_TOKEN | bash
+# Linux / macOS / Git Bash
+curl -sSL https://join.yourdomain.com/join.sh?t=YOUR_SECRET_TOKEN | bash
+
+# Native Windows PowerShell
+irm https://join.yourdomain.com/join.ps1?t=YOUR_SECRET_TOKEN | iex
 ```
 
 ### Step 4: Connect Client Nodes
 
-On any client host (Windows/Linux PC, home server, ARM board) with Docker installed, run the tokenized join command copied from Step 3:
+On any client host (Windows PC, Linux/macOS machine, home server, ARM board) with Docker installed, run the matching tokenized join command copied from Step 3. The installer runs dependency pre-flight checks (Docker daemon, Compose plugin, master reachability), asks where to install, and collects your setup preferences:
 
-```bash
-curl -sSL https://join.yourdomain.com/?t=YOUR_SECRET_TOKEN | bash
-```
+- **Install location** — Documents (default), Desktop, Home, or a custom path.
+- **Device name** — a friendly alias (defaults to the hostname).
+- **Subscription URL** — the 3x-ui/v2ray subscription (skip if already configured centrally).
+- **Smart Routing Mode** — Balanced (default, recommended), Fastest, or Manual.
+- **Auto-start on boot** — systemd service on Linux, Task Scheduler on Windows.
 
-- Enter your **Subscription URL** when prompted (or skip and add it later via the Web Dashboard or CLI).
-- Optional: Accept auto-installing the systemd background service.
-- The node instantly registers on your Web Dashboard and Telegram bot!
+All choices are written to `configs/agent_state.json` *before* the stack starts, so the node comes up fully configured, registers on your Web Dashboard and Telegram bot, and starts routing immediately.
 
 ### Step 5: Telegram Bot Setup (Optional)
 
@@ -81,7 +85,7 @@ server that routes by Host header and terminates TLS:
 |--------|------|
 | `dash.yourdomain.com` | Web dashboard (embedded Vue 3 SPA) |
 | `api.yourdomain.com`  | Agent polling API, subscription validation |
-| `join.yourdomain.com` | `join.sh` bootstrap script and client tooling |
+| `join.yourdomain.com` | `join.sh` / `join.ps1` bootstrap installers and client tooling |
 | `sub.yourdomain.com`  | Client files: compose, Dockerfile, engine configs, OTA assets |
 
 ```
@@ -168,22 +172,41 @@ double-counting and state confusion.
 
 #### Joining a fleet
 
-On any host with Docker installed, run the one-line bootstrap. The fleet
-secret (`SECRET_TOKEN` from the server's `.env`) is required: it is passed as
-a query parameter and gates every payload download, so unauthenticated
-requests to `join`/`sub` never return anything useful:
+On any host with Docker installed, run the one-line bootstrap for your
+platform. The fleet secret (`SECRET_TOKEN` from the server's `.env`) is
+required: it is passed as a query parameter and gates every payload download,
+so unauthenticated requests to `join`/`sub` never return anything useful:
 
 ```bash
-curl -sSL 'https://join.yourdomain.com/?t=YOUR_SECRET_TOKEN' | bash
+# Linux / macOS / Git Bash
+curl -sSL 'https://join.yourdomain.com/join.sh?t=YOUR_SECRET_TOKEN' | bash
+
+# Native Windows PowerShell
+irm 'https://join.yourdomain.com/join.ps1?t=YOUR_SECRET_TOKEN' | iex
 ```
 
-The script downloads the agent and engine assets, verifies Docker, and then
-asks two interactive questions (read from `/dev/tty`, so they work even when
-the script is piped):
+Both installers start with **pre-flight checks**: Docker installed and the
+daemon running (`docker info`), the Compose v2 plugin available
+(`docker compose version`), and master server reachability over HTTPS. Then
+they ask where to install (Documents / Desktop / Home / custom), a friendly
+device name, the subscription URL, the default Smart Routing Mode, and
+whether to auto-start on boot. On Linux/macOS the prompts read from
+`/dev/tty`, so they work even when the script is piped:
 
 ```
-Enter Subscription URL (or press Enter to skip):
-Install systemd service for auto-start on boot? [Y/n]:
+Where would you like to install Malaxis Fleet Client?
+  [1] Documents (Default: ~/Documents/malaxis-fleet-client)
+  [2] Desktop (~/Desktop/malaxis-fleet-client)
+  [3] User Home Directory (~/malaxis-fleet-client)
+  [4] Custom Path
+Select [1-4, default 1]:
+Enter a friendly name for this device [Default: <hostname>]:
+Enter your 3x-ui Subscription URL (Press Enter to skip):
+Select default Smart Routing Mode:
+  [1] Balanced - Best stability & lowest jitter (Recommended)
+  [2] Fastest - Lowest ping
+  [3] Manual
+Enable automatic startup on system boot? (systemd on Linux / Task Scheduler on Windows) [Y/n]:
 ```
 
 - **Subscription URL** — the 3x-ui/v2ray subscription URL that contains the
@@ -192,9 +215,12 @@ Install systemd service for auto-start on boot? [Y/n]:
   agent fetches and benchmarks servers on first boot. If your administrator
   has already configured a subscription centrally (via the dashboard or the
   Telegram bot), skip this prompt.
-- **systemd auto-start** — answering `Y` (the default) installs and enables
-  `/etc/systemd/system/fleet-agent.service` so the agent restarts after a
-  reboot. Declining is only appropriate on short-lived test hosts.
+- **Smart Routing Mode** — the default auto-selection mode: `balanced`
+  (lowest jitter, recommended), `fastest` (lowest ping), or `manual`.
+- **Auto-start** — answering `Y` (the default) installs a systemd service on
+  Linux (`/etc/systemd/system/fleet-agent.service`) or a Task Scheduler entry
+  on Windows (`MalaxisFleetAgent`), so the agent restarts after a reboot.
+  Declining is only appropriate on short-lived test hosts.
 
 After the install, the node registers with the control plane using its
 hardware fingerprint and starts both proxy engines. The local proxy listens

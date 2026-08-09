@@ -2427,10 +2427,15 @@ func (a *API) InstallCommandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	command := "curl -sSL https://" + a.config.JoinDomain + "/?t=" + a.config.FleetSecret + " | bash"
+	joinBase := "https://" + a.config.JoinDomain
+	command := "curl -sSL " + joinBase + "/join.sh?t=" + a.config.FleetSecret + " | bash"
+	commandWindows := "irm " + joinBase + "/join.ps1?t=" + a.config.FleetSecret + " | iex"
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"command": command})
+	json.NewEncoder(w).Encode(map[string]string{
+		"command":         command,
+		"command_windows": commandWindows,
+	})
 }
 
 // GetTemplatesHandler returns the client deployment template files stored on
