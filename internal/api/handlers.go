@@ -16,6 +16,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -2383,20 +2385,50 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
-// templateFiles is the whitelist of client template files editable via the web UI.
-var templateFiles = []string{"node_agent.py", "fleet-cli.sh", "requirements.txt", "Dockerfile.client", "entrypoint.sh"}
+// listTemplateFiles dynamically scans the embedded deploy directory and
+// returns every regular file within it (top level only). Any file added to
+// internal/api/deploy automatically appears in the Web IDE.
+func listTemplateFiles() []string {
+	entries, err := deployFS.ReadDir("deploy")
+	if err != nil {
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if templateNameValid(e.Name()) {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	return names
+}
 
-// isTemplateFile reports whether name is one of the hardcoded whitelisted
-// client template files. Path traversal is impossible: the check is an exact
-// match and any name containing path separators, "." or ".." is rejected
-// outright (defense in depth, even though the exact-match already blocks it).
-func isTemplateFile(name string) bool {
-	if name == "" || strings.ContainsAny(name, "/\\") || strings.Contains(name, "..") {
+// templateNameValid rejects path traversal: only a flat base name (no path
+// separators, no "..") is ever accepted.
+func templateNameValid(name string) bool {
+	return name != "" && !strings.ContainsAny(name, "/\\") && !strings.Contains(name, "..")
+}
+
+// isKnownTemplate reports whether name is a valid editable client template:
+// it must exist in the embedded deploy dir OR have a "template:" override in
+// the DB settings table.
+func (a *API) isKnownTemplate(name string) bool {
+	if !templateNameValid(name) {
 		return false
 	}
-	for _, n := range templateFiles {
+	for _, n := range listTemplateFiles() {
 		if n == name {
 			return true
+		}
+	}
+	if keys, err := a.repo.GetSettingKeysByPrefix("template:"); err == nil {
+		for _, k := range keys {
+			if strings.TrimPrefix(k, "template:") == name {
+				return true
+			}
 		}
 	}
 	return false
@@ -2410,7 +2442,7 @@ func templateKey(name string) string {
 // readTemplate returns the template content, preferring a web-edited override
 // stored in the database over the embedded copy.
 func (a *API) readTemplate(name string) (string, bool) {
-	if isTemplateFile(name) {
+	if templateNameValid(name) {
 		if override, err := a.repo.GetSetting(templateKey(name)); err == nil && override != "" {
 			return override, true
 		}
@@ -2472,17 +2504,28 @@ func (a *API) InstallCommandHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetTemplatesHandler returns the client deployment template files stored on
-// the server (node_agent.py, fleet-cli.sh, requirements.txt, Dockerfile.client,
-// entrypoint.sh) with their names and raw contents. Web-edited overrides take
-// precedence over the embedded copies.
+// GetTemplatesHandler returns every client deployment template file stored in
+// the embedded deploy directory (dynamically scanned — no hardcoded list), plus
+// any extra overrides present in the DB settings table, with names and raw
+// contents. Web-edited overrides take precedence over the embedded copies.
 func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
 	}
 
-	result := make([]map[string]string, 0, len(templateFiles))
-	for _, name := range templateFiles {
+	names := listTemplateFiles()
+	if keys, err := a.repo.GetSettingKeysByPrefix("template:"); err == nil {
+		for _, k := range keys {
+			name := strings.TrimPrefix(k, "template:")
+			if templateNameValid(name) && !slices.Contains(names, name) {
+				names = append(names, name)
+			}
+		}
+	}
+	sort.Strings(names)
+
+	result := make([]map[string]string, 0, len(names))
+	for _, name := range names {
 		content, ok := a.readTemplate(name)
 		if !ok {
 			log.Printf("Error reading template %s", name)
@@ -2498,10 +2541,11 @@ func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateTemplateHandler overwrites a whitelisted client template file with the
-// content from the request body. The new content is stored in the database
-// (authoritative for serving) and written to the local repo deploy dir when
-// possible. Body: {"content": "..."}
+// UpdateTemplateHandler overwrites a client template file (validated against
+// the dynamically scanned deploy dir / DB overrides) with the content from the
+// request body. The new content is stored in the database (authoritative for
+// serving) and written to the local repo deploy dir when possible.
+// Body: {"content": "..."}
 func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -2509,7 +2553,7 @@ func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	filename := vars["filename"]
-	if !isTemplateFile(filename) {
+	if !a.isKnownTemplate(filename) {
 		http.Error(w, "Bad Request: unknown template file", http.StatusBadRequest)
 		return
 	}

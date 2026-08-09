@@ -16,6 +16,11 @@ function Say  { Write-Host "[+] $args" -ForegroundColor Green }
 function Warn { Write-Host "[!] $args" -ForegroundColor Yellow }
 function Fail { Write-Host "[x] $args" -ForegroundColor Red; exit 1 }
 
+# Write UTF-8 WITHOUT a BOM so Python (json.load) and jq can parse the file.
+function Write-Utf8([string]$Path, [string]$Content) {
+    [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 # ------------------------------------------------------------
 # 0. Language selector (first step, before any other output)
 # ------------------------------------------------------------
@@ -83,7 +88,8 @@ if ($lang -eq "en") {
     $T_QUICK                = "Quick commands:"
     $T_Q_LOGS               = "View logs:"
     $T_Q_STOP               = "Stop agent:"
-    $T_Q_CLI                = "CLI (Git Bash):"
+    $T_Q_CLI                = "CLI:"
+    $T_LAUNCH_CLI           = "Launching fleet-cli..."
     $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent installed successfully!"
     $T_SUMMARY_SOCKS        = "SOCKS5 Proxy"
     $T_SUMMARY_HTTP         = "HTTP Proxy"
@@ -130,7 +136,8 @@ if ($lang -eq "en") {
     $T_QUICK                = "Быстрые команды:"
     $T_Q_LOGS               = "Логи:"
     $T_Q_STOP               = "Остановить:"
-    $T_Q_CLI                = "CLI (Git Bash):"
+    $T_Q_CLI                = "CLI:"
+    $T_LAUNCH_CLI           = "Запуск fleet-cli..."
     $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent успешно установлен!"
     $T_SUMMARY_SOCKS        = "SOCKS5 Прокси"
     $T_SUMMARY_HTTP         = "HTTP Прокси"
@@ -329,7 +336,7 @@ try {
 # Download fleet-cli utility
 Write-Host ""
 Say $T_DL_CLI
-Download-File "$joinBase/fleet-cli?t=$token" (Join-Path $installDir "fleet-cli.sh")
+Download-File "$joinBase/fleet-cli.ps1?t=$token" (Join-Path $installDir "fleet-cli.ps1")
 
 # ------------------------------------------------------------
 # 6. Persist onboarding choices BEFORE starting the stack
@@ -339,7 +346,7 @@ $state = @{
     node_name   = $nodeName
     active_mode = $smartMode
 } | ConvertTo-Json -Compress
-Set-Content -Path (Join-Path $installDir "configs\agent_state.json") -Value $state -Encoding UTF8
+Write-Utf8 (Join-Path $installDir "configs\agent_state.json") $state
 Say ($T_STATE_WRITTEN -f $nodeName, $smartMode)
 
 # ------------------------------------------------------------
@@ -381,5 +388,11 @@ Write-Host ""
 Write-Host $T_QUICK
 Write-Host "   $T_Q_LOGS    docker logs -f node-agent"
 Write-Host "   $T_Q_STOP    cd `"$installDir`"; docker compose down"
-Write-Host "   $T_Q_CLI     cd `"$installDir`"; bash fleet-cli.sh"
+Write-Host "   $T_Q_CLI     cd `"$installDir`"; .\fleet-cli.ps1"
+Write-Host ""
+
+# Auto-launch the CLI so the subscription can be configured right away
+Write-Host ""
+Say $T_LAUNCH_CLI
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installDir "fleet-cli.ps1")
 Write-Host ""

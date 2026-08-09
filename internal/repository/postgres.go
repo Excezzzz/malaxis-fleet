@@ -814,3 +814,20 @@ func (r *postgresRepository) SetSetting(key, value string) error {
 	_, err := r.db.Exec(query, key, value, time.Now())
 	return err
 }
+
+func (r *postgresRepository) GetSettingKeysByPrefix(prefix string) ([]string, error) {
+	rows, err := r.db.Query(`SELECT key FROM settings WHERE key LIKE $1 || '%' ORDER BY key`, prefix)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, rows.Err()
+}

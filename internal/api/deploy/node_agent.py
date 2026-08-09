@@ -2324,6 +2324,15 @@ def _terminate() -> None:
         shutil.rmtree(CONFIG_DIR, ignore_errors=True)
     except Exception:
         pass
+    # Leave an explicit marker in the (recreated) state file so the local
+    # fleet-cli can offer "Send Re-join Request" instead of the full menu on a
+    # terminated / rejected node.
+    try:
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(os.path.join(CONFIG_DIR, "agent_state.json"), "w") as f:
+            json.dump({"terminated": True}, f)
+    except Exception:
+        pass
     # The agent image only ships docker-cli (no compose plugin), so perform the
     # equivalent of `docker compose down -v` with plain docker commands: remove
     # the engine containers and the agent container itself (self-destruct).

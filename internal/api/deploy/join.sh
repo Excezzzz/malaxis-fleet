@@ -95,6 +95,7 @@ if [ "$lang" = "en" ]; then
     T_Q_STATUS="View status:"
     T_Q_LOGS="View logs:"
     T_Q_STOP="Stop agent:"
+    T_LAUNCH_CLI="Launching fleet-cli..."
     T_SUMMARY_TITLE="✅ Malaxis Fleet Agent installed successfully!"
     T_SUMMARY_SOCKS="SOCKS5 Proxy"
     T_SUMMARY_HTTP="HTTP Proxy"
@@ -138,6 +139,7 @@ else
     T_Q_STATUS="Статус:"
     T_Q_LOGS="Логи:"
     T_Q_STOP="Остановить:"
+    T_LAUNCH_CLI="Запуск fleet-cli..."
     T_SUMMARY_TITLE="✅ Malaxis Fleet Agent успешно установлен!"
     T_SUMMARY_SOCKS="SOCKS5 Прокси"
     T_SUMMARY_HTTP="HTTP Прокси"
@@ -397,3 +399,14 @@ echo "   $T_Q_STATUS  cd \"$AGENT_DIR\" && bash fleet-cli.sh"
 echo "   $T_Q_LOGS    docker logs -f node-agent"
 echo "   $T_Q_STOP    cd \"$AGENT_DIR\" && docker compose down"
 echo ""
+
+# Auto-launch the CLI so the subscription can be configured right away
+echo ""
+say "$T_LAUNCH_CLI"
+if [ -t 0 ]; then
+    bash fleet-cli.sh || true
+else
+    # stdin is piped (curl ... | bash): re-attach the CLI to the controlling
+    # terminal; skip silently when there is none (fully automated runs).
+    bash fleet-cli.sh </dev/tty 2>/dev/null || true
+fi

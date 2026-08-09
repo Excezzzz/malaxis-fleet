@@ -82,4 +82,5 @@ type Repository interface {
 	// --- Settings Methods ---
 	GetSetting(key string) (string, error)
 	SetSetting(key, value string) error
+	GetSettingKeysByPrefix(prefix string) ([]string, error)
 }

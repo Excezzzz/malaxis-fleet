@@ -79,12 +79,60 @@ cache_get() {
     fi
 }
 
+# Detect a terminated / rejected node: an explicit marker written by the agent
+# during self-destruct, or the agent container being gone entirely while Docker
+# is up (Docker being down just means the regular "Start Docker" menu applies).
+is_terminated() {
+    [ "$(get_state "terminated" "false")" = "true" ] && return 0
+    docker ps -a --filter "name=node-agent" --format "{{.Names}}" 2>/dev/null | grep -q "node-agent" && return 1
+    docker info &>/dev/null || return 1
+    return 0
+}
+
+has_sub() {
+    local u
+    u=$(get_state "sub_url" "")
+    [ -n "$u" ] && [ "$u" != "null" ]
+}
+
 show_menu() {
     clear
     echo "${CYAN}==========================================${NC}"
     echo "${CYAN}${BOLD}     Malaxis Fleet Agent CLI${NC}"
     echo "${CYAN}==========================================${NC}"
     echo ""
+
+    if is_terminated; then
+        echo " ${RED}[TERMINATED]${NC} This node was terminated or rejected by the admin."
+        echo " You can wipe the local identity and re-register it as a new device."
+        echo ""
+        echo " 1) Send Re-join Request"
+        echo " 2) Exit"
+        echo ""
+        read -p "Select option [1-2]: " choice
+        case "$choice" in
+            1) rejoin ;;
+            2) clear; exit 0 ;;
+            *) show_menu ;;
+        esac
+        return
+    fi
+
+    if ! has_sub; then
+        echo " ${YELLOW}[SETUP]${NC} No subscription URL configured yet."
+        echo " Set your 3x-ui subscription URL to start using the fleet."
+        echo ""
+        echo " 1) Set Subscription URL"
+        echo " 2) Exit"
+        echo ""
+        read -p "Select option [1-2]: " choice
+        case "$choice" in
+            1) update_subscription ;;
+            2) clear; exit 0 ;;
+            *) show_menu ;;
+        esac
+        return
+    fi
 
     if ! docker ps &>/dev/null; then
         echo "${RED}Docker is not running!${NC}"
@@ -193,6 +241,29 @@ show_menu() {
         8) clear; exit 0 ;;
         *) show_menu ;;
     esac
+}
+
+rejoin() {
+    echo ""
+    echo "${CYAN}--- Send Re-join Request ---${NC}"
+    echo "${YELLOW}WARNING:${NC} This wipes the local identity and re-registers this"
+    echo "device with the fleet as a brand-new node. This cannot be undone."
+    echo ""
+    read -p "Continue? [y/N]: " confirm
+    case "$confirm" in
+        y|Y) ;;
+        *) echo "${YELLOW}Cancelled.${NC}"; sleep 2; show_menu; return ;;
+    esac
+
+    rm -f "$STATE_FILE" "$SUBCACHE_FILE" "$CONFIG_DIR/node_id.txt" 2>/dev/null || true
+    mkdir -p "$CONFIG_DIR"
+    docker rm -f node-agent 2>/dev/null || true
+    cd "$AGENT_DIR"
+    docker compose up -d --force-recreate node-agent 2>/dev/null || docker-compose up -d --force-recreate node-agent 2>/dev/null || true
+    echo "${GREEN}Re-join request sent. The agent is re-registering with a fresh identity...${NC}"
+    sleep 3
+    clear
+    show_menu
 }
 
 update_subscription() {

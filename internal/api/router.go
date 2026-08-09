@@ -261,6 +261,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	joinRouter.HandleFunc("/join.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	joinRouter.HandleFunc("/join.ps1", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/join.ps1", "text/x-powershell"))).ServeHTTP).Methods("GET")
 	joinRouter.HandleFunc("/fleet-cli", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
+	joinRouter.HandleFunc("/fleet-cli.ps1", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("fleet-cli.ps1", "text/x-powershell"))).ServeHTTP).Methods("GET")
 	joinRouter.HandleFunc("/fleet-agent.service", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/fleet-agent.service", "text/plain"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/docker-compose.yml", payloadTokenGuard(cfg, http.HandlerFunc(api.serveDockerCompose)).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/Dockerfile.client", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("Dockerfile.client", "text/plain"))).ServeHTTP).Methods("GET")

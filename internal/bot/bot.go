@@ -754,36 +754,36 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("➕ Добавить устройство", "➕ Add New Device")), "join:command"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Добавить устройство", "Add New Device"), "➕", emojis), "join:command"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("💻 Управление узлами", "💻 Manage Nodes")), "nodes:list"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Управление узлами", "Manage Nodes"), "💻", emojis), "nodes:list"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🚀 Отправить файлы клиентов (OTA)", "🚀 Push Client Files (OTA)")), "ota:all"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Отправить файлы клиентов (OTA)", "Push Client Files (OTA)"), "🚀", emojis), "ota:all"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🔄 Обновить подписки", "🔄 Refresh Subscriptions")), "task:refresh_subs"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Обновить подписки", "Refresh Subscriptions"), "🔄", emojis), "task:refresh_subs"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🧹 Очистить офлайн (>3д)", "🧹 Purge Offline (>3d)")), "purge:go"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Очистить офлайн (>3д)", "Purge Offline (>3d)"), "🧹", emojis), "purge:go"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("📦 Скачать бэкап БД", "📦 Download DB Backup")), "backup:download"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Скачать бэкап БД", "Download DB Backup"), "📦", emojis), "backup:download"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Частота бэкапов", "Backup Interval"), "⏱️", emojis), "backup:interval"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("👥 Пользователи", "👥 Manage Users")), "users:menu"),
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🛡️ Роли", "🛡️ Manage Roles")), "roles:menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Пользователи", "Manage Users"), "👥", emojis), "users:menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Роли", "Manage Roles"), "🛡️", emojis), "roles:menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🎨 Выбрать цвет аватарки", "🎨 Select Bot Avatar Color")), "bot:avatar_menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Выбрать цвет аватарки", "Select Bot Avatar Color"), "🎨", emojis), "bot:avatar_menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji(b.tr("🌐 Язык: RU", "🌐 Language: EN")), "prefs:lang"),
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("😃 "+b.tr("Эмодзи: "+emojiState, "Emojis: "+emojiState)), "prefs:emoji"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Язык: RU", "Language: EN"), "🌐", emojis), "prefs:lang"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Эмодзи: "+emojiState, "Emojis: "+emojiState), "😃", emojis), "prefs:emoji"),
 		),
 	)
 	return text, markup
@@ -1071,20 +1071,22 @@ func (b *Bot) showAvatarMenu(chatID int64, messageID int) {
 	text := "<b>🎨 " + b.tr("Выбор цвета аватарки", "Select Bot Avatar Color") + "</b>\n\n" +
 		b.tr("Выберите цвет, соответствующий вашей теме:", "Choose a color matching your theme:")
 
+	_, emojis := b.botPrefs()
+
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🟣 Indigo"), "bot:avatar:indigo"),
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🟢 Emerald"), "bot:avatar:emerald"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn("Indigo", "🟣", emojis), "bot:avatar:indigo"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn("Emerald", "🟢", emojis), "bot:avatar:emerald"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🟠 Amber"), "bot:avatar:amber"),
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔴 Rose"), "bot:avatar:rose"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn("Amber", "🟠", emojis), "bot:avatar:amber"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn("Rose", "🔴", emojis), "bot:avatar:rose"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔵 Cyan"), "bot:avatar:cyan"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn("Cyan", "🔵", emojis), "bot:avatar:cyan"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔙 "+b.tr("В главное меню", "Back to Main Menu")), "menu:main"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("В главное меню", "Back to Main Menu"), "🔙", emojis), "menu:main"),
 		),
 	)
 
@@ -1110,18 +1112,20 @@ func (b *Bot) handleAvatarColorSelection(q *tgbotapi.CallbackQuery, color string
 		b.tr("Фото профиля бота обновлено!", "Bot Profile Photo Updated!"),
 		b.tr("Аватар изменён на", "Avatar changed to"),
 		avatarColorDisplay[color])
+	_, emojis := b.botPrefs()
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("🔙 "+b.tr("К выбору цвета", "Back to Menu")), "bot:avatar_menu"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("К выбору цвета", "Back to Menu"), "🔙", emojis), "bot:avatar_menu"),
 		),
 	)
 	b.editMessage(q.Message.Chat.ID, q.Message.MessageID, text, &markup)
 }
 
 func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
+	_, emojis := b.botPrefs()
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("❌ "+b.tr("Отмена", "Cancel")), "state:cancel"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Отмена", "Cancel"), "❌", emojis), "state:cancel"),
 		),
 	)
 	return &markup
@@ -1129,9 +1133,10 @@ func (b *Bot) cancelMarkup() *tgbotapi.InlineKeyboardMarkup {
 
 // backMenuMarkup is the standard "← Main Menu" footer row.
 func (b *Bot) backMenuMarkup() *tgbotapi.InlineKeyboardMarkup {
+	_, emojis := b.botPrefs()
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.emoji("⬅️ "+b.tr("Главное меню", "Main Menu")), "menu:main"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Главное меню", "Main Menu"), "⬅️", emojis), "menu:main"),
 		),
 	)
 	return &markup
