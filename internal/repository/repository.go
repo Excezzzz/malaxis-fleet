@@ -28,6 +28,10 @@ type Repository interface {
 	// (used by the backend to fire instant Telegram onboarding notifications).
 	UpsertNode(node *domain.Node) (string, bool, error)
 	RenameNode(id, name string) error
+	// UpdateNodeNameIfUnset applies the agent-reported display name only when
+	// the node has not been explicitly renamed by an admin (i.e. the current
+	// name is empty, still the OS hostname, or already the reported name).
+	UpdateNodeNameIfUnset(id, name string) error
 	SetNodeHardwareHash(id, hardwareHash string) error
 	UpdateNode(node *domain.Node) error
 	DeleteNode(id string) error

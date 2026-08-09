@@ -417,6 +417,15 @@ func (r *postgresRepository) RenameNode(id, name string) error {
 	return err
 }
 
+func (r *postgresRepository) UpdateNodeNameIfUnset(id, name string) error {
+	_, err := r.db.Exec(
+		`UPDATE nodes SET name = $1
+		 WHERE id = $2
+		   AND (name IS NULL OR name = '' OR name = hostname OR name = $1)`,
+		name, id)
+	return err
+}
+
 func (r *postgresRepository) SetNodeHardwareHash(id, hardwareHash string) error {
 	_, err := r.db.Exec("UPDATE nodes SET hardware_hash = $1 WHERE id = $2", hardwareHash, id)
 	return err

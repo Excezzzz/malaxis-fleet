@@ -42,6 +42,7 @@ type PollRequest struct {
 	IPLan        string `json:"ip_lan"`
 	HardwareHash string `json:"hardware_hash"`
 	SubURL       string `json:"sub_url"`
+	Name         string `json:"name,omitempty"`
 }
 
 type ReportRequest struct {
@@ -69,6 +70,7 @@ type SubscriptionValidateRequest struct {
 	SubscriptionURL string `json:"subscription_url"`
 	NodeID          string `json:"node_id"`
 	Hostname        string `json:"hostname"`
+	Name            string `json:"name,omitempty"`
 }
 
 type BotSettingsRequest struct {
@@ -429,9 +431,10 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Persist the display name set on the device (CLI "Rename Node") so a
-	// custom name survives agent restarts and hostname churn.
+	// custom name survives agent restarts and hostname churn. Admin-renamed
+	// nodes are never clobbered by the agent.
 	if req.Name != "" {
-		if err := a.repo.RenameNode(req.ID, req.Name); err != nil {
+		if err := a.repo.UpdateNodeNameIfUnset(req.ID, req.Name); err != nil {
 			log.Printf("ERROR: Failed to persist reported name for %s: %v", req.ID, err)
 		}
 	}
@@ -661,14 +664,21 @@ func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request
 	existingNode, err := a.repo.GetNodeByID(req.NodeID)
 	if err == nil && existingNode != nil {
 		existingNode.SubURL = req.SubscriptionURL
-		existingNode.Name = req.Hostname
+		// Never clobber an existing custom name with the OS hostname; only
+		// apply a name when the caller explicitly provides one.
+		if req.Name != "" {
+			existingNode.Name = req.Name
+		}
 		a.repo.UpdateNode(existingNode)
 	} else {
 		newNode := &domain.Node{
 			ID:       req.NodeID,
-			Name:     req.Hostname,
+			Name:     req.Name,
 			Hostname: req.Hostname,
 			SubURL:   req.SubscriptionURL,
+		}
+		if newNode.Name == "" {
+			newNode.Name = req.Hostname
 		}
 		a.repo.AddNode(newNode)
 	}
@@ -2967,11 +2977,16 @@ func (a *API) AgentTokenMiddleware(next http.Handler) http.Handler {
 func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 	node := &domain.Node{
 		ID:           req.ID,
-		Name:         req.Hostname,
+		Name:         req.Name,
 		Hostname:     req.Hostname,
 		IPLan:        req.IPLan,
 		HardwareHash: req.HardwareHash,
 		SubURL:       req.SubURL,
+	}
+	// The agent sends its custom node name; fall back to the OS hostname when
+	// no custom name has been configured.
+	if node.Name == "" {
+		node.Name = req.Hostname
 	}
 	canonicalID, isNew, err := a.repo.UpsertNode(node)
 	if err != nil {

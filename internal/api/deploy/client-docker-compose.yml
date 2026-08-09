@@ -2,7 +2,7 @@ services:
   node-agent:
     build: .
     container_name: node-agent
-    restart: always
+    restart: unless-stopped
     working_dir: /app
     environment:
       - SERVER_URL=https://__API_DOMAIN__
@@ -41,7 +41,7 @@ services:
   singbox-node:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: singbox-node
-    restart: "no"
+    restart: unless-stopped
     network_mode: "container:xray-node"
     depends_on:
       - xray-node

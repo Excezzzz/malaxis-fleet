@@ -2304,9 +2304,9 @@ def _safe_remove(path: str) -> None:
 
 
 def _graceful_restart() -> None:
-    """Stop the agent so the supervisor (docker/systemd restart policy) brings
-    it back up with the freshly downloaded client code. Exit code 0 signals a
-    graceful, expected shutdown."""
+    """Stop the agent so the Docker restart policy (`restart: unless-stopped`)
+    brings it back up with the freshly downloaded client code. Exit code 0
+    signals a graceful, expected shutdown."""
     try:
         os.kill(os.getpid(), signal.SIGTERM)
     except Exception:

@@ -64,9 +64,8 @@ The installer runs dependency pre-flight checks (Docker daemon, Compose plugin, 
 - **Device name** — a friendly alias (defaults to the hostname).
 - **Subscription URL** — the 3x-ui/v2ray subscription (skip if already configured centrally).
 - **Smart Routing Mode** — Balanced (default, recommended), Fastest, or Manual.
-- **Auto-start on boot** — systemd service on Linux, Task Scheduler on Windows.
 
-All choices are written to `configs/agent_state.json` *before* the stack starts, so the node comes up fully configured, registers on your Web Dashboard and Telegram bot, and starts routing immediately.
+All choices are written to `configs/agent_state.json` *before* the stack starts, so the node comes up fully configured, registers on your Web Dashboard and Telegram bot, and starts routing immediately. The stack auto-restarts after reboots via Docker's native `restart: unless-stopped` policy — no OS-level auto-start services are needed.
 
 ### Step 5: Telegram Bot Setup (Optional)
 
@@ -208,7 +207,6 @@ Select default Smart Routing Mode:
   [1] Balanced - Best stability & lowest jitter (Recommended)
   [2] Fastest - Lowest ping
   [3] Manual
-Enable automatic startup on system boot? (systemd on Linux / Task Scheduler on Windows) [Y/n]:
 ```
 
 - **Subscription URL** — the 3x-ui/v2ray subscription URL that contains the
@@ -219,10 +217,6 @@ Enable automatic startup on system boot? (systemd on Linux / Task Scheduler on W
   Telegram bot), skip this prompt.
 - **Smart Routing Mode** — the default auto-selection mode: `balanced`
   (lowest jitter, recommended), `fastest` (lowest ping), or `manual`.
-- **Auto-start** — answering `Y` (the default) installs a systemd service on
-  Linux (`/etc/systemd/system/fleet-agent.service`) or a Task Scheduler entry
-  on Windows (`MalaxisFleetAgent`), so the agent restarts after a reboot.
-  Declining is only appropriate on short-lived test hosts.
 
 After the install, the node registers with the control plane using its
 hardware fingerprint and starts both proxy engines. The local proxy listens
@@ -236,7 +230,6 @@ on:
 Run the interactive CLI to inspect the node and change its routing locally:
 
 ```bash
-/opt/fleet-agent/fleet-cli.sh     # if systemd service was installed
 cd fleet-agent && bash fleet-cli.sh   # from the install directory
 ```
 

@@ -62,7 +62,6 @@ if ($lang -eq "en") {
     $T_MODE_2               = "[2] Fastest - Lowest ping"
     $T_MODE_3               = "[3] Manual"
     $T_MODE_PROMPT          = "Select [1-3, default 1]"
-    $T_AUTOSTART_PROMPT     = "Enable automatic startup on system boot? (Task Scheduler on Windows) [Y/n]"
     $T_REINSTALL            = "Existing installation detected. Performing clean re-install..."
     $T_PRESERVE             = "Preserving existing configs directory..."
     $T_OLD_CLEANED          = "Old installation cleaned."
@@ -75,10 +74,6 @@ if ($lang -eq "en") {
     $T_BUILD                = "Building agent image and starting services..."
     $T_COMPOSE_FAILED       = "docker compose up failed. Check Docker Desktop settings and re-run this script."
     $T_PREP_SING            = "Preparing singbox-node container..."
-    $T_TASK_INSTALL         = "Installing Task Scheduler auto-start..."
-    $T_TASK_OK              = "Scheduled task 'MalaxisFleetAgent' registered (runs at every boot)."
-    $T_TASK_WARN            = "Could not register the scheduled task (admin rights may be required). The agent keeps running while Docker Desktop is up."
-    $T_SKIP_AUTOSTART       = "Skipping auto-start on boot."
     $T_DONE                 = "Malaxis Fleet Agent is running!"
     $T_QUICK                = "Quick commands:"
     $T_Q_LOGS               = "View logs:"
@@ -111,7 +106,6 @@ if ($lang -eq "en") {
     $T_MODE_2               = "[2] Самый быстрый — минимальный пинг"
     $T_MODE_3               = "[3] Вручную"
     $T_MODE_PROMPT          = "Выберите [1-3, по умолчанию 1]"
-    $T_AUTOSTART_PROMPT     = "Включить автозапуск при загрузке системы? [Y/n]"
     $T_REINSTALL            = "Обнаружена существующая установка. Выполняется чистая переустановка..."
     $T_PRESERVE             = "Сохраняю существующие конфигурации..."
     $T_OLD_CLEANED          = "Старая установка удалена."
@@ -124,10 +118,6 @@ if ($lang -eq "en") {
     $T_BUILD                = "Сборка образа агента и запуск сервисов..."
     $T_COMPOSE_FAILED       = "Не удалось выполнить docker compose up. Проверьте настройки Docker Desktop и запустите скрипт заново."
     $T_PREP_SING            = "Подготовка контейнера singbox-node..."
-    $T_TASK_INSTALL         = "Установка автозапуска через Планировщик задач..."
-    $T_TASK_OK              = "Задача 'MalaxisFleetAgent' зарегистрирована (запускается при каждой загрузке)."
-    $T_TASK_WARN            = "Не удалось зарегистрировать задачу (могут потребоваться права администратора). Агент продолжит работу, пока запущен Docker Desktop."
-    $T_SKIP_AUTOSTART       = "Автозапуск пропущен."
     $T_DONE                 = "Malaxis Fleet Agent запущен!"
     $T_QUICK                = "Быстрые команды:"
     $T_Q_LOGS               = "Логи:"
@@ -218,10 +208,6 @@ switch ($modeChoice) {
     "2" { $smartMode = "fastest" }
     "3" { $smartMode = "manual" }
 }
-
-$autostart = Read-Host $T_AUTOSTART_PROMPT
-if ([string]::IsNullOrWhiteSpace($autostart)) { $autostart = "y" }
-$autostart = $autostart.ToLower()
 
 # ------------------------------------------------------------
 # 4. Clean re-install detection
@@ -362,27 +348,6 @@ Write-Host ""
 Say $T_PREP_SING
 & docker compose create singbox-node 2>$null | Out-Null
 Pop-Location
-
-# ------------------------------------------------------------
-# 8. Auto-start on boot (Task Scheduler)
-# ------------------------------------------------------------
-if ($autostart -eq "y" -or $autostart -eq "yes") {
-    Write-Host ""
-    Say $T_TASK_INSTALL
-    $starter = Join-Path $installDir "start-agent.ps1"
-    Set-Content -Path $starter -Value "Set-Location -LiteralPath '$installDir'; docker compose up -d" -Encoding UTF8
-    try {
-        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$starter`""
-        $trigger = New-ScheduledTaskTrigger -AtStartup
-        Register-ScheduledTask -TaskName "MalaxisFleetAgent" -Action $action -Trigger $trigger -RunLevel Highest -Force -ErrorAction Stop | Out-Null
-        Say $T_TASK_OK
-    } catch {
-        Warn $T_TASK_WARN
-    }
-} else {
-    Write-Host ""
-    Say $T_SKIP_AUTOSTART
-}
 
 Write-Host ""
 Write-Host $T_DONE -ForegroundColor Green

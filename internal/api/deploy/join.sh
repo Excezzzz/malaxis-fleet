@@ -81,7 +81,6 @@ if [ "$lang" = "en" ]; then
     T_MODE_2="[2] Fastest - Lowest ping"
     T_MODE_3="[3] Manual"
     T_MODE_PROMPT="Select [1-3, default 1]: "
-    T_AUTOSTART_PROMPT="Enable automatic startup on system boot? (systemd on Linux / Task Scheduler on Windows) [Y/n]: "
     T_REINSTALL="Existing installation detected. Performing clean re-install..."
     T_PRESERVE="Preserving existing configs directory..."
     T_OLD_CLEANED="Old installation cleaned."
@@ -91,16 +90,11 @@ if [ "$lang" = "en" ]; then
     T_DL_CLI="Downloading fleet-cli utility..."
     T_BUILD="Building agent image and starting services..."
     T_PREP_SING="Preparing singbox-node container..."
-    T_SYSTEMD_INSTALL="Installing systemd service for auto-start on boot..."
-    T_SYSTEMD_OK="systemd service installed and enabled."
-    T_SYSTEMD_MISSING="systemctl not found; systemd auto-start not installed."
-    T_SKIP_AUTOSTART="Skipping auto-start on boot."
     T_DONE="Malaxis Fleet Agent is running!"
     T_QUICK="Quick commands:"
     T_Q_STATUS="View status:"
     T_Q_LOGS="View logs:"
     T_Q_STOP="Stop agent:"
-    T_Q_JOURNAL="Journalctl:"
 else
     T_PREFLIGHT="Проверка системных требований..."
     T_DOCKER_NOT_INSTALLED="Docker не установлен! Установите Docker (https://docs.docker.com/get-docker/), затем запустите скрипт заново."
@@ -127,7 +121,6 @@ else
     T_MODE_2="[2] Самый быстрый — минимальный пинг"
     T_MODE_3="[3] Вручную"
     T_MODE_PROMPT="Выберите [1-3, по умолчанию 1]: "
-    T_AUTOSTART_PROMPT="Включить автозапуск при загрузке системы? [Y/n]: "
     T_REINSTALL="Обнаружена существующая установка. Выполняется чистая переустановка..."
     T_PRESERVE="Сохраняю существующие конфигурации..."
     T_OLD_CLEANED="Старая установка удалена."
@@ -137,16 +130,11 @@ else
     T_DL_CLI="Загрузка утилиты fleet-cli..."
     T_BUILD="Сборка образа агента и запуск сервисов..."
     T_PREP_SING="Подготовка контейнера singbox-node..."
-    T_SYSTEMD_INSTALL="Установка systemd-службы для автозапуска..."
-    T_SYSTEMD_OK="systemd-служба установлена и включена."
-    T_SYSTEMD_MISSING="systemctl не найден; автозапуск через systemd не установлен."
-    T_SKIP_AUTOSTART="Автозапуск пропущен."
     T_DONE="Malaxis Fleet Agent запущен!"
     T_QUICK="Быстрые команды:"
     T_Q_STATUS="Статус:"
     T_Q_LOGS="Логи:"
     T_Q_STOP="Остановить:"
-    T_Q_JOURNAL="Журнал:"
 fi
 
 # Prompts with values only known at ask-time (hostname, defaults, node/mode)
@@ -258,9 +246,6 @@ case "${MODE_CHOICE:-1}" in
     3) SMART_MODE="manual" ;;
     *) SMART_MODE="balanced" ;;
 esac
-
-ask "$T_AUTOSTART_PROMPT" AUTOSTART
-AUTOSTART=$(echo "${AUTOSTART:-Y}" | tr '[:upper:]' '[:lower:]')
 
 # ------------------------------------------------------------
 # 4. Clean re-install detection
@@ -382,25 +367,6 @@ echo ""
 say "$T_PREP_SING"
 docker compose create singbox-node 2>/dev/null || true
 
-# ------------------------------------------------------------
-# 8. Auto-start on boot (systemd, Linux only)
-# ------------------------------------------------------------
-if [ -z "$AUTOSTART" ] || [ "$AUTOSTART" = "y" ] || [ "$AUTOSTART" = "yes" ]; then
-    if command -v systemctl &> /dev/null; then
-        echo ""
-        say "$T_SYSTEMD_INSTALL"
-        curl -sSL "https://__JOIN_DOMAIN__/fleet-agent.service?t=__SECRET_TOKEN__" -o /etc/systemd/system/fleet-agent.service
-        systemctl daemon-reload
-        systemctl enable --now fleet-agent
-        say "$T_SYSTEMD_OK"
-    else
-        warn "$T_SYSTEMD_MISSING"
-    fi
-else
-    echo ""
-    say "$T_SKIP_AUTOSTART"
-fi
-
 echo ""
 echo "$T_DONE"
 echo ""
@@ -408,5 +374,4 @@ echo "$T_QUICK"
 echo "   $T_Q_STATUS  cd \"$AGENT_DIR\" && bash fleet-cli.sh"
 echo "   $T_Q_LOGS    docker logs -f node-agent"
 echo "   $T_Q_STOP    cd \"$AGENT_DIR\" && docker compose down"
-echo "   $T_Q_JOURNAL journalctl -u fleet-agent.service"
 echo ""
