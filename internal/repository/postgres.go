@@ -30,6 +30,13 @@ func NewRepository(cfg *config.Config) (Repository, error) {
 		return nil, fmt.Errorf("failed to open postgres connection: %w", err)
 	}
 
+	// Connection pool tuning: cap concurrent connections and idle retention so
+	// the master keeps a modest pool under burst load (node polling storms,
+	// mass subscription refreshes) without exhausting container resources.
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
+
 	// Retry loop: up to 10 attempts with 2-second sleep intervals
 	maxRetries := 10
 	retryInterval := 2 * time.Second

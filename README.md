@@ -1,6 +1,6 @@
-# 🚀 Malaxis Fleet Manager v1.0.0
+# 🚀 Malaxis Fleet Manager v1.1.0
 
-![Release](https://img.shields.io/badge/Release-v1.0.0-brightgreen)
+![Release](https://img.shields.io/badge/Release-v1.1.0-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883)
@@ -452,7 +452,7 @@ The public surface is deliberately uninformative to unauthenticated visitors:
 
 ### License
 
-**Version: v1.0.0 — Official First Stable Release.**
+**Version: v1.1.0 — Modular Agent Architecture Release.**
 
 Licensed under AGPL-3.0. Copyright (c) 2026 Excezzzz.
 

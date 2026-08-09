@@ -277,6 +277,14 @@ Download-File "$subBase/Dockerfile.client?t=$token" (Join-Path $installDir "Dock
 Download-File "$subBase/requirements.txt?t=$token" (Join-Path $installDir "requirements.txt")
 Download-File "$subBase/entrypoint.sh?t=$token" (Join-Path $installDir "entrypoint.sh")
 Download-File "$apiBase/api/agent/latest?t=$token" (Join-Path $installDir "node_agent.py")
+# Download and extract the modular agent package (agent_src/*.py).
+Download-File "$apiBase/api/agent/latest.zip?t=$token" (Join-Path $installDir "agent_src.zip")
+try {
+    Expand-Archive -LiteralPath (Join-Path $installDir "agent_src.zip") -DestinationPath $installDir -Force
+} catch {
+    Write-Host "WARN: failed to extract agent_src.zip: $($_.Exception.Message)"
+}
+Remove-Item -Force (Join-Path $installDir "agent_src.zip") -ErrorAction SilentlyContinue
 
 # Restore configs if backed up
 $backup = Join-Path $env:TEMP "fleet-config-backup"

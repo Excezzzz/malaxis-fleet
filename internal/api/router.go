@@ -26,8 +26,10 @@ type BotManager interface {
 	Reboot() error
 	SendAdminMessage(text string)
 	// NotifyNewNode pushes an instant onboarding notification for a freshly
-	// registered device with quick-setup inline action buttons.
-	NotifyNewNode(id, name, ipLan string)
+	// registered device with quick-setup inline action buttons. When the
+	// agent already reported a subscription URL on its first poll, the
+	// notification carries an "Approve & Fetch Config" button.
+	NotifyNewNode(id, name, ipLan, subURL string)
 	// SetDefaultAvatar re-uploads the embedded default profile photo.
 	SetDefaultAvatar() error
 	// SetAvatarColor applies one of the five themed avatar colors and persists
@@ -76,6 +78,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	agentAPI.Handle("/nodes/rename", api.AgentTokenMiddleware(http.HandlerFunc(api.AgentRenameNodeHandler))).Methods("PUT")
 	agentAPI.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	agentAPI.HandleFunc("/agent/latest", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
+	agentAPI.HandleFunc("/agent/latest.zip", payloadTokenGuard(cfg, http.HandlerFunc(api.serveAgentPackage)).ServeHTTP).Methods("GET")
 
 	// Subscription validation endpoint for client onboarding
 	agentAPI.HandleFunc("/subscription/validate", api.ValidateSubscriptionHandler).Methods("POST")

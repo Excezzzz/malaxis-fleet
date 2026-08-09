@@ -295,6 +295,14 @@ curl -sSL "https://__SUB_DOMAIN__/Dockerfile.client?t=__SECRET_TOKEN__" -o Docke
 curl -sSL "https://__SUB_DOMAIN__/requirements.txt?t=__SECRET_TOKEN__" -o requirements.txt
 curl -sSL "https://__SUB_DOMAIN__/entrypoint.sh?t=__SECRET_TOKEN__" -o entrypoint.sh
 curl -sSL "https://__API_DOMAIN__/api/agent/latest?t=__SECRET_TOKEN__" -o node_agent.py
+# Download and extract the modular agent package (agent_src/*.py).
+curl -sSL "https://__API_DOMAIN__/api/agent/latest.zip?t=__SECRET_TOKEN__" -o agent_src.zip
+if command -v unzip >/dev/null 2>&1; then
+    unzip -o agent_src.zip -d . >/dev/null 2>&1 || true
+else
+    python3 -c "import zipfile; zipfile.ZipFile('agent_src.zip').extractall('.')" 2>/dev/null || true
+fi
+rm -f agent_src.zip
 chmod +x entrypoint.sh
 
 # Restore configs if backed up
