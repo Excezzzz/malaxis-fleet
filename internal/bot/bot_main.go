@@ -428,9 +428,12 @@ func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 			if update.Message.Chat.ID != adminChatID {
 				continue
 			}
-			// COMMAND PURGE: the admin's text message is deleted immediately
+			// COMMAND PURGE: only PLAIN TEXT messages are deleted immediately
 			// after processing, keeping the chat to ONE dynamic bot message.
-			b.deleteMessage(adminChatID, update.Message.MessageID)
+			// Slash command messages are left in the chat history untouched.
+			if !update.Message.IsCommand() && !strings.HasPrefix(update.Message.Text, "/") {
+				b.deleteMessage(adminChatID, update.Message.MessageID)
+			}
 
 			if update.Message.IsCommand() {
 				switch update.Message.Command() {
@@ -438,6 +441,16 @@ func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 					b.showMainMenuFresh(adminChatID)
 				case "help":
 					b.showHelp(adminChatID)
+				case "nodes":
+					b.showNodeListFresh(adminChatID)
+				case "users":
+					b.showUsersMenuFresh(adminChatID)
+				case "roles":
+					b.showRolesMenuFresh(adminChatID)
+				case "status":
+					b.showStatusFresh(adminChatID)
+				case "backup":
+					b.handleBackup(adminChatID, 0)
 				default:
 					b.showMainMenu(adminChatID)
 				}
@@ -671,11 +684,10 @@ func (b *Bot) showMainMenu(chatID int64) {
 	b.mu.Unlock()
 }
 
-// showMainMenuFresh is used for the /start command: it always sends a BRAND
-// NEW main menu message (instead of editing the previous one) so the user can
-// summon a fresh menu at the bottom of the chat. Any previous menu message is
-// deleted to keep the chat to one dynamic bot message.
-func (b *Bot) showMainMenuFresh(chatID int64) {
+// sendFreshMenu deletes the tracked main menu message (if any) and sends a
+// brand new message with the given content at the bottom of the chat, updating
+// the tracked message id. This is how manual slash commands summon their menus.
+func (b *Bot) sendFreshMenu(chatID int64, text string, markup *tgbotapi.InlineKeyboardMarkup) {
 	if old := b.getMainMenuID(chatID); old > 0 {
 		b.deleteMessage(chatID, old)
 		b.mu.Lock()
@@ -683,18 +695,26 @@ func (b *Bot) showMainMenuFresh(chatID int64) {
 		b.mu.Unlock()
 	}
 
-	text, markup := b.getMainMenuContent()
 	msg := tgbotapi.NewMessage(chatID, text)
 	msg.ParseMode = tgbotapi.ModeHTML
-	msg.ReplyMarkup = &markup
+	msg.ReplyMarkup = markup
 	sent, err := b.api.Send(msg)
 	if err != nil {
-		log.Printf("Bot: failed to send fresh main menu: %v", err)
+		log.Printf("Bot: failed to send fresh menu message: %v", err)
 		return
 	}
 	b.mu.Lock()
 	b.mainMenuID[chatID] = sent.MessageID
 	b.mu.Unlock()
+}
+
+// showMainMenuFresh is used for the /start command: it always sends a BRAND
+// NEW main menu message (instead of editing the previous one) so the user can
+// summon a fresh menu at the bottom of the chat. Any previous menu message is
+// deleted to keep the chat to one dynamic bot message.
+func (b *Bot) showMainMenuFresh(chatID int64) {
+	text, markup := b.getMainMenuContent()
+	b.sendFreshMenu(chatID, text, &markup)
 }
 
 // --- Preferences ---
@@ -858,6 +878,43 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		),
 	)
 	return text, markup
+}
+
+// showStatusFresh renders a quick fleet health summary (online/offline node
+// counters plus database stats) and sends it as a brand new message (used by
+// the /status slash command): the old menu message is deleted and a fresh one
+// is placed at the bottom of the chat.
+func (b *Bot) showStatusFresh(chatID int64) {
+	nodes, err := b.repo.GetAllNodes()
+	if err != nil {
+		log.Printf("Bot: failed to load nodes for status: %v", err)
+	}
+	onlineCount := 0
+	for _, n := range nodes {
+		if time.Since(n.LastSeen) < onlineWindow {
+			onlineCount++
+		}
+	}
+	offlineCount := len(nodes) - onlineCount
+
+	users, _ := b.repo.GetAllUsers()
+	roles, _ := b.repo.GetAllRoles()
+
+	text := fmt.Sprintf("<b>📊 %s</b>\n\n%s: 🟢 %d %s | 🔴 %d %s\n\n%s: <b>%d</b>\n%s: <b>%d</b>\n%s: <b>%d</b>\n\n%s: <code>%s</code>",
+		b.tr("Статус флота", "Fleet Status"),
+		b.tr("Узлы", "Nodes"), onlineCount, b.tr("онлайн", "Online"), offlineCount, b.tr("офлайн", "Offline"),
+		b.tr("Всего узлов", "Total nodes"), len(nodes),
+		b.tr("Пользователей", "Users"), len(users),
+		b.tr("Ролей", "Roles"), len(roles),
+		b.tr("Сгенерировано", "Generated"), time.Now().Format("2006-01-02 15:04:05"))
+
+	_, emojis := b.botPrefs()
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Главное меню", "Main Menu"), "⬅️", emojis), "menu:main"),
+		),
+	)
+	b.sendFreshMenu(chatID, text, &markup)
 }
 
 // --- Text input handling (in-memory state machine) ---

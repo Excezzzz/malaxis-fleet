@@ -122,11 +122,16 @@ func (b *Bot) nodeLabel(nodeID string) string {
 
 // --- Node menus ---
 
-func (b *Bot) handleNodeList(chatID int64, messageID int) {
+// buildNodeListContent renders the node list menu text and markup.
+func (b *Bot) buildNodeListContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	nodes, err := b.repo.GetAllNodes()
 	if err != nil {
 		log.Printf("Bot: failed to list nodes: %v", err)
-		return
+		return "<b>❌ " + b.tr("Не удалось получить список узлов.", "Failed to list nodes.") + "</b>", tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
+			),
+		)
 	}
 
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -156,8 +161,20 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 		tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
 	))
-	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	b.editMessage(chatID, messageID, text.String(), &markup)
+	return text.String(), tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
+
+func (b *Bot) handleNodeList(chatID int64, messageID int) {
+	text, markup := b.buildNodeListContent()
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// showNodeListFresh sends a brand new node list menu (used by the /nodes slash
+// command): the old menu message is deleted and a fresh one is placed at the
+// bottom of the chat.
+func (b *Bot) showNodeListFresh(chatID int64) {
+	text, markup := b.buildNodeListContent()
+	b.sendFreshMenu(chatID, text, &markup)
 }
 
 func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {

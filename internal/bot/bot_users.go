@@ -31,14 +31,16 @@ func (b *Bot) roleRankOf(role string) int {
 	return domain.RoleRank(role)
 }
 
-// handleUsersMenu lists all fleet users with their role/rank and offers an
-// Add User button.
-func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
+// buildUsersMenuContent renders the user list menu text and markup.
+func (b *Bot) buildUsersMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	users, err := b.repo.GetAllUsers()
 	if err != nil {
 		log.Printf("Bot: failed to list users: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось получить список пользователей.", "Failed to list users.")+"</b>", b.cancelMarkup())
-		return
+		return "<b>❌ " + b.tr("Не удалось получить список пользователей.", "Failed to list users.") + "</b>", tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
+			),
+		)
 	}
 
 	var text strings.Builder
@@ -69,9 +71,22 @@ func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
 		),
 	)
+	return text.String(), tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
 
-	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	b.editMessage(chatID, messageID, text.String(), &markup)
+// handleUsersMenu lists all fleet users with their role/rank and offers an
+// Add User button.
+func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
+	text, markup := b.buildUsersMenuContent()
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// showUsersMenuFresh sends a brand new users list menu (used by the /users
+// slash command): the old menu message is deleted and a fresh one is placed at
+// the bottom of the chat.
+func (b *Bot) showUsersMenuFresh(chatID int64) {
+	text, markup := b.buildUsersMenuContent()
+	b.sendFreshMenu(chatID, text, &markup)
 }
 
 // showUserDetail renders a single user with its role/rank and the full set of
@@ -418,14 +433,16 @@ func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
 		&markup)
 }
 
-// handleRolesMenu lists all defined roles (with their ranks) and offers an
-// Add Role button.
-func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
+// buildRolesMenuContent renders the role list menu text and markup.
+func (b *Bot) buildRolesMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	roles, err := b.repo.GetAllRoles()
 	if err != nil {
 		log.Printf("Bot: failed to list roles: %v", err)
-		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось получить список ролей.", "Failed to list roles.")+"</b>", b.cancelMarkup())
-		return
+		return "<b>❌ " + b.tr("Не удалось получить список ролей.", "Failed to list roles.") + "</b>", tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
+			),
+		)
 	}
 
 	var text strings.Builder
@@ -456,9 +473,22 @@ func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "Назад", "Back"), "menu:main"),
 		),
 	)
+	return text.String(), tgbotapi.NewInlineKeyboardMarkup(rows...)
+}
 
-	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
-	b.editMessage(chatID, messageID, text.String(), &markup)
+// handleRolesMenu lists all defined roles (with their ranks) and offers an
+// Add Role button.
+func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
+	text, markup := b.buildRolesMenuContent()
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// showRolesMenuFresh sends a brand new roles list menu (used by the /roles
+// slash command): the old menu message is deleted and a fresh one is placed at
+// the bottom of the chat.
+func (b *Bot) showRolesMenuFresh(chatID int64) {
+	text, markup := b.buildRolesMenuContent()
+	b.sendFreshMenu(chatID, text, &markup)
 }
 
 // showRoleDetail renders a single role with its rank, user count and the full
