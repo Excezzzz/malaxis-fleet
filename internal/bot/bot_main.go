@@ -167,6 +167,8 @@ func (b *Bot) Start() error {
 	b.running = true
 	b.mu.Unlock()
 
+	b.registerCommands()
+
 	go b.runBackupScheduler()
 
 	updates := make(chan tgbotapi.Update, 100)
@@ -194,6 +196,72 @@ func (b *Bot) Start() error {
 	}()
 
 	return nil
+}
+
+// registerCommands registers the bot's official slash commands via the native
+// Telegram setMyCommands API so typing "/" shows the autocomplete menu. The
+// default (EN) command list is registered first, then the Russian (RU)
+// localization is applied via the language_code parameter — Telegram serves
+// the localized variant to users whose client language is Russian and falls
+// back to the default list for everyone else.
+func (b *Bot) registerCommands() {
+	defaultCommands := []tgbotapi.BotCommand{
+		{Command: "start", Description: "Open main control menu"},
+		{Command: "help", Description: "Show usage guide and command list"},
+		{Command: "nodes", Description: "Jump to Node management"},
+		{Command: "users", Description: "Jump to User management"},
+		{Command: "roles", Description: "Jump to Role management"},
+		{Command: "status", Description: "Quick fleet health overview"},
+		{Command: "backup", Description: "Instantly request database .zip backup"},
+	}
+	ruCommands := []tgbotapi.BotCommand{
+		{Command: "start", Description: "Открыть главное меню управления"},
+		{Command: "help", Description: "Справка по работе с ботом"},
+		{Command: "nodes", Description: "Управление узлами флота"},
+		{Command: "users", Description: "Управление пользователями"},
+		{Command: "roles", Description: "Управление ролями"},
+		{Command: "status", Description: "Быстрый статус системы"},
+		{Command: "backup", Description: "Скачать бэкап базы данных"},
+	}
+
+	if _, err := b.api.Request(tgbotapi.NewSetMyCommands(defaultCommands...)); err != nil {
+		log.Printf("Bot: failed to register default (EN) slash commands: %v", err)
+	} else {
+		log.Println("Bot: registered default (EN) slash commands")
+	}
+
+	ruConfig := tgbotapi.SetMyCommandsConfig{Commands: ruCommands, LanguageCode: "ru"}
+	if _, err := b.api.Request(ruConfig); err != nil {
+		log.Printf("Bot: failed to register Russian (RU) slash commands: %v", err)
+	} else {
+		log.Println("Bot: registered Russian (RU) slash commands")
+	}
+}
+
+// showHelp sends a NEW help message (never edits the main menu) explaining how
+// the bot operates: the single-message interface, the text-input state
+// machine, and every available slash command.
+func (b *Bot) showHelp(chatID int64) {
+	text := "<b>❓ " + b.tr("Справка по Malaxis Fleet Bot", "Malaxis Fleet Bot Help") + "</b>\n\n" +
+		b.tr(
+			"Добро пожаловать в Malaxis Fleet Bot. Этот бот использует интерфейс с одним сообщением: нажатие кнопок обновляет главное сообщение прямо на месте.",
+			"Welcome to Malaxis Fleet Bot. This bot uses a single-message interface. Clicking buttons updates the main message in place.") +
+		"\n\n" +
+		b.tr(
+			"Когда бот запрашивает текстовый ввод (например, переименование узла или ввод пароля), просто отправьте ответ обычным сообщением. Бот обработает его, обновит главное меню и удалит ваше сообщение, чтобы чат оставался чистым.",
+			"When prompted for text input (e.g., renaming a node or entering a password), type your response normally. The bot will process it, update the main menu, and delete your message to keep the chat tidy.") +
+		"\n\n<b>" + b.tr("Команды:", "Commands:") + "</b>\n" +
+		"• /start — " + b.tr("открыть главное меню управления", "open main control menu") + "\n" +
+		"• /help — " + b.tr("эта справка", "this help") + "\n" +
+		"• /nodes — " + b.tr("управление узлами флота", "node management") + "\n" +
+		"• /users — " + b.tr("управление пользователями", "user management") + "\n" +
+		"• /roles — " + b.tr("управление ролями", "role management") + "\n" +
+		"• /status — " + b.tr("быстрый статус системы", "quick fleet health overview") + "\n" +
+		"• /backup — " + b.tr("скачать бэкап базы данных", "download database backup")
+
+	msg := tgbotapi.NewMessage(chatID, text)
+	msg.ParseMode = tgbotapi.ModeHTML
+	b.api.Send(msg)
 }
 
 // SetDefaultAvatar uploads the embedded default avatar to the Telegram bot via
@@ -368,6 +436,8 @@ func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 				switch update.Message.Command() {
 				case "start":
 					b.showMainMenuFresh(adminChatID)
+				case "help":
+					b.showHelp(adminChatID)
 				default:
 					b.showMainMenu(adminChatID)
 				}
