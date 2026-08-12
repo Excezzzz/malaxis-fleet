@@ -131,6 +131,7 @@ func (r *postgresRepository) Init() error {
 		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_mode VARCHAR(20) NOT NULL DEFAULT 'obsidian'`},
 		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS language VARCHAR(5) NOT NULL DEFAULT 'ru'`},
 		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS bot_emojis_enabled BOOLEAN NOT NULL DEFAULT TRUE`},
+		{query: `ALTER TABLE users ADD COLUMN IF NOT EXISTS blur_enabled BOOLEAN NOT NULL DEFAULT TRUE`},
 		// Migrate: Add user_id column if it doesn't exist
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS user_id BIGINT REFERENCES users(id) ON DELETE SET NULL`},
 		// Migrate: Add available_servers column if it doesn't exist
@@ -670,8 +671,8 @@ func (r *postgresRepository) DeleteUser(id int64) error {
 
 func (r *postgresRepository) GetUserPreferences(id int64) (*domain.UserPreferences, error) {
 	var p domain.UserPreferences
-	err := r.db.QueryRow(`SELECT accent_color, theme_mode, language, bot_emojis_enabled FROM users WHERE id = $1`, id).
-		Scan(&p.AccentColor, &p.ThemeMode, &p.Language, &p.BotEmojisEnabled)
+	err := r.db.QueryRow(`SELECT accent_color, theme_mode, language, bot_emojis_enabled, blur_enabled FROM users WHERE id = $1`, id).
+		Scan(&p.AccentColor, &p.ThemeMode, &p.Language, &p.BotEmojisEnabled, &p.BlurEnabled)
 	if err != nil {
 		return nil, err
 	}
@@ -679,8 +680,8 @@ func (r *postgresRepository) GetUserPreferences(id int64) (*domain.UserPreferenc
 }
 
 func (r *postgresRepository) UpdateUserPreferences(id int64, p domain.UserPreferences) error {
-	_, err := r.db.Exec(`UPDATE users SET accent_color = $1, theme_mode = $2, language = $3, bot_emojis_enabled = $4 WHERE id = $5`,
-		p.AccentColor, p.ThemeMode, p.Language, p.BotEmojisEnabled, id)
+	_, err := r.db.Exec(`UPDATE users SET accent_color = $1, theme_mode = $2, language = $3, bot_emojis_enabled = $4, blur_enabled = $5 WHERE id = $6`,
+		p.AccentColor, p.ThemeMode, p.Language, p.BotEmojisEnabled, p.BlurEnabled, id)
 	return err
 }
 

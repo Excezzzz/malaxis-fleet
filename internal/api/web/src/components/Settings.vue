@@ -39,6 +39,16 @@
               :class="['inline-flex items-center justify-center py-2.5 px-4 text-xs font-semibold rounded-xl transition-all cursor-pointer border', prefs.language === 'en' ? 'bg-white/10 border-white/30 text-white' : 'bg-white/5 border-white/10 text-zinc-400 hover:text-white hover:bg-white/10']">[EN]</button>
           </div>
         </div>
+
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 py-3 border-b border-white/5">
+          <div>
+            <p class="text-sm font-medium text-zinc-300">{{ t('settings_blur') }}</p>
+            <p class="text-xs text-zinc-500">{{ t('settings_blur_desc') }}</p>
+          </div>
+          <button @click="toggleBlur" class="relative inline-flex h-6 w-11 shrink-0 max-w-full items-center rounded-full transition-colors cursor-pointer" :class="prefs.blur_enabled ? 'bg-indigo-500' : 'bg-zinc-500'">
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform" :class="prefs.blur_enabled ? 'translate-x-6' : 'translate-x-1'"></span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -235,6 +245,15 @@ export default {
       }
     };
 
+    const toggleBlur = async () => {
+      const next = prefs.value.blur_enabled === false;
+      if (savePrefs) {
+        await savePrefs({ blur_enabled: next });
+      } else {
+        prefs.value = { ...prefs.value, blur_enabled: next };
+      }
+    };
+
     const fetchSettings = async () => {
       try {
         const resp = await fetch('/api/web/settings');
@@ -372,7 +391,7 @@ export default {
     return {
       botEnabled, botToken, adminChatId, saving, testing, avatarApplying, botAvatarColor, testResult, saveMessage, avatarToast,
       saveBotSettings, testConnection, applyBotAvatar, downloadBackup,
-      ACCENTS, prefs, setAccent, setTheme, setLanguage,
+      ACCENTS, prefs, setAccent, setTheme, setLanguage, toggleBlur,
       backupToLocal, backupToTelegram, backupIntervalHours, savingBackup, backupMessage, saveBackupSettings,
       canManageBot, isOwner, isAdmin,
       t,

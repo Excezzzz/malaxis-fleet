@@ -1,5 +1,5 @@
 <template>
-  <div class="bg-zinc-950 text-white min-h-screen font-sans relative">
+  <div class="bg-zinc-950 text-white min-h-screen font-sans relative" :class="{ 'no-blur': prefs.blur_enabled === false }">
     <div v-if="!isAuthenticated">
       <Login @authenticated="login" />
     </div>
@@ -141,7 +141,7 @@ export default {
     const roleName = ref('');
     const username = ref('');
     const permissions = ref([]);
-    const prefs = ref({ accent_color: 'indigo', theme_mode: 'obsidian', language: 'ru', bot_emojis_enabled: true });
+    const prefs = ref({ accent_color: 'indigo', theme_mode: 'obsidian', language: 'ru', bot_emojis_enabled: true, blur_enabled: true });
 
     const applyPrefs = () => {
       const root = document.documentElement;
@@ -456,4 +456,48 @@ body {
 /* --- Action buttons: text on the accent stays white in every theme --- */
 #app .bg-indigo-600.text-white, #app .bg-indigo-500.text-white { color: #ffffff !important; }
 #app .hover\:bg-indigo-500:hover { background-color: color-mix(in srgb, var(--acc) 85%, #000); }
+
+/* --- No-blur fallback: disable all backdrop blur (overrides inline styles) --- */
+#app .no-blur .backdrop-blur-sm,
+#app .no-blur .backdrop-blur-md,
+#app .no-blur .backdrop-blur-lg,
+#app .no-blur .backdrop-blur-xl,
+#app .no-blur .backdrop-blur-2xl {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* --- No-blur fallback: near-solid theme-aware surfaces to avoid bleed-through --- */
+#app .no-blur .bg-zinc-900\/40,
+#app .no-blur .bg-zinc-900\/50,
+#app .no-blur .bg-zinc-900\/60,
+#app .no-blur .bg-zinc-900\/70,
+#app .no-blur .bg-zinc-900\/80,
+#app .no-blur .bg-zinc-900\/90 {
+  background-color: color-mix(in srgb, var(--bg-surface) 98%, transparent) !important;
+}
+#app .no-blur .bg-zinc-950\/80 {
+  background-color: color-mix(in srgb, var(--bg-base) 98%, transparent) !important;
+}
+#app .no-blur .bg-zinc-800\/60,
+#app .no-blur .bg-zinc-800\/80,
+#app .no-blur .bg-zinc-700\/40 {
+  background-color: color-mix(in srgb, var(--bg-input) 98%, transparent) !important;
+}
+#app .no-blur .bg-black\/40,
+#app .no-blur .bg-black\/60,
+#app .no-blur .bg-black\/70 {
+  background-color: color-mix(in srgb, var(--bg-input) 92%, transparent) !important;
+}
+#app .no-blur .bg-white\/5,
+#app .no-blur .bg-white\/10,
+#app .no-blur .bg-white\/\[0\.03\] {
+  background-color: color-mix(in srgb, var(--text-main) 8%, transparent) !important;
+  border-color: color-mix(in srgb, var(--border-soft) 85%, transparent) !important;
+}
+#app .no-blur .hover\:bg-white\/5:hover,
+#app .no-blur .hover\:bg-white\/10:hover {
+  background-color: color-mix(in srgb, var(--text-main) 8%, transparent) !important;
+}
+#app .no-blur .scrollbar-none { background: transparent; }
 </style>

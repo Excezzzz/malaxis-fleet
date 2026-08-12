@@ -107,12 +107,13 @@ var AllowedThemeModes = []string{"obsidian", "dark", "light"}
 var AllowedLanguages = []string{"ru", "en"}
 
 // UserPreferences holds the per-user personalization settings: accent color,
-// theme mode, UI language and bot emoji rendering.
+// theme mode, UI language, bot emoji rendering and glassmorphism blur.
 type UserPreferences struct {
 	AccentColor      string `json:"accent_color"`
 	ThemeMode        string `json:"theme_mode"`
 	Language         string `json:"language"`
 	BotEmojisEnabled bool   `json:"bot_emojis_enabled"`
+	BlurEnabled      bool   `json:"blur_enabled"`
 }
 
 // CustomRole represents a custom role definition created by the Owner.
