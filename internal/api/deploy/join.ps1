@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  Malaxis Fleet - Interactive Client Installer (Windows)
 #  Native Windows PowerShell (5.1+).
 #  Run with:  irm https://<join-domain>/join.ps1?t=<SECRET_TOKEN> | iex
@@ -9,7 +9,7 @@
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Say  { Write-Host "[+] $args" -ForegroundColor Green }
@@ -162,13 +162,13 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 }
 Say $T_DOCKER_INSTALLED
 
-& docker info 2>$null | Out-Null
+& docker info 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Fail $T_DOCKER_NOT_RUNNING
 }
 Say $T_DOCKER_RUNNING
 
-& docker compose version 2>$null | Out-Null
+& docker compose version 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Fail $T_COMPOSE_MISSING
 }
@@ -234,7 +234,7 @@ switch ($modeChoice) {
 # ------------------------------------------------------------
 $existing = $false
 if (Test-Path (Join-Path $installDir "docker-compose.yml")) { $existing = $true }
-$containerNames = (& docker ps --format "{{.Names}}" 2>$null) -join "`n"
+$containerNames = (& docker ps --format "{{.Names}}" 2>&1) -join "`n"
 if ($containerNames -match "node-agent") { $existing = $true }
 
 if ($existing) {
@@ -242,8 +242,8 @@ if ($existing) {
     Say $T_REINSTALL
     if (Test-Path $installDir) {
         Push-Location $installDir
-        & docker compose down --remove-orphans 2>$null | Out-Null
-        & docker rm -f node-agent xray-node singbox-node 2>$null | Out-Null
+        & docker compose down --remove-orphans 2>&1 | Out-Null
+        & docker rm -f node-agent xray-node singbox-node 2>&1 | Out-Null
         Pop-Location
     }
     if (Test-Path (Join-Path $installDir "configs")) {
@@ -388,7 +388,7 @@ if ($LASTEXITCODE -ne 0) {
 # Create singbox-node container so the agent can manage it later via docker start/stop
 Write-Host ""
 Say $T_PREP_SING
-& docker compose create singbox-node 2>$null | Out-Null
+docker compose create singbox-node 2>&1 | Out-Null
 Pop-Location
 
 Write-Host ""

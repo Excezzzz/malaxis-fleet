@@ -1,4 +1,4 @@
-﻿# ============================================================
+# ============================================================
 #  Malaxis Fleet CLI - Interactive Terminal Utility (Windows)
 #  Native Windows PowerShell (5.1+).
 #  Run from the install directory:  .\fleet-cli.ps1

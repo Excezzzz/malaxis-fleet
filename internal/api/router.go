@@ -321,7 +321,10 @@ func payloadTokenGuard(cfg *config.Config, next http.Handler) http.Handler {
 	})
 }
 
-// serveFile is a helper to serve an embedded file.
+// serveFile is a helper to serve an embedded file. The Content-Type always
+// carries charset=utf-8 so PowerShell's Invoke-RestMethod decodes localized
+// (e.g. Cyrillic) text as UTF-8 instead of the ANSI codepage, and any UTF-8
+// BOM is stripped so `irm ... | iex` does not parse "ï»¿#" as garbage.
 func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fileBytes, err := efs.ReadFile(path)
@@ -330,7 +333,8 @@ func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc
 			log.Printf("Error reading embedded file %s: %v", path, err)
 			return
 		}
-		w.Header().Set("Content-Type", contentType)
+		fileBytes = stripUTF8BOM(fileBytes)
+		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 		w.Write([]byte(a.applyDomainPlaceholders(string(fileBytes))))
 	}
 }

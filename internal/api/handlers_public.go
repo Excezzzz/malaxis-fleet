@@ -21,6 +21,16 @@ import (
 
 // --- Public Handlers ---
 
+// stripUTF8BOM removes a leading UTF-8 byte order mark (EF BB BF) from a
+// payload. Windows PowerShell's Invoke-Expression chokes on the BOM bytes
+// ("ï»¿#"), so served scripts must never start with it.
+func stripUTF8BOM(b []byte) []byte {
+	if len(b) >= 3 && bytes.Equal(b[:3], []byte{0xEF, 0xBB, 0xBF}) {
+		return b[3:]
+	}
+	return b
+}
+
 // HealthHandler answers with a deliberately generic probe-friendly response.
 // No application identity, database status, or bot state is disclosed.
 func (a *API) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -58,7 +68,7 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 	content = strings.ReplaceAll(content, "FLEET_SECRET", "FLEET_SECRET") // keep env var name
 	content = a.applyDomainPlaceholders(content)
 
-	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Type", "application/x-yaml; charset=utf-8")
 	w.Write([]byte(content))
 }
 
@@ -206,9 +216,10 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 
 	content = strings.ReplaceAll(content, "__FLEET_SECRET__", secret)
 	content = a.applyDomainPlaceholders(content)
+	contentBytes := stripUTF8BOM([]byte(content))
 
-	w.Header().Set("Content-Type", "text/x-python")
-	w.Write([]byte(content))
+	w.Header().Set("Content-Type", "text/x-python; charset=utf-8")
+	w.Write(contentBytes)
 }
 
 // InstallCommandHandler returns the exact one-line command used to onboard a
@@ -329,7 +340,8 @@ func (a *API) serveTemplateFile(name, contentType string) http.HandlerFunc {
 			log.Printf("Error reading template %s", name)
 			return
 		}
-		w.Header().Set("Content-Type", contentType)
-		w.Write([]byte(a.applyDomainPlaceholders(content)))
+		contentBytes := stripUTF8BOM([]byte(content))
+		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
+		w.Write([]byte(a.applyDomainPlaceholders(string(contentBytes))))
 	}
 }
