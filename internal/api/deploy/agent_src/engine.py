@@ -108,6 +108,12 @@ def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
             agent.log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
             docker_utils._ensure_xray_running()
             docker_utils._docker(["restart", "singbox-node"])
+        time.sleep(2)
+        ok, status = test_proxy()
+        if not ok:
+            agent.log(f"Proxy not healthy after applying {engine}: {status}")
+            docker_utils.log_crash_logs("xray-node")
+            docker_utils.log_crash_logs("singbox-node")
         return cfg
     finally:
         release_apply_lock()
@@ -162,6 +168,8 @@ def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
     ok, status = test_proxy()
     if not ok:
         agent.log(f"Proxy down after applying {engine}, rolling back...")
+        docker_utils.log_crash_logs("xray-node")
+        docker_utils.log_crash_logs("singbox-node")
         if agent.restore_rollback(engine):
             docker_utils.docker_restart(f"{engine}-node")
             agent.log("Rolled back to previous config")

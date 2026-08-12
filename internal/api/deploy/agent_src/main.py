@@ -69,6 +69,7 @@ def health_loop() -> None:
                     agent.log(f"Proxy considered dead after {fail_count} consecutive failures, restarting {container}")
                     network.report(status="Proxy dead", message=f"Health check failed {fail_count} times consecutively, restarted {container}")
                     docker_utils.docker_restart(container)
+                    docker_utils.log_crash_logs(container)
                     fail_count = 0
         except Exception as e:
             agent.log(f"Health check error: {e}")

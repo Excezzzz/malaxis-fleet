@@ -7,7 +7,7 @@ import re
 import subprocess
 import time
 
-from agent_src import agent
+from agent_src import agent, config_builder
 
 
 def _docker(args: list, timeout: int = 30) -> int:
@@ -132,24 +132,38 @@ def docker_restart(container: str) -> None:
         _ensure_xray_running()
     rc = _docker(["restart", container])
     if rc != 0:
-        logs = _docker_output(["logs", container, "--tail", "20"])
-        agent.log(f"{container} logs: {logs}")
+        log_crash_logs(container)
     else:
         agent.log(f"Restarted {container}")
+
+
+def log_crash_logs(container: str, tail: int = 15) -> None:
+    """Dump the last `tail` lines of a crash-looping engine container straight
+    into the agent log so failures are diagnosable without SSH."""
+    logs = _docker_logs(container, tail=tail)
+    agent.log(f"=== {container} CRASH LOG (last {tail} lines) ===")
+    agent.log(logs if logs else f"(no log output for {container})")
 
 
 # --- Singbox prerequisite helper ---
 
 def _ensure_xray_running() -> bool:
-    if _docker_output(["inspect", "-f", "{{.State.Running}}", "xray-node"]) == "true":
+    if _docker_output(["inspect", "-f", "{{.State.Status}}", "xray-node"]) == "running":
         return True
     agent.log("xray-node not running, starting with dummy config for singbox prerequisite")
-    dummy = {"log": {"loglevel": "warning"}, "inbounds": [{"port": 9999, "listen": "127.0.0.1", "protocol": "socks", "settings": {"auth": "noauth"}}], "outbounds": [{"protocol": "freedom", "tag": "direct"}]}
     with open(agent.XRAY_CONFIG, "w", encoding="utf-8") as f:
-        json.dump(dummy, f, indent=2)
+        json.dump(config_builder.DUMMY_XRAY_CONFIG, f, indent=2)
     _docker(["stop", "singbox-node"])
+    # A crash-looping container keeps fighting the restart policy; stop it so
+    # the next start is a clean boot from the sterile dummy config on disk.
+    _docker(["stop", "xray-node"])
     if _docker(["start", "xray-node"]) != 0:
+        log_crash_logs("xray-node")
         _docker(["restart", "xray-node"])
     time.sleep(2)
+    if _docker_output(["inspect", "-f", "{{.State.Status}}", "xray-node"]) != "running":
+        agent.log("xray-node still NOT running after dummy config apply")
+        log_crash_logs("xray-node")
+        return False
     agent.log("xray-node started (dummy config)")
-    return False
+    return True

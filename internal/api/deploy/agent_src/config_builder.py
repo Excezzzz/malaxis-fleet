@@ -19,13 +19,10 @@ DEFAULT_XRAY_CONFIG = {
         {
             "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
             "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-            "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
             "tag": "socks-in",
-            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
         },
         {
             "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
-            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
         },
     ],
     "outbounds": [{"protocol": "freedom", "tag": "direct"}],
@@ -35,6 +32,18 @@ DEFAULT_XRAY_CONFIG = {
             {"type": "field", "port": 53, "network": "udp", "outboundTag": "direct"},
         ],
     },
+}
+
+DUMMY_XRAY_CONFIG = {
+    "log": {"loglevel": "warning"},
+    "inbounds": [
+        {
+            "port": 9999, "listen": "127.0.0.1", "protocol": "socks",
+            "settings": {"auth": "noauth"},
+            "tag": "dummy-in",
+        },
+    ],
+    "outbounds": [{"protocol": "freedom", "tag": "direct"}],
 }
 
 DEFAULT_SINGBOX_CONFIG = {
