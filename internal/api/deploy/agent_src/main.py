@@ -64,7 +64,7 @@ def health_loop() -> None:
                     # Conservative recovery: only treat the proxy as dead and
                     # attempt a restart after N consecutive failed checks.
                     state = agent.load_state()
-                    container = "singbox-node" if state.get("active_engine", "xray") == "singbox" else "xray-node"
+                    container = "singbox-node" if state.get("active_engine", "singbox") == "singbox" else "xray-node"
                     agent.log(f"Health check failed ({fail_count}): {status}")
                     agent.log(f"Proxy considered dead after {fail_count} consecutive failures, restarting {container}")
                     network.report(status="Proxy dead", message=f"Health check failed {fail_count} times consecutively, restarted {container}")

@@ -19,9 +19,9 @@ DEFAULT_XRAY_CONFIG = {
         {
             "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
             "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-            "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True},
+            "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
             "tag": "socks-in",
-            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpUserTimeout": 15000},
+            "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
         },
         {
             "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
@@ -77,9 +77,9 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True},
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpUserTimeout": 15000},
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
@@ -251,9 +251,9 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls", "quic"], "routeOnly": True},
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpUserTimeout": 15000},
+                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
@@ -563,7 +563,7 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
     return srv
 
 
-def parse_url_to_outbound(url_str: str, engine: str = "xray") -> Tuple[str, dict]:
+def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, dict]:
     if not url_str:
         return "xray", {"protocol": "freedom", "tag": "direct"}
     try:

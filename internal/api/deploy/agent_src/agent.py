@@ -86,7 +86,7 @@ def save_cache(servers: list) -> None:
             "id": idx + 1,
             "name": name,
             "proto": proto,
-            "engine": s.get("engine", "xray"),
+            "engine": s.get("engine", "singbox"),
             "host": s.get("hostname", ""),
             "port": s.get("port", 0),
             "url": s.get("full_link", ""),

@@ -27,7 +27,7 @@ def ensure_default_configs():
                 json.dump(default, f, indent=2)
             agent.log(f"Created default {os.path.basename(path)}")
     state = agent.load_state()
-    engine = state.get("active_engine", "xray")
+    engine = state.get("active_engine", "singbox")
     if engine == "singbox":
         agent.log("Starting singbox-node (xray dummy config for network)...")
         docker_utils._ensure_xray_running()
@@ -115,10 +115,11 @@ def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
 
 def test_proxy() -> Tuple[bool, str]:
     state = agent.load_agent_state()
-    engine = state.get("active_engine", "xray") if state else "xray"
+    engine = state.get("active_engine", "singbox") if state else "singbox"
     container = "singbox-node" if engine == "singbox" else "xray-node"
-    if docker_utils._docker_output(["inspect", "-f", "{{.State.Running}}", container]) != "true":
-        return False, "Container not running"
+    status = docker_utils._docker_output(["inspect", "-f", "{{.State.Status}}", container])
+    if status != "running":
+        return False, f"Container not running (status: {status or 'unknown'})"
     try:
         # singbox-node shares xray-node's network namespace and has no own
         # DNS entry, so probe the shared netns (xray-node) for port 6357.
@@ -228,7 +229,7 @@ def update_subscription() -> bool:
     agent.log(f"Successfully parsed {len(servers)} servers from subscription")
 
     state = agent.load_state()
-    current_engine = state.get("active_engine", "xray")
+    current_engine = state.get("active_engine", "singbox")
     active_name = state.get("active_server", "")
 
     # VPN state retention: keep the current server when it still exists in the
@@ -363,7 +364,7 @@ def select_server(idx: int, mode: str = "manual") -> int:
         return 1
     srv = servers[idx]
     name = srv.get("name", f"Server {idx + 1}")
-    engine = srv.get("engine", "xray")
+    engine = srv.get("engine", "singbox")
     url = srv.get("url", "")
     agent.log(f"Selecting server {idx + 1}: {name} ({engine})")
     if not url:
@@ -603,7 +604,7 @@ def print_server_list() -> None:
     for idx, srv in enumerate(servers):
         name = srv.get("name", f"Server {idx + 1}")
         proto = srv.get("proto", "unknown")
-        engine = srv.get("engine", "xray")
+        engine = srv.get("engine", "singbox")
         print(f" {idx + 1:2d}) {name:<35s} {proto:<10s} ({engine})")
     print()
     print(f"Total: {len(servers)} servers")
