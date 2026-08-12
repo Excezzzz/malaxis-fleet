@@ -1,4 +1,4 @@
-# ============================================================
+﻿# ============================================================
 #  Malaxis Fleet - Interactive Client Installer (Windows)
 #  Native Windows PowerShell (5.1+).
 #  Run with:  irm https://<join-domain>/join.ps1?t=<SECRET_TOKEN> | iex
