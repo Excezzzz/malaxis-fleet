@@ -242,7 +242,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 		if err != nil {
 			log.Printf("Warning: web/dist not found, dashboard will not be served: %v", err)
 		} else {
-			dashboardRouter.PathPrefix("/").Handler(http.FileServer(http.FS(distFS)))
+			dashboardRouter.PathPrefix("/").Handler(serveDashboard(distFS))
 		}
 	} else {
 		log.Println("Low-RAM mode: Web UI rendering disabled. API endpoints remain active.")
@@ -337,6 +337,26 @@ func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc
 		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 		w.Write([]byte(a.applyDomainPlaceholders(string(fileBytes))))
 	}
+}
+
+// serveDashboard serves the embedded Vue.js SPA. It must stay completely
+// public — no auth, no token guard, no stealth 404 — or the login page can
+// never load. Only the /api/web/* routes are authenticated. Paths that are
+// not real files (Vue Router deep links such as /login) fall back to
+// index.html so direct navigation renders the SPA instead of a 404.
+func serveDashboard(fsys fs.FS) http.Handler {
+	fileServer := http.FileServer(http.FS(fsys))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(r.URL.Path, "/")
+		if p != "" {
+			if f, err := fsys.Open(p); err != nil {
+				r.URL.Path = "/"
+			} else {
+				f.Close()
+			}
+		}
+		fileServer.ServeHTTP(w, r)
+	})
 }
 
 // RateLimit returns middleware with configurable requests per duration.

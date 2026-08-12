@@ -88,8 +88,13 @@ scp ./.env "$VpsTarget`:$RemotePath/"
 Check-Error
 
 # --- 3. Remote Execution ---
+# IMPORTANT: `docker compose up --build` replaces `down && up`. A full `down`
+# deletes the project network (malaxis-fleet_default) while the external caddy
+# container stays attached to it, so caddy loses DNS + routing to fleet-master
+# for the whole image build and the dashboard/API return 502s. Compose's `up`
+# recreates containers in place and keeps the shared network alive.
 Write-Host ">>> Restarting services on remote host..."
-$sshCommand = "cd $RemotePath && docker compose down && docker compose up -d --build && docker builder prune -a -f && docker system prune -a --volumes -f"
+$sshCommand = "cd $RemotePath && docker compose up -d --build --remove-orphans && docker builder prune -a -f && docker system prune -a --volumes -f"
 ssh -t $VpsTarget $sshCommand
 Check-Error
 
