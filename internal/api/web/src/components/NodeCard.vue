@@ -537,7 +537,11 @@ export default {
         const response = await axios.get(`/api/web/nodes/${props.node.id}/logs`, {
           params: { container: logContainer.value },
         });
-        nodeLogs.value = response.data.logs || t('node_logs_empty', { container: logContainer.value });
+        if (response.data.error) {
+          nodeLogs.value = `[${t('node_logs_failed')}] ${response.data.error}`;
+        } else {
+          nodeLogs.value = response.data.logs || t('node_logs_empty', { container: logContainer.value });
+        }
         scrollLogsToBottom();
       } catch (e) {
         console.error('Error fetching logs:', e);

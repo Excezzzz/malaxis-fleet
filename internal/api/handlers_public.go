@@ -86,6 +86,8 @@ func (a *API) serveAgentPackage(w http.ResponseWriter, r *http.Request) {
 	fh.SetModTime(time.Now())
 	if f, err := zw.CreateHeader(fh); err == nil {
 		f.Write([]byte("# -*- coding: utf-8 -*-\n\"\"\"Malaxis Fleet - modular node agent package.\"\"\"\n__version__ = \"1.1.0\"\n"))
+	} else {
+		log.Printf("ERROR: failed to write agent_src/__init__.py into zip: %v", err)
 	}
 
 	entries, err := deployFS.ReadDir("deploy/agent_src")
@@ -107,16 +109,20 @@ func (a *API) serveAgentPackage(w http.ResponseWriter, r *http.Request) {
 		header.SetModTime(time.Now())
 		f, err := zw.CreateHeader(header)
 		if err != nil {
+			log.Printf("ERROR: failed to create zip entry agent_src/%s: %v", e.Name(), err)
 			continue
 		}
 		if _, err := f.Write(data); err != nil {
+			log.Printf("ERROR: failed to write zip entry agent_src/%s: %v", e.Name(), err)
 			continue
 		}
 	}
 	if err := zw.Close(); err != nil {
+		log.Printf("ERROR: failed to finalize agent_src.zip: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("Served agent_src.zip (%d bytes, %d files)", buf.Len(), len(entries)+1)
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Write(buf.Bytes())

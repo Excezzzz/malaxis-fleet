@@ -184,7 +184,15 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         if container not in allowed:
             agent.log(f"[get_logs] invalid container: {container}")
             return True
-        output = docker_utils._docker_logs(container, tail=200)
+        # NEVER fail silently: any exception while fetching logs is reported
+        # back to the master as the log output itself, so the dashboard shows
+        # the real reason instead of an empty screen.
+        try:
+            output = docker_utils._docker_logs(container, tail=200)
+        except Exception as e:
+            output = f"(failed to fetch logs for {container}: {e})"
+            agent.log(f"[get_logs] error fetching {container}: {e}")
+            agent.log(traceback.format_exc())
         agent.log(f"[get_logs] fetched {len(output)} chars from {container}")
         # Report immediately within the poll cycle so fresh logs reach the
         # backend without waiting for the next poll interval.
@@ -306,7 +314,7 @@ def _reselect_after_update() -> None:
     engine.select_server(best, mode=mode)
 
 
-def update_client_files(urls: dict) -> bool:
+def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
     """Download latest client files from the fleet server and replace local copies.
 
     The modular agent package is shipped as a zip archive (agent_src/*.py) that
@@ -314,8 +322,13 @@ def update_client_files(urls: dict) -> bool:
     only then atomically swapped in. The other payloads (launcher, CLI, compose
     requirements) land in .tmp files and are integrity-checked before they
     atomically replace the live file. A syntax error must never brick a node.
+
+    Returns (ok, errors) where errors carries the EXACT failure reason (including
+    the Python traceback) so the caller can log it locally and report it to the
+    master's status_message. NO failure is ever silent.
     """
     ok = True
+    errors: list[str] = []
     # The package lives in <app>/agent_src, so the app root (where the
     # launcher, compose files and requirements live) is one level up.
     app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -329,12 +342,25 @@ def update_client_files(urls: dict) -> bool:
             req = urllib.request.Request(pkg_url, headers={"User-Agent": "malaxis-fleet-agent"})
             ctx = ssl._create_unverified_context()
             with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"server returned HTTP {resp.status} for {pkg_url!r}")
                 data = resp.read()
+            if len(data) < 4 or data[:4] != b"PK\x03\x04":
+                raise RuntimeError(
+                    f"downloaded payload is not a zip archive ({len(data)} bytes, "
+                    f"first bytes {data[:4]!r}) - endpoint may be serving an error page instead of agent_src.zip"
+                )
             with open(tmp_zip, "wb") as f:
                 f.write(data)
             if os.path.exists(staging):
                 shutil.rmtree(staging, ignore_errors=True)
+            # Zip-slip guard: reject entries that escape the staging dir so a
+            # corrupt/malicious archive can never overwrite files outside it.
             with zipfile.ZipFile(tmp_zip) as zf:
+                for info in zf.infolist():
+                    name = info.filename
+                    if name.startswith(("/", "\\")) or ".." in name.split("/"):
+                        raise RuntimeError(f"archive entry escapes staging dir: {name!r}")
                 zf.extractall(staging)
             pkg_dir = os.path.join(staging, "agent_src")
             if not os.path.isdir(pkg_dir):
@@ -361,7 +387,9 @@ def update_client_files(urls: dict) -> bool:
             agent.log(f"[update_client_files] updated agent package ({len(data)} bytes)")
         except Exception as e:
             ok = False
-            agent.log(f"[update_client_files] failed to update agent package: {e}")
+            err_txt = f"agent package update failed: {e}\n{traceback.format_exc()}"
+            errors.append(err_txt)
+            agent.log(f"[update_client_files] {err_txt}")
             if os.path.exists(staging):
                 shutil.rmtree(staging, ignore_errors=True)
         finally:
@@ -386,6 +414,8 @@ def update_client_files(urls: dict) -> bool:
             req = urllib.request.Request(url, headers={"User-Agent": "malaxis-fleet-agent"})
             ctx = ssl._create_unverified_context()
             with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"server returned HTTP {resp.status} for {url!r}")
                 data = resp.read()
             with open(tmp, "wb") as f:
                 f.write(data)
@@ -395,7 +425,9 @@ def update_client_files(urls: dict) -> bool:
                     py_compile.compile(tmp, doraise=True)
                 except Exception as e:
                     ok = False
-                    agent.log(f"[update_client_files] SYNTAX CHECK FAILED for node_agent.py: {e}")
+                    err_txt = f"SYNTAX CHECK FAILED for node_agent.py: {e}\n{traceback.format_exc()}"
+                    errors.append(err_txt)
+                    agent.log(f"[update_client_files] {err_txt}")
                     _safe_remove(tmp)
                     continue
             elif fname == "fleet-cli.sh":
@@ -407,7 +439,9 @@ def update_client_files(urls: dict) -> bool:
                         pass
                     if rc != 0:
                         ok = False
-                        agent.log("[update_client_files] SYNTAX CHECK FAILED for fleet-cli.sh")
+                        err_txt = "SYNTAX CHECK FAILED for fleet-cli.sh (bash -n)\n" + traceback.format_exc()
+                        errors.append(err_txt)
+                        agent.log(f"[update_client_files] {err_txt}")
                         _safe_remove(tmp)
                         continue
                 else:
@@ -416,9 +450,11 @@ def update_client_files(urls: dict) -> bool:
             agent.log(f"[update_client_files] updated {fname} ({len(data)} bytes)")
         except Exception as e:
             ok = False
-            agent.log(f"[update_client_files] failed to download {fname}: {e}")
+            err_txt = f"failed to download {fname}: {e}\n{traceback.format_exc()}"
+            errors.append(err_txt)
+            agent.log(f"[update_client_files] {err_txt}")
             _safe_remove(tmp)
-    return ok
+    return ok, errors
 
 
 def _safe_remove(path: str) -> None:
@@ -499,7 +535,7 @@ def _worker_loop() -> None:
                 docker_utils.docker_restart("singbox-node")
                 network.report(status="Engine Restarting", message="Containers restarted")
             elif typ == "update_client_files":
-                ok = update_client_files(action.get("urls", {}))
+                ok, errors = update_client_files(action.get("urls", {}))
                 if ok:
                     # Fetch the absolute latest proxy configs from the server in
                     # addition to the new Python/Bash scripts, so nodes get both
@@ -514,15 +550,23 @@ def _worker_loop() -> None:
                     agent.log("[update_client_files] Client files updated, restarting gracefully...")
                     _graceful_restart()
                 else:
-                    network.report(status="Update failed", message="Client file update failed")
+                    # Surface the EXACT failure to the master so the dashboard
+                    # shows why the update failed instead of a generic message.
+                    detail = " | ".join(errors) if errors else "unknown error"
+                    truncated = detail[:1500] + ("..." if len(detail) > 1500 else "")
+                    agent.log(f"[update_client_files] FAILED: {truncated}")
+                    network.report(status="Update failed", message=truncated)
             elif typ == "terminate":
                 _terminate()
             else:
                 agent.log(f"[worker] unknown action type: {typ}")
         except Exception as e:
+            tb_text = traceback.format_exc()
             agent.log(f"[worker] error in {typ}: {e}")
-            agent.log(traceback.format_exc())
-            network.report(status="Error", message=f"Worker error in {typ}")
+            agent.log(tb_text)
+            err_txt = tb_text.strip().splitlines()[-1] if tb_text.strip() else str(e)
+            truncated = f"{typ} failed: {err_txt}"[:1500]
+            network.report(status="Error", message=truncated)
 
 
 # --- Poll Loop ---

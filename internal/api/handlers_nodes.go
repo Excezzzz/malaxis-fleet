@@ -400,7 +400,9 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 	if err := a.repo.SetPendingCommand(nodeID, string(cmdJSON), messageID); err != nil {
 		log.Printf("ERROR: Failed to queue update_sub command for node %s: %v", nodeID, err)
 	} else {
-		a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub")
+		if err := a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub"); err != nil {
+			log.Printf("ERROR: Failed to set pipeline status for node %s: %v", nodeID, err)
+		}
 	}
 
 	actorUser := a.actor(r)
@@ -684,7 +686,9 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("ERROR: Failed to queue update_client_files for node %s: %v", node.ID, err)
 		} else {
 			queuedCount++
-			a.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_client_files")
+			if err := a.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_client_files"); err != nil {
+				log.Printf("ERROR: Failed to set pipeline status for node %s: %v", node.ID, err)
+			}
 		}
 	}
 
@@ -724,7 +728,9 @@ func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Requ
 			log.Printf("ERROR: Failed to queue update_sub for node %s: %v", node.ID, err)
 		} else {
 			queuedCount++
-			a.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_sub")
+			if err := a.repo.UpdateNodePipelineStatus(node.ID, "Queued", "update_sub"); err != nil {
+				log.Printf("ERROR: Failed to set pipeline status for node %s: %v", node.ID, err)
+			}
 		}
 	}
 
@@ -833,7 +839,9 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "terminate")
+	if err := a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "terminate"); err != nil {
+		log.Printf("ERROR: Failed to set pipeline status for node %s: %v", nodeID, err)
+	}
 
 	actorUser := a.actor(r)
 	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionDeleteDevice, nodeID, "Queued terminate (self-destruct) command")
@@ -861,7 +869,9 @@ func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	a.repo.UpdateNodePipelineStatus(nodeID, "Idle", "Command cancelled")
+	if err := a.repo.UpdateNodePipelineStatus(nodeID, "Idle", "Command cancelled"); err != nil {
+		log.Printf("ERROR: Failed to set pipeline status for node %s: %v", nodeID, err)
+	}
 
 	actorUser := a.actor(r)
 	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, nodeID, "Cleared pending command")
@@ -917,7 +927,13 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 
 	logsMap := map[string]string{}
 	if raw, err := a.repo.GetNodeLogs(nodeID); err == nil && raw != "" {
-		json.Unmarshal([]byte(raw), &logsMap)
+		if err := json.Unmarshal([]byte(raw), &logsMap); err != nil {
+			// Never serve an empty screen on corrupt/legacy data: surface the
+			// raw stored text as the requested container's log so the operator
+			// sees the real content instead of a silent "no logs".
+			log.Printf("WARN: node_logs for %s is not a JSON map (%v); serving raw", nodeID, err)
+			logsMap[container] = raw
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

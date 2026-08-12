@@ -85,33 +85,27 @@ def _resolve_container_id(name: str) -> str:
     """Find the running container id for a service name.
 
     Docker-compose renames services to `<project>-<service>-<counter>` (e.g.
-    `fleet-agent-xray-node-1`). We search by name filter to match both the bare
-    alias and the compose-prefixed variant. Returns the container id, or ''.
+    `fleet-agent-xray-node-1`). We search with progressively looser name-filters
+    (exact regex first, then compose-style suffixes, then substring) and always
+    restrict to running containers so a stopped ghost can never shadow the real
+    one. Returns the container id, or ''.
     """
-    candidates = []
     filters = [
-        f"name={name}",
-        f"name={name}-",       # prefix match for compose projects
-        f"name=-{name}-",      # e.g. fleet-agent-xray-node-1
-        f"name=-{name}-1",
+        f"name=^/{name}$",          # exact: /xray-node
+        f"name=^/{name}-\\d+$",     # compose: /fleet-agent-xray-node-1
+        f"name=-{name}-\\d+$",      # compose without project prefix edge cases
+        f"name=-{name}-",           # substring for compose projects
+        f"name={name}",             # any container whose name contains it
     ]
     for f in filters:
         try:
-            out = _docker_output(["ps", "-q", "-f", f])
+            out = _docker_output(["ps", "-q", "-f", "status=running", "-f", f])
         except Exception:
             continue
         if out:
-            candidates.extend(out.splitlines())
-            if f == f"name={name}":
-                break
-    # Prefer an exact running match.
-    for cid in candidates:
-        if not cid:
-            continue
-        if _docker_output(["inspect", "-f", "{{.Name}}", cid]) in (f"/{name}", f"/{name}-1"):
-            return cid
-    if candidates:
-        return candidates[0]
+            cids = [c for c in out.splitlines() if c]
+            if cids:
+                return cids[0]
     # Fall back to `docker compose ps -q <service>` for compose v2.
     try:
         out = _docker_output(["compose", "ps", "-q", name], timeout=10)

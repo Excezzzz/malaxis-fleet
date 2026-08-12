@@ -271,6 +271,13 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	subRouter.HandleFunc("/requirements.txt", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("requirements.txt", "text/plain"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/entrypoint.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("entrypoint.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/node_agent.py", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
+	// /agent_src.zip is the OTA package endpoint: UpdateClientFilesHandler
+	// commands every agent to download the zip from the sub-domain
+	// (<SUB_DOMAIN>/agent_src.zip?t=<secret>). The route was only ever
+	// registered on the API domain (/api/agent/latest.zip), so agents fetched
+	// a 404 page instead of the archive and every OTA update failed with
+	// "BadZipFile". Registered here alongside the other client payloads.
+	subRouter.HandleFunc("/agent_src.zip", payloadTokenGuard(cfg, http.HandlerFunc(api.serveAgentPackage)).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/fleet-cli.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/configs/xray_config.json", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/configs/singbox_config.json", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json"))).ServeHTTP).Methods("GET")
