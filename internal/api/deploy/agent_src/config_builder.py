@@ -50,11 +50,11 @@ DEFAULT_SINGBOX_CONFIG = {
     "inbounds": [
         {
             "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
-            "sniff": {"enabled": True, "override_destination": False, "route_only": True},
+            "sniff": {"enabled": True, "override_destination": False},
         },
         {
             "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
-            "sniff": {"enabled": True, "override_destination": True, "route_only": True},
+            "sniff": {"enabled": True, "override_destination": True},
         },
     ],
     "outbounds": [{"type": "direct", "tag": "direct"}],
@@ -287,11 +287,11 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
-                "sniff": {"enabled": True, "override_destination": False, "route_only": True},
+                "sniff": {"enabled": True, "override_destination": False},
             },
             {
                 "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
-                "sniff": {"enabled": True, "override_destination": True, "route_only": True},
+                "sniff": {"enabled": True, "override_destination": True},
             },
         ],
         "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
@@ -317,11 +317,11 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
-                "sniff": {"enabled": True, "override_destination": False, "route_only": True},
+                "sniff": {"enabled": True, "override_destination": False},
             },
             {
                 "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
-                "sniff": {"enabled": True, "override_destination": True, "route_only": True},
+                "sniff": {"enabled": True, "override_destination": True},
             },
         ],
         "outbounds": [],
