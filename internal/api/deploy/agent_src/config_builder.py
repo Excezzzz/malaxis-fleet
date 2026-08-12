@@ -59,17 +59,20 @@ DEFAULT_SINGBOX_CONFIG = {
     "inbounds": [
         {
             "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
-            "sniff": {"enabled": True, "override_destination": False},
         },
         {
             "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
-            "sniff": {"enabled": True, "override_destination": True},
         },
     ],
     "outbounds": [{"type": "direct", "tag": "direct"}],
     "route": {
         "final": "direct",
         "auto_detect_interface": True,
+        # sing-box >= 1.13: inbound sniff options were removed entirely;
+        # sniffing is expressed as a route rule action instead.
+        "rules": [
+            {"action": "sniff", "inbound": ["socks-in", "http-in"]},
+        ],
     },
     "experimental": {"cache_file": {"enabled": True}},
 }
@@ -296,17 +299,18 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
-                "sniff": {"enabled": True, "override_destination": False},
             },
             {
                 "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
-                "sniff": {"enabled": True, "override_destination": True},
             },
         ],
         "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
         "route": {
             "final": ob.get("tag", "proxy"),
             "auto_detect_interface": True,
+            "rules": [
+                {"action": "sniff", "inbound": ["socks-in", "http-in"]},
+            ],
         },
         "experimental": {"cache_file": {"enabled": True}},
     }
@@ -326,11 +330,9 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
-                "sniff": {"enabled": True, "override_destination": False},
             },
             {
                 "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
-                "sniff": {"enabled": True, "override_destination": True},
             },
         ],
         "outbounds": [],
@@ -344,6 +346,11 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     cfg["route"] = {
         "final": tag,
         "auto_detect_interface": True,
+        # sing-box >= 1.13: inbound sniff options were removed entirely;
+        # sniffing is expressed as a route rule action instead.
+        "rules": [
+            {"action": "sniff", "inbound": ["socks-in", "http-in"]},
+        ],
     }
     cfg["experimental"] = {"cache_file": {"enabled": True}}
     cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
@@ -419,10 +426,8 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         return ob
 
     if proto == "ss":
-        ob["method"] = srv.get("method", "chacha20-ietf-poly1305")
-        ob["password"] = srv.get("password", "")
-        ob["domain_strategy"] = "ipv4_only"
-        return ob
+        agent.log("[singbox] shadowsocks outbound unsupported by sing-box image, falling back to xray")
+        return None
 
     if proto not in ("vless", "vmess", "trojan"):
         return None
@@ -597,6 +602,17 @@ def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, d
             return parse_url_to_outbound(url_str, engine="xray")
         ob["tag"] = tag
         return "singbox", ob
+
+    # Xray branch: share the unified server-descriptor pipeline so every
+    # protocol (vless/vmess/trojan/ss) produces a proper xray outbound.
+    if scheme in ("vmess", "trojan", "ss"):
+        srv = _url_to_srv(scheme, user_info, host, port, params, tag)
+        ob = _xray_outbound(srv)
+        if ob is not None:
+            ob["tag"] = tag
+            return "xray", ob
+        agent.log(f"[xray] No xray outbound for {scheme}")
+        return "xray", {"protocol": "freedom", "tag": "direct"}
 
     if scheme == "vless":
         uuid_val = user_info

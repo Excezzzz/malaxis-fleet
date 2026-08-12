@@ -148,14 +148,23 @@ def log_crash_logs(container: str, tail: int = 15) -> None:
 # --- Singbox prerequisite helper ---
 
 def _ensure_xray_running() -> bool:
-    if _docker_output(["inspect", "-f", "{{.State.Status}}", "xray-node"]) == "running":
-        return True
-    agent.log("xray-node not running, starting with dummy config for singbox prerequisite")
+    """Guarantee xray-node runs the sterile dummy config.
+
+    singbox-node shares xray-node's network namespace, so ANY non-dummy xray
+    config (which binds 6357/6358 for its own socks/http inbounds) collides
+    with sing-box's identical inbound ports -> EADDRINUSE crash loop. We
+    therefore ALWAYS force the dummy config here - never trust a merely
+    "running" xray-node, its on-disk config may still be the stale full one
+    (fresh install, engine switch remnant, crashed apply/rollback).
+    """
+    agent.log("xray-node: forcing dummy config for singbox prerequisite")
     with open(agent.XRAY_CONFIG, "w", encoding="utf-8") as f:
         json.dump(config_builder.DUMMY_XRAY_CONFIG, f, indent=2)
-    _docker(["stop", "singbox-node"])
     # A crash-looping container keeps fighting the restart policy; stop it so
     # the next start is a clean boot from the sterile dummy config on disk.
+    # Stopping xray-node also tears down singbox-node (shared netns), so stop
+    # it explicitly to avoid racing the restart policy.
+    _docker(["stop", "singbox-node"])
     _docker(["stop", "xray-node"])
     if _docker(["start", "xray-node"]) != 0:
         log_crash_logs("xray-node")

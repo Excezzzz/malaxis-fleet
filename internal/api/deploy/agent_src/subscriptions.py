@@ -82,7 +82,9 @@ def _parse_link(link: str) -> Optional[dict]:
         info["protocol"] = "trojan"
         _parse_trojan(link, info)
     elif scheme == "ss":
-        info["engine"] = "singbox"
+        # The sing-box image is built without shadowsocks outbound support
+        # (unknown outbound type: ss), so ss servers must run through xray.
+        info["engine"] = "xray"
         info["protocol"] = "ss"
         _parse_ss(link, info)
     elif scheme in ("hysteria2", "hy2"):
