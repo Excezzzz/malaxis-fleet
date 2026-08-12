@@ -960,20 +960,35 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 
 // --- Onboarding & utilities ---
 
-// handleJoinCommand shows the tokenized node onboarding command. The curl line
-// is rendered as a <code> block so Telegram lets the admin copy it on tap.
+// handleJoinCommand shows the tokenized node onboarding command for both
+// supported OS families. Each command is rendered as a <code> block so
+// Telegram lets the admin copy it on tap. The join domain and fleet secret
+// are resolved dynamically from the settings store when present, falling
+// back to the static env configuration.
 func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
-	if b.cfg.JoinDomain == "" || b.cfg.FleetSecret == "" {
+	domain := b.cfg.JoinDomain
+	if v, err := b.repo.GetSetting("join_domain"); err == nil && strings.TrimSpace(v) != "" {
+		domain = strings.TrimSpace(v)
+	}
+	secret := b.cfg.FleetSecret
+	if v, err := b.repo.GetSetting("fleet_secret"); err == nil && strings.TrimSpace(v) != "" {
+		secret = strings.TrimSpace(v)
+	}
+	if domain == "" || secret == "" {
 		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Домен подключения или секрет флота не настроены.", "Join domain or fleet secret is not configured.")+"</b>", b.backMenuMarkup())
 		return
 	}
 
-	command := "curl -sSL https://" + b.cfg.JoinDomain + "/?t=" + b.cfg.FleetSecret + " | bash"
+	bashCmd := "curl -sSL https://" + domain + "/?t=" + secret + " | bash"
+	psCmd := "irm https://" + domain + "/join.ps1?t=" + secret + " | iex"
 
 	text := "<b>➕ " + b.tr("Добавить новое устройство", "Add New Device") + "</b>\n\n" +
-		b.tr("Чтобы добавить новое устройство, выполните эту команду на клиентской машине:", "To add a new device, run this command on the client machine:") + "\n\n" +
-		"<code>" + command + "</code>\n\n" +
-		b.tr("Нажмите на команду, чтобы скопировать её, затем выполните в терминале любого хоста с Docker.", "Tap the command to copy it, then run it in the terminal of any host with Docker.")
+		b.tr("Выберите команду для вашей ОС и выполните её на клиентской машине:", "Pick the command for your OS and run it on the client machine:") + "\n\n" +
+		"🐧 <b>" + b.tr("Linux / macOS / Git Bash", "Linux / macOS / Git Bash") + "</b>\n" +
+		"<code>" + bashCmd + "</code>\n\n" +
+		"🪟 <b>" + b.tr("Windows PowerShell", "Windows PowerShell") + "</b>\n" +
+		"<code>" + psCmd + "</code>\n\n" +
+		b.tr("Нажмите на команду, чтобы скопировать её, затем выполните в терминале любого хоста с Docker.", "Tap a command to copy it, then run it in the terminal of any host with Docker.")
 
 	b.editMessage(chatID, messageID, text, b.backMenuMarkup())
 }

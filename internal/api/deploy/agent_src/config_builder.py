@@ -71,6 +71,9 @@ DEFAULT_SINGBOX_CONFIG = {
         # sing-box >= 1.13: inbound sniff options were removed entirely;
         # sniffing is expressed as a route rule action instead.
         "rules": [
+            # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
+            # so proxy-bound MTProto flows are never fingerprinted.
+            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": "direct"},
             {"action": "sniff", "inbound": ["socks-in", "http-in"]},
         ],
     },
@@ -89,7 +92,10 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                # routeOnly keeps the sniffed result for routing decisions only;
+                # MTProto connections keep their IP destination, so Telegram
+                # media streams are never rewritten (avoids the upload freeze).
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"], "routeOnly": True},
                 "tag": "socks-in",
                 "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
             },
@@ -110,11 +116,11 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
+            # Telegram MTProto / QUIC: matched by IP FIRST so these flows are
+            # routed through the proxy without stalling on HTTP/TLS sniffing.
+            {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": tag},
             {"type": "field", "port": 53, "network": "udp", "outboundTag": tag},
             {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": tag},
-            # Telegram MTProto / QUIC: matched by IP, routed through the proxy
-            # WITHOUT going through slow sniffing fallbacks.
-            {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": tag},
         ],
     }
     return cfg
@@ -192,7 +198,10 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                     "mode": "auto",
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        "maxConnections": 16,
+                        # 32 parallel substreams per connection with long-lived
+                        # reuse keeps Telegram media chunks flowing concurrently.
+                        "maxConcurrency": 32,
+                        "maxConnections": 8,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
@@ -263,7 +272,10 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                # routeOnly keeps the sniffed result for routing decisions only;
+                # MTProto connections keep their IP destination, so Telegram
+                # media streams are never rewritten (avoids the upload freeze).
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"], "routeOnly": True},
                 "tag": "socks-in",
                 "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
             },
@@ -276,10 +288,11 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
+                # Telegram MTProto / QUIC IP ranges: matched FIRST so these
+                # flows bypass sniffing fallbacks entirely.
+                {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "port": 53, "network": "udp", "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": ob.get("tag", "proxy")},
-                # Telegram MTProto / QUIC IP ranges bypass sniffing fallbacks.
-                {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": ob.get("tag", "proxy")},
             ],
         },
     }
@@ -309,6 +322,9 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
             "final": ob.get("tag", "proxy"),
             "auto_detect_interface": True,
             "rules": [
+                # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
+                # so proxy-bound MTProto flows are never fingerprinted.
+                {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": ob.get("tag", "proxy")},
                 {"action": "sniff", "inbound": ["socks-in", "http-in"]},
             ],
         },
@@ -349,6 +365,9 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         # sing-box >= 1.13: inbound sniff options were removed entirely;
         # sniffing is expressed as a route rule action instead.
         "rules": [
+            # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
+            # so proxy-bound MTProto flows are never fingerprinted.
+            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": tag},
             {"action": "sniff", "inbound": ["socks-in", "http-in"]},
         ],
     }
@@ -672,7 +691,10 @@ def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, d
                     "mode": params.get("mode", "auto"),
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        "maxConnections": 16,
+                        # 32 parallel substreams per connection with long-lived
+                        # reuse keeps Telegram media chunks flowing concurrently.
+                        "maxConcurrency": 32,
+                        "maxConnections": 8,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
