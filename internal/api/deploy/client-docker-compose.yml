@@ -38,6 +38,9 @@ services:
       - ./configs/xray_config.json:/etc/xray/config.json
     command: run -c /etc/xray/config.json
 
+# NOTE: keep singbox-node as the LAST service before `networks:` - join.sh's
+# docker-compose v1 bootstrap (compose_up) strips it from a copy of this file
+# to create xray-node first (singbox-node shares xray-node's network namespace).
   singbox-node:
     image: ghcr.io/sagernet/sing-box:latest
     container_name: singbox-node

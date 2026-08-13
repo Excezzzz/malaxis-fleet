@@ -446,13 +446,18 @@ say "$(t_state_written)"
 # compose_up brings the whole stack up. docker-compose v1 (standalone) fails on
 # FIRST creation with "Service 'singbox-node' uses the network stack of
 # container 'xray-node' which does not exist": singbox-node shares xray-node's
-# network namespace (network_mode: container:) and v1 requires the target to
-# already exist at create time. When the first attempt fails, create xray-node
-# on its own and retry the full stack - harmless for compose v2 as well.
+# network namespace (network_mode: container:) and v1 validates the WHOLE
+# project against existing containers before creating anything. Bootstrap
+# xray-node via a stripped compose file (singbox-node removed), then bring the
+# full stack up - harmless for compose v2 as well (skipped, first attempt works).
+# NOTE: singbox-node must remain the LAST service before `networks:` in
+# client-docker-compose.yml (downloaded as docker-compose.yml) for the awk
+# strip to produce a valid file.
 compose_up() {
     if ! $COMPOSE_CMD up -d --build; then
-        warn "docker-compose v1 ordering detected - creating xray-node first and retrying..."
-        $COMPOSE_CMD up -d --build xray-node 2>/dev/null || true
+        warn "docker-compose v1 ordering detected - bootstrapping xray-node first..."
+        awk '/^  singbox-node:/{skip=1} /^networks:/{skip=0} !skip{print}' docker-compose.yml > .compose-xray-only.yml
+        $COMPOSE_CMD -f .compose-xray-only.yml up -d xray-node 2>/dev/null || true
         $COMPOSE_CMD up -d --build || err "Docker Compose up failed - review the output above and re-run this script"
     fi
 }
