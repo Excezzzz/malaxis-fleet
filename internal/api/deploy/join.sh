@@ -22,10 +22,27 @@ err()  { printf "${RED}[x]${NC} %s\n" "$*"; exit 1; }
 # therefore reads from /dev/tty. When no TTY is available (e.g. headless
 # provisioning), prompts silently fall back to their defaults.
 if ! exec 3</dev/tty 2>/dev/null; then
-    exec 3</dev/null
+    exec 3</dev/null 2>/dev/null || true
 fi
 
-ask() { read -r -p "$1" "$2" <&3 || true; }
+# Never die silently: under `set -e` ANY command returning non-zero (e.g. a
+# `read` hitting EOF without a TTY, or a failed mkdir) aborts the script. The
+# ERR trap reports the exact failing line so the user always knows why the
+# installer stopped instead of just dropping back to the shell prompt.
+trap 'echo "[x] Installer encountered an error at line $LINENO. Continuing safely..."' ERR
+
+# Safe interactive prompt: a failed/EOF `read` must NEVER kill the installer.
+# On failure the target variable is force-set to "" (validated name) so the
+# `${VAR:-default}` fallbacks at every call site always see a defined value,
+# and the error is fully swallowed (no ERR trap spam for expected EOF).
+ask() {
+    if ! read -r -p "$1" "$2" <&3 2>/dev/null; then
+        case "$2" in
+            *[!A-Za-z0-9_]*) : ;;
+            *) eval "$2=\"\"" ;;
+        esac
+    fi
+}
 
 # ------------------------------------------------------------
 # 0. Language selector (first step, before any other output)
@@ -231,7 +248,7 @@ fi
 say "${T_COMPOSE_OK} ($COMPOSE_CMD)"
 
 say "$T_CHECK_MASTER"
-if curl -fsS --max-time 8 "https://__API_DOMAIN__/api/health" >/dev/null 2>&1; then
+if curl -fsS --max-time 5 "https://__API_DOMAIN__/api/health" >/dev/null 2>&1; then
     say "$T_MASTER_OK"
 else
     warn "$T_MASTER_WARN"
@@ -268,7 +285,7 @@ case "$DIR_CHOICE" in
 esac
 
 AGENT_DIR="$BASE_DIR/malaxis-fleet-client"
-mkdir -p "$AGENT_DIR"
+mkdir -p "$AGENT_DIR" 2>/dev/null || err "Failed to create installation directory: $AGENT_DIR"
 say "${T_INSTALL_DIR}$AGENT_DIR"
 
 # ------------------------------------------------------------
@@ -306,7 +323,7 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
 
     if [ -d "$AGENT_DIR/configs" ]; then
         say "$T_PRESERVE"
-        mkdir -p /tmp/fleet-config-backup
+        mkdir -p /tmp/fleet-config-backup 2>/dev/null || true
         cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null || true
     fi
 
@@ -314,8 +331,8 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
     say "$T_OLD_CLEANED"
 fi
 
-mkdir -p "$AGENT_DIR/configs"
-cd "$AGENT_DIR"
+mkdir -p "$AGENT_DIR/configs" 2>/dev/null || err "Failed to create $AGENT_DIR/configs"
+cd "$AGENT_DIR" 2>/dev/null || err "Failed to enter $AGENT_DIR"
 
 # ------------------------------------------------------------
 # 5. Download client payloads
@@ -324,14 +341,15 @@ echo ""
 say "$T_DL_FILES"
 # All payload downloads carry the fleet secret (?t=) which is injected into
 # this script by the server at serve time. Unauthenticated requests get a
-# generic 404, so the endpoints stay invisible to active probes.
-curl -sSL "https://__SUB_DOMAIN__/docker-compose.yml?t=__SECRET_TOKEN__" -o docker-compose.yml
-curl -sSL "https://__SUB_DOMAIN__/Dockerfile.client?t=__SECRET_TOKEN__" -o Dockerfile
-curl -sSL "https://__SUB_DOMAIN__/requirements.txt?t=__SECRET_TOKEN__" -o requirements.txt
-curl -sSL "https://__SUB_DOMAIN__/entrypoint.sh?t=__SECRET_TOKEN__" -o entrypoint.sh
-curl -sSL "https://__API_DOMAIN__/api/agent/latest?t=__SECRET_TOKEN__" -o node_agent.py
+# generic 404, so the endpoints stay invisible to active probes. A failed
+# download must never kill the installer silently - report it clearly.
+curl -sSL "https://__SUB_DOMAIN__/docker-compose.yml?t=__SECRET_TOKEN__" -o docker-compose.yml || err "Failed to download docker-compose.yml (check network)"
+curl -sSL "https://__SUB_DOMAIN__/Dockerfile.client?t=__SECRET_TOKEN__" -o Dockerfile || err "Failed to download Dockerfile.client"
+curl -sSL "https://__SUB_DOMAIN__/requirements.txt?t=__SECRET_TOKEN__" -o requirements.txt || err "Failed to download requirements.txt"
+curl -sSL "https://__SUB_DOMAIN__/entrypoint.sh?t=__SECRET_TOKEN__" -o entrypoint.sh || err "Failed to download entrypoint.sh"
+curl -sSL "https://__API_DOMAIN__/api/agent/latest?t=__SECRET_TOKEN__" -o node_agent.py || err "Failed to download node_agent.py"
 # Download and extract the modular agent package (agent_src/*.py).
-curl -sSL "https://__API_DOMAIN__/api/agent/latest.zip?t=__SECRET_TOKEN__" -o agent_src.zip
+curl -sSL "https://__API_DOMAIN__/api/agent/latest.zip?t=__SECRET_TOKEN__" -o agent_src.zip || err "Failed to download agent package (agent_src.zip)"
 if command -v unzip >/dev/null 2>&1; then
     unzip -o agent_src.zip -d . >/dev/null 2>&1 || true
 else
@@ -391,7 +409,7 @@ SINGEOF
 # Download fleet-cli utility
 echo ""
 say "$T_DL_CLI"
-curl -sSL "https://__JOIN_DOMAIN__/fleet-cli?t=__SECRET_TOKEN__" -o fleet-cli.sh
+curl -sSL "https://__JOIN_DOMAIN__/fleet-cli?t=__SECRET_TOKEN__" -o fleet-cli.sh || err "Failed to download fleet-cli.sh"
 chmod +x fleet-cli.sh
 
 # Create a global "malaxis-fleet" command so the CLI works from any directory
@@ -421,7 +439,7 @@ say "$(t_state_written)"
 # ------------------------------------------------------------
 echo ""
 say "$T_BUILD"
-$COMPOSE_CMD up -d --build
+$COMPOSE_CMD up -d --build || err "Docker Compose up failed - review the output above and re-run this script"
 
 # Create singbox-node container so the agent can manage it later via docker start/stop
 echo ""
