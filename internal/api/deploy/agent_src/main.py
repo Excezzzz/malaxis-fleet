@@ -494,9 +494,9 @@ def _terminate() -> None:
             json.dump({"terminated": True}, f)
     except Exception:
         pass
-    # The agent image only ships docker-cli (no compose plugin), so perform the
-    # equivalent of `docker compose down -v` with plain docker commands: remove
-    # the engine containers and the agent container itself (self-destruct).
+    # Tear down the engine containers and the agent container itself with
+    # plain docker commands so self-destruct works even if the compose tooling
+    # (v2 plugin / v1 standalone) is absent or misconfigured.
     try:
         os.system("docker stop xray-node singbox-node 2>/dev/null")
         os.system("docker rm -f xray-node singbox-node 2>/dev/null")

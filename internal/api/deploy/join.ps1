@@ -21,6 +21,16 @@ function Write-Utf8([string]$Path, [string]$Content) {
     [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+# Invoke-Compose runs the user-selected compose command ("docker compose" v2
+# plugin or "docker-compose" v1 standalone) with the given arguments.
+function Invoke-Compose([string[]]$ComposeArgs) {
+    if ($script:composeCmd -eq "docker-compose") {
+        & docker-compose @ComposeArgs
+    } else {
+        & docker compose @ComposeArgs
+    }
+}
+
 # ------------------------------------------------------------
 # 0. Language selector (first step, before any other output)
 # ------------------------------------------------------------
@@ -51,8 +61,11 @@ if ($lang -eq "en") {
     $T_DOCKER_INSTALLED     = "Docker is installed."
     $T_DOCKER_NOT_RUNNING   = "Docker is not running! Please start Docker Desktop or the Docker daemon before installing."
     $T_DOCKER_RUNNING       = "Docker daemon is running."
-    $T_COMPOSE_MISSING      = "Docker Compose plugin is not available! Enable the 'docker compose' v2 plugin in Docker Desktop, then re-run this script."
-    $T_COMPOSE_OK           = "Docker Compose plugin is available."
+    $T_COMPOSE_MISSING      = "Neither 'docker compose' nor 'docker-compose' is installed! Please install Docker Compose, then re-run this script."
+    $T_COMPOSE_OK           = "Docker Compose is available."
+    $T_COMPOSE_BOTH         = "Both Docker Compose tools detected. Select command:"
+    $T_COMPOSE_OPT_V2       = "[1] docker compose (v2 plugin - Recommended)"
+    $T_COMPOSE_OPT_V1       = "[2] docker-compose (v1 standalone)"
     $T_CHECK_MASTER         = "Checking master server connectivity (__API_DOMAIN__)..."
     $T_MASTER_OK            = "Master server is reachable."
     $T_MASTER_WARN          = "Master server did not respond. Check your network/firewall; the agent will retry automatically once started."
@@ -82,7 +95,7 @@ if ($lang -eq "en") {
     $T_DL_CLI               = "Downloading fleet-cli utility..."
     $T_STATE_WRITTEN        = "Configuration written to configs/agent_state.json (node: {0}, smart mode: {1})."
     $T_BUILD                = "Building agent image and starting services..."
-    $T_COMPOSE_FAILED       = "docker compose up failed. Check Docker Desktop settings and re-run this script."
+    $T_COMPOSE_FAILED       = "Docker Compose up failed. Check Docker Desktop settings and re-run this script."
     $T_PREP_SING            = "Preparing singbox-node container..."
     $T_DONE                 = "Malaxis Fleet Agent is running!"
     $T_QUICK                = "Quick commands:"
@@ -100,8 +113,11 @@ if ($lang -eq "en") {
     $T_DOCKER_INSTALLED     = "Docker установлен."
     $T_DOCKER_NOT_RUNNING   = "Docker не запущен! Пожалуйста, запустите Docker Desktop или службу Docker перед установкой."
     $T_DOCKER_RUNNING       = "Docker запущен."
-    $T_COMPOSE_MISSING      = "Плагин Docker Compose недоступен! Включите плагин 'docker compose' v2 в Docker Desktop, затем запустите скрипт заново."
-    $T_COMPOSE_OK           = "Плагин Docker Compose доступен."
+    $T_COMPOSE_MISSING      = "Ни одна из утилит Docker Compose не установлена! Установите Docker Compose, затем запустите скрипт заново."
+    $T_COMPOSE_OK           = "Docker Compose доступен."
+    $T_COMPOSE_BOTH         = "Обнаружены обе утилиты Docker Compose. Выберите команду:"
+    $T_COMPOSE_OPT_V2       = "[1] docker compose (v2 плагин - Рекомендуется)"
+    $T_COMPOSE_OPT_V1       = "[2] docker-compose (v1 standalone)"
     $T_CHECK_MASTER         = "Проверка связи с мастер-сервером (__API_DOMAIN__)..."
     $T_MASTER_OK            = "Мастер-сервер доступен."
     $T_MASTER_WARN          = "Мастер-сервер не ответил. Проверьте сеть/файрвол; агент автоматически повторит попытку после запуска."
@@ -131,7 +147,7 @@ if ($lang -eq "en") {
     $T_DL_CLI               = "Загрузка утилиты fleet-cli..."
     $T_STATE_WRITTEN        = "Конфигурация сохранена в configs/agent_state.json (узел: {0}, режим: {1})."
     $T_BUILD                = "Сборка образа агента и запуск сервисов..."
-    $T_COMPOSE_FAILED       = "Не удалось выполнить docker compose up. Проверьте настройки Docker Desktop и запустите скрипт заново."
+    $T_COMPOSE_FAILED       = "Не удалось выполнить Docker Compose up. Проверьте настройки Docker Desktop и запустите скрипт заново."
     $T_PREP_SING            = "Подготовка контейнера singbox-node..."
     $T_DONE                 = "Malaxis Fleet Agent запущен!"
     $T_QUICK                = "Быстрые команды:"
@@ -168,11 +184,36 @@ if ($LASTEXITCODE -ne 0) {
 }
 Say $T_DOCKER_RUNNING
 
+# Compose v2 plugin / v1 standalone detection. Both formats are supported:
+#   - only v2 installed  -> "docker compose"
+#   - only v1 installed  -> "docker-compose"
+#   - both installed     -> ask the user which one to use
+#   - neither            -> abort with a clear error
+$script:composeCmd = ""
+$haveComposeV2 = $false
+$haveComposeV1 = $false
 & docker compose version 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
+if ($LASTEXITCODE -eq 0) { $haveComposeV2 = $true }
+if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+    & docker-compose version 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) { $haveComposeV1 = $true }
+}
+
+if ($haveComposeV2 -and $haveComposeV1) {
+    Write-Host $T_COMPOSE_BOTH
+    Write-Host $T_COMPOSE_OPT_V2
+    Write-Host $T_COMPOSE_OPT_V1
+    $composeChoice = Read-Host ">"
+    if ($composeChoice -eq "2") { $script:composeCmd = "docker-compose" }
+    else { $script:composeCmd = "docker compose" }
+} elseif ($haveComposeV2) {
+    $script:composeCmd = "docker compose"
+} elseif ($haveComposeV1) {
+    $script:composeCmd = "docker-compose"
+} else {
     Fail $T_COMPOSE_MISSING
 }
-Say $T_COMPOSE_OK
+Say "$T_COMPOSE_OK ($script:composeCmd)"
 
 Say $T_CHECK_MASTER
 $reachable = Test-NetConnection -ComputerName "__API_DOMAIN__" -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue
@@ -242,7 +283,7 @@ if ($existing) {
     Say $T_REINSTALL
     if (Test-Path $installDir) {
         Push-Location $installDir
-        & docker compose down --remove-orphans 2>&1 | Out-Null
+        Invoke-Compose down --remove-orphans 2>&1 | Out-Null
         & docker rm -f node-agent xray-node singbox-node 2>&1 | Out-Null
         Pop-Location
     }
@@ -369,6 +410,7 @@ $state = @{
     sub_url     = $subUrl
     node_name   = $nodeName
     active_mode = $smartMode
+    compose_cmd = $script:composeCmd
 } | ConvertTo-Json -Compress
 Write-Utf8 (Join-Path $installDir "configs\agent_state.json") $state
 Say ($T_STATE_WRITTEN -f $nodeName, $smartMode)
@@ -379,7 +421,7 @@ Say ($T_STATE_WRITTEN -f $nodeName, $smartMode)
 Write-Host ""
 Say $T_BUILD
 Push-Location $installDir
-& docker compose up -d --build
+Invoke-Compose up -d --build
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
     Fail $T_COMPOSE_FAILED
@@ -388,7 +430,7 @@ if ($LASTEXITCODE -ne 0) {
 # Create singbox-node container so the agent can manage it later via docker start/stop
 Write-Host ""
 Say $T_PREP_SING
-docker compose create singbox-node 2>&1 | Out-Null
+Invoke-Compose create singbox-node 2>&1 | Out-Null
 Pop-Location
 
 Write-Host ""
@@ -413,7 +455,7 @@ Write-Host ("╚" + ("═" * $boxWidth) + "╝") -ForegroundColor Cyan
 Write-Host ""
 Write-Host $T_QUICK
 Write-Host "   $T_Q_LOGS    docker logs -f node-agent"
-Write-Host "   $T_Q_STOP    cd `"$installDir`"; docker compose down"
+Write-Host "   $T_Q_STOP    cd `"$installDir`"; $script:composeCmd down"
 Write-Host "   $T_Q_CLI     cd `"$installDir`"; .\fleet-cli.ps1"
 Write-Host ""
 

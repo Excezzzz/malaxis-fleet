@@ -61,8 +61,11 @@ if [ "$lang" = "en" ]; then
     T_DOCKER_INSTALLED="Docker is installed."
     T_DOCKER_NOT_RUNNING="Docker is not running! Please start Docker Desktop or the Docker daemon before installing."
     T_DOCKER_RUNNING="Docker daemon is running."
-    T_COMPOSE_MISSING="Docker Compose plugin is not available! Install the 'docker compose' v2 plugin, then re-run this script."
-    T_COMPOSE_OK="Docker Compose plugin is available."
+    T_COMPOSE_MISSING="Neither 'docker compose' nor 'docker-compose' is installed! Please install Docker Compose, then re-run this script."
+    T_COMPOSE_OK="Docker Compose is available."
+    T_COMPOSE_BOTH="Both Docker Compose tools detected. Select command:"
+    T_COMPOSE_OPT_V2="[1] docker compose (v2 plugin - Recommended)"
+    T_COMPOSE_OPT_V1="[2] docker-compose (v1 standalone)"
     T_CHECK_MASTER="Checking master server connectivity (__API_DOMAIN__)..."
     T_MASTER_OK="Master server is reachable."
     T_MASTER_WARN="Master server did not respond. Check your network/firewall; the agent will retry automatically once started."
@@ -106,8 +109,11 @@ else
     T_DOCKER_INSTALLED="Docker установлен."
     T_DOCKER_NOT_RUNNING="Docker не запущен! Пожалуйста, запустите Docker Desktop или службу Docker перед установкой."
     T_DOCKER_RUNNING="Docker запущен."
-    T_COMPOSE_MISSING="Плагин Docker Compose недоступен! Установите плагин 'docker compose' v2, затем запустите скрипт заново."
-    T_COMPOSE_OK="Плагин Docker Compose доступен."
+    T_COMPOSE_MISSING="Ни одна из утилит Docker Compose не установлена! Установите Docker Compose, затем запустите скрипт заново."
+    T_COMPOSE_OK="Docker Compose доступен."
+    T_COMPOSE_BOTH="Обнаружены обе утилиты Docker Compose. Выберите команду:"
+    T_COMPOSE_OPT_V2="[1] docker compose (v2 плагин - Рекомендуется)"
+    T_COMPOSE_OPT_V1="[2] docker-compose (v1 standalone)"
     T_CHECK_MASTER="Проверка связи с мастер-сервером (__API_DOMAIN__)..."
     T_MASTER_OK="Мастер-сервер доступен."
     T_MASTER_WARN="Мастер-сервер не ответил. Проверьте сеть/файрвол; агент автоматически повторит попытку после запуска."
@@ -190,10 +196,39 @@ if ! docker info >/dev/null 2>&1; then
 fi
 say "$T_DOCKER_RUNNING"
 
-if ! docker compose version >/dev/null 2>&1; then
+# Compose v2 plugin / v1 standalone detection. Both formats are supported:
+#   - only v2 installed  -> "docker compose"
+#   - only v1 installed  -> "docker-compose"
+#   - both installed     -> ask the user which one to use
+#   - neither            -> abort with a clear error
+HAVE_COMPOSE_V2=false
+HAVE_COMPOSE_V1=false
+if docker compose version >/dev/null 2>&1; then
+    HAVE_COMPOSE_V2=true
+fi
+if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+    HAVE_COMPOSE_V1=true
+fi
+
+COMPOSE_CMD=""
+if [ "$HAVE_COMPOSE_V2" = true ] && [ "$HAVE_COMPOSE_V1" = true ]; then
+    echo "$T_COMPOSE_BOTH"
+    echo "$T_COMPOSE_OPT_V2"
+    echo "$T_COMPOSE_OPT_V1"
+    ask "> " COMPOSE_CHOICE
+    if [ "${COMPOSE_CHOICE:-1}" = "2" ]; then
+        COMPOSE_CMD="docker-compose"
+    else
+        COMPOSE_CMD="docker compose"
+    fi
+elif [ "$HAVE_COMPOSE_V2" = true ]; then
+    COMPOSE_CMD="docker compose"
+elif [ "$HAVE_COMPOSE_V1" = true ]; then
+    COMPOSE_CMD="docker-compose"
+else
     err "$T_COMPOSE_MISSING"
 fi
-say "$T_COMPOSE_OK"
+say "${T_COMPOSE_OK} ($COMPOSE_CMD)"
 
 say "$T_CHECK_MASTER"
 if curl -fsS --max-time 8 "https://__API_DOMAIN__/api/health" >/dev/null 2>&1; then
@@ -265,7 +300,7 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
     say "$T_REINSTALL"
 
     if command -v docker &> /dev/null; then
-        (cd "$AGENT_DIR" 2>/dev/null && docker compose down --remove-orphans 2>/dev/null) || true
+        (cd "$AGENT_DIR" 2>/dev/null && $COMPOSE_CMD down --remove-orphans 2>/dev/null) || true
         docker rm -f node-agent xray-node singbox-node 2>/dev/null || true
     fi
 
@@ -375,7 +410,8 @@ json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
     echo "{"
     echo "  \"sub_url\": \"$(json_escape "$SUB_URL")\","
     echo "  \"node_name\": \"$(json_escape "$NODE_NAME")\","
-    echo "  \"active_mode\": \"$SMART_MODE\""
+    echo "  \"active_mode\": \"$SMART_MODE\","
+    echo "  \"compose_cmd\": \"$(json_escape "$COMPOSE_CMD")\""
     echo "}"
 } > configs/agent_state.json
 say "$(t_state_written)"
@@ -385,12 +421,12 @@ say "$(t_state_written)"
 # ------------------------------------------------------------
 echo ""
 say "$T_BUILD"
-docker compose up -d --build || docker-compose up -d --build
+$COMPOSE_CMD up -d --build
 
 # Create singbox-node container so the agent can manage it later via docker start/stop
 echo ""
 say "$T_PREP_SING"
-docker compose create singbox-node 2>/dev/null || true
+$COMPOSE_CMD create singbox-node 2>/dev/null || true
 
 echo ""
 echo "$T_DONE"
@@ -416,7 +452,7 @@ echo ""
 echo "$T_QUICK"
 echo "   $T_Q_STATUS  cd \"$AGENT_DIR\" && bash fleet-cli.sh"
 echo "   $T_Q_LOGS    docker logs -f node-agent"
-echo "   $T_Q_STOP    cd \"$AGENT_DIR\" && docker compose down"
+echo "   $T_Q_STOP    cd \"$AGENT_DIR\" && $COMPOSE_CMD down"
 echo ""
 
 # Auto-launch the CLI so the subscription can be configured right away

@@ -1,5 +1,7 @@
 FROM python:3.11-alpine
-RUN apk add --no-cache docker-cli
+# docker-cli + the compose v2 plugin let the agent run `docker compose` inside
+# the container (docker-compose v1 standalone was dropped from Alpine repos).
+RUN apk add --no-cache docker-cli docker-cli-compose
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

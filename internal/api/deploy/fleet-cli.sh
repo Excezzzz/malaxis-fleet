@@ -67,6 +67,25 @@ with open('$STATE_FILE', 'w') as f:
     fi
 }
 
+# Resolve the docker compose command to use: the choice saved by the installer
+# in agent_state.json wins, otherwise auto-detect (v2 plugin first, then v1
+# standalone). Falls back to the v2 plugin so callers never get an empty word.
+compose_cmd() {
+    local saved
+    saved=$(get_state "compose_cmd" "")
+    if [ "$saved" = "docker compose" ] || [ "$saved" = "docker-compose" ]; then
+        echo "$saved"
+        return
+    fi
+    if docker compose version >/dev/null 2>&1; then
+        echo "docker compose"
+    elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        echo "docker-compose"
+    else
+        echo "docker compose"
+    fi
+}
+
 cache_count() {
     if [ -f "$SUBCACHE_FILE" ]; then
         if command -v jq &>/dev/null; then
@@ -153,7 +172,7 @@ show_menu() {
         read -p "Select option [1-2]: " choice
         case "$choice" in
             1) sudo systemctl start docker 2>/dev/null || true
-               cd "$AGENT_DIR" && docker compose up -d 2>/dev/null || docker-compose up -d 2>/dev/null || true
+               cd "$AGENT_DIR" && $(compose_cmd) up -d 2>/dev/null || true
                sleep 2
                show_menu
                return
@@ -269,7 +288,7 @@ rejoin() {
     mkdir -p "$CONFIG_DIR"
     docker rm -f node-agent 2>/dev/null || true
     cd "$AGENT_DIR"
-    docker compose up -d --force-recreate node-agent 2>/dev/null || docker-compose up -d --force-recreate node-agent 2>/dev/null || true
+    $(compose_cmd) up -d --force-recreate node-agent 2>/dev/null || true
     echo "${GREEN}Re-join request sent. The agent is re-registering with a fresh identity...${NC}"
     sleep 3
     clear
@@ -335,7 +354,7 @@ update_client_files() {
         mv /tmp/agent_state_backup.json "$STATE_FILE" 2>/dev/null || true
     fi
 
-    cd "$AGENT_DIR" && docker compose up -d --force-recreate node-agent 2>/dev/null || docker-compose up -d --force-recreate node-agent 2>/dev/null || true
+    cd "$AGENT_DIR" && $(compose_cmd) up -d --force-recreate node-agent 2>/dev/null || true
 
     echo "${GREEN}Client files updated!${NC}"
     sleep 2

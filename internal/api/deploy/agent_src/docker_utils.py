@@ -35,6 +35,37 @@ def _docker_output(args: list, timeout: int = 30) -> str:
         return ""
 
 
+def _compose_available(cmd: list) -> bool:
+    """True if the given compose command actually runs (`docker compose version`
+    for the v2 plugin, `docker-compose version` for the v1 standalone binary)."""
+    try:
+        r = subprocess.run(cmd + ["version"], capture_output=True, timeout=15)
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def _compose_cmd() -> list:
+    """Resolve the docker compose command as a tokenized argv list.
+
+    Prefers the command the installer saved in agent_state.json ("compose_cmd"
+    is either "docker compose" or "docker-compose"), validates it, then falls
+    back to auto-detection (v2 plugin first, then v1 standalone), finally
+    defaulting to the v2 plugin so callers always get a usable command.
+    """
+    state = agent.load_state()
+    saved = state.get("compose_cmd", "")
+    if isinstance(saved, str) and saved.strip():
+        parts = saved.strip().split()
+        if _compose_available(parts):
+            return parts
+    if _compose_available(["docker", "compose"]):
+        return ["docker", "compose"]
+    if _compose_available(["docker-compose"]):
+        return ["docker-compose"]
+    return ["docker", "compose"]
+
+
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _ANSI_OSC_RE = re.compile(r"\x1b\][^\x07]*(?:\x07|\x1b\\)")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
@@ -106,9 +137,13 @@ def _resolve_container_id(name: str) -> str:
             cids = [c for c in out.splitlines() if c]
             if cids:
                 return cids[0]
-    # Fall back to `docker compose ps -q <service>` for compose v2.
+    # Fall back to the chosen compose command (v2 plugin or v1 standalone) for
+    # `ps -q <service>`, honoring the compose_cmd saved by the installer.
     try:
-        out = _docker_output(["compose", "ps", "-q", name], timeout=10)
+        r = subprocess.run(
+            _compose_cmd() + ["ps", "-q", name], capture_output=True, timeout=10
+        )
+        out = r.stdout.decode(errors="replace").strip()
         if out:
             return out.split()[0]
     except Exception:

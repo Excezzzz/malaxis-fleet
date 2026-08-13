@@ -44,6 +44,39 @@ function Set-State([string]$Key, [string]$Value) {
     Write-Utf8 $STATE_FILE ($h | ConvertTo-Json -Compress)
 }
 
+# Resolve the docker compose command to use: the choice saved by the installer
+# in agent_state.json wins, otherwise auto-detect (v2 plugin first, then v1
+# standalone). Falls back to the v2 plugin.
+$script:composeCmd = $null
+function Get-ComposeCmd {
+    if ($null -eq $script:composeCmd) {
+        $saved = Get-State "compose_cmd" ""
+        if ($saved -eq "docker compose" -or $saved -eq "docker-compose") {
+            $script:composeCmd = $saved
+        } else {
+            & docker compose version 2>$null | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $script:composeCmd = "docker compose"
+            } elseif (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+                $script:composeCmd = "docker-compose"
+            } else {
+                $script:composeCmd = "docker compose"
+            }
+        }
+    }
+    return $script:composeCmd
+}
+
+# Invoke-Compose runs the resolved compose command ("docker compose" v2 plugin
+# or "docker-compose" v1 standalone) with the given arguments.
+function Invoke-Compose([string[]]$ComposeArgs) {
+    if ((Get-ComposeCmd) -eq "docker-compose") {
+        & docker-compose @ComposeArgs
+    } else {
+        & docker compose @ComposeArgs
+    }
+}
+
 function Cache-Count {
     if (Test-Path -LiteralPath $SUBCACHE_FILE) {
         try { return @(Get-Content -LiteralPath $SUBCACHE_FILE -Raw | ConvertFrom-Json).Count } catch { }
@@ -120,8 +153,7 @@ function Show-Menu {
                 try { Start-Process "Docker Desktop" -ErrorAction SilentlyContinue } catch { }
                 Start-Sleep 5
                 Push-Location $AGENT_DIR
-                & docker compose up -d 2>$null | Out-Null
-                if ($LASTEXITCODE -ne 0) { & docker-compose up -d 2>$null | Out-Null }
+                Invoke-Compose up -d 2>$null | Out-Null
                 Pop-Location
                 Start-Sleep 2
                 Show-Menu
@@ -210,8 +242,7 @@ function Rejoin {
     New-Item -ItemType Directory -Force -Path $CONFIG_DIR | Out-Null
     & docker rm -f node-agent 2>$null | Out-Null
     Push-Location $AGENT_DIR
-    & docker compose up -d --force-recreate node-agent 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { & docker-compose up -d --force-recreate node-agent 2>$null | Out-Null }
+    Invoke-Compose up -d --force-recreate node-agent 2>$null | Out-Null
     Pop-Location
     Write-Host "Re-join request sent. The agent is re-registering with a fresh identity..." -ForegroundColor Green
     Start-Sleep 3
@@ -276,8 +307,7 @@ function Update-ClientFiles {
     }
 
     Push-Location $AGENT_DIR
-    & docker compose up -d --force-recreate node-agent 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { & docker-compose up -d --force-recreate node-agent 2>$null | Out-Null }
+    Invoke-Compose up -d --force-recreate node-agent 2>$null | Out-Null
     Pop-Location
 
     Write-Host "Client files updated!" -ForegroundColor Green
