@@ -38,9 +38,11 @@ safe_read() {
     local var_name="$3"
     local result=""
     # Open the tty on fd4 first: if there is no controlling terminal the open
-    # itself fails and the error is fully silenced by the fd redirect, so no
-    # "/dev/tty: No such device or address" noise reaches the user.
-    if exec 4</dev/tty 2>/dev/null; then
+    # fails (ENXIO) and the error is silenced. NOTE: the `{ exec; } 2>/dev/null`
+    # group is required - a bare `exec 4</dev/tty 2>/dev/null` still leaks the
+    # shell's redirection error, because bash processes redirections left to
+    # right and aborts on the FIRST failure before applying `2>/dev/null`.
+    if { exec 4</dev/tty; } 2>/dev/null; then
         read -t 15 -r -p "$prompt" result <&4 2>/dev/null || result=""
         exec 4<&- 2>/dev/null || true
     fi
@@ -333,10 +335,17 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
     if [ -d "$AGENT_DIR/configs" ]; then
         say "$T_PRESERVE"
         mkdir -p /tmp/fleet-config-backup 2>/dev/null || true
-        cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null || true
+        # configs/ is usually root-owned (the agent container runs as root and
+        # writes agent_state.json), so a plain cp fails - retry via sudo.
+        if ! cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null; then
+            sudo -n cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null || true
+        fi
     fi
 
-    rm -rf "$AGENT_DIR"
+    # Same ownership story: rm -rf as the current user fails on root-owned
+    # files (configs/, __pycache__), which under `set -e` used to abort the
+    # reinstall. Retry via sudo (passwordless on Armbian/Ubuntu-server).
+    rm -rf "$AGENT_DIR" 2>/dev/null || sudo -n rm -rf "$AGENT_DIR" 2>/dev/null || err "Cannot remove the old install at $AGENT_DIR (root-owned files). Run manually: sudo rm -rf $AGENT_DIR"
     say "$T_OLD_CLEANED"
 fi
 
