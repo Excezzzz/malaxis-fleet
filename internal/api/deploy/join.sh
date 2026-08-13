@@ -37,8 +37,12 @@ safe_read() {
     local default_val="$2"
     local var_name="$3"
     local result=""
-    if [ -c /dev/tty ] && [ -r /dev/tty ]; then
-        read -t 15 -r -p "$prompt" result </dev/tty 2>/dev/null || result=""
+    # Open the tty on fd4 first: if there is no controlling terminal the open
+    # itself fails and the error is fully silenced by the fd redirect, so no
+    # "/dev/tty: No such device or address" noise reaches the user.
+    if exec 4</dev/tty 2>/dev/null; then
+        read -t 15 -r -p "$prompt" result <&4 2>/dev/null || result=""
+        exec 4<&- 2>/dev/null || true
     fi
     if [ -z "$result" ]; then
         result="$default_val"
@@ -439,12 +443,26 @@ json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 } > configs/agent_state.json
 say "$(t_state_written)"
 
+# compose_up brings the whole stack up. docker-compose v1 (standalone) fails on
+# FIRST creation with "Service 'singbox-node' uses the network stack of
+# container 'xray-node' which does not exist": singbox-node shares xray-node's
+# network namespace (network_mode: container:) and v1 requires the target to
+# already exist at create time. When the first attempt fails, create xray-node
+# on its own and retry the full stack - harmless for compose v2 as well.
+compose_up() {
+    if ! $COMPOSE_CMD up -d --build; then
+        warn "docker-compose v1 ordering detected - creating xray-node first and retrying..."
+        $COMPOSE_CMD up -d --build xray-node 2>/dev/null || true
+        $COMPOSE_CMD up -d --build || err "Docker Compose up failed - review the output above and re-run this script"
+    fi
+}
+
 # ------------------------------------------------------------
 # 7. Build & start
 # ------------------------------------------------------------
 echo ""
 say "$T_BUILD"
-$COMPOSE_CMD up -d --build || err "Docker Compose up failed - review the output above and re-run this script"
+compose_up
 
 # Create singbox-node container so the agent can manage it later via docker start/stop
 echo ""
@@ -485,6 +503,8 @@ if [ -t 0 ]; then
     bash fleet-cli.sh || true
 else
     # stdin is piped (curl ... | bash): re-attach the CLI to the controlling
-    # terminal; skip silently when there is none (fully automated runs).
-    bash fleet-cli.sh </dev/tty 2>/dev/null || true
+    # terminal; skip silently when there is none (fully automated runs). The
+    # subshell + stderr redirect also swallows the shell's own
+    # "/dev/tty: No such device or address" open-failure message.
+    ( bash fleet-cli.sh </dev/tty 2>/dev/null ) 2>/dev/null || true
 fi
