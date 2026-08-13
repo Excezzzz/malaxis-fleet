@@ -345,7 +345,7 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
     # container to purge the directory, then retry the plain rm.
     if ! rm -rf "$AGENT_DIR" 2>/dev/null; then
         warn "Old install contains root-owned files - cleaning via docker..."
-        agent_img="$($COMPOSE_CMD config 2>/dev/null | awk -F': ' '/^  node-agent:/{f=1} f&&/^    image:/{print $2; exit}')"
+        agent_img="$(cd "$AGENT_DIR" 2>/dev/null && $COMPOSE_CMD config 2>/dev/null | awk -F': ' '/^  node-agent:/{f=1} f&&/^    image:/{print $2; exit}')" || true
         agent_img="${agent_img:-malaxis-fleet-client_node-agent}"
         if docker run --rm -v "$AGENT_DIR":/app --entrypoint /bin/sh "$agent_img" -c 'rm -rf /app/* /app/.[!.]*; exit 0' 2>/dev/null && rm -rf "$AGENT_DIR" 2>/dev/null; then
             say "$T_OLD_CLEANED"
