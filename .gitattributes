@@ -1,0 +1,4 @@
+# Force Unix LF line endings for shell scripts so they never break on Linux
+# clients, regardless of the editor/OS they were last saved on.
+*.sh text eol=lf
+*.bash text eol=lf

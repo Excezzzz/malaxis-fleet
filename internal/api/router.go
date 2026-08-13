@@ -341,6 +341,9 @@ func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc
 			return
 		}
 		fileBytes = stripUTF8BOM(fileBytes)
+		if isShellScript(path) {
+			fileBytes = stripCRLF(fileBytes)
+		}
 		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 		w.Write([]byte(a.applyDomainPlaceholders(string(fileBytes))))
 	}

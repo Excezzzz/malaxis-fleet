@@ -31,6 +31,22 @@ func stripUTF8BOM(b []byte) []byte {
 	return b
 }
 
+// stripCRLF removes every carriage-return byte from a payload. Shell scripts
+// edited on Windows are saved with CRLF line endings, which makes Bash on
+// Linux clients misparse lines such as `set -o pipefail\r` (": invalid option
+// namepipefail", "curl: (23) Failed writing body"). The master server always
+// serves .sh/.bash files with clean Unix LF endings no matter how the
+// developer saved them.
+func stripCRLF(b []byte) []byte {
+	return bytes.ReplaceAll(b, []byte("\r"), []byte(""))
+}
+
+// isShellScript reports whether a served file name is a POSIX shell script
+// that must be served with Unix LF line endings.
+func isShellScript(filename string) bool {
+	return strings.HasSuffix(filename, ".sh") || strings.HasSuffix(filename, ".bash")
+}
+
 // HealthHandler answers with a deliberately generic probe-friendly response.
 // No application identity, database status, or bot state is disclosed.
 func (a *API) HealthHandler(w http.ResponseWriter, r *http.Request) {
@@ -347,6 +363,9 @@ func (a *API) serveTemplateFile(name, contentType string) http.HandlerFunc {
 			return
 		}
 		contentBytes := stripUTF8BOM([]byte(content))
+		if isShellScript(name) {
+			contentBytes = stripCRLF(contentBytes)
+		}
 		w.Header().Set("Content-Type", contentType+"; charset=utf-8")
 		w.Write([]byte(a.applyDomainPlaceholders(string(contentBytes))))
 	}
