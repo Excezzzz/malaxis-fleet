@@ -198,10 +198,10 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                     "mode": "auto",
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        # 32 parallel substreams per connection with long-lived
-                        # reuse keeps Telegram media chunks flowing concurrently.
-                        "maxConcurrency": 32,
-                        "maxConnections": 8,
+                        # long-lived reuse keeps Telegram media chunks flowing
+                        # concurrently (maxConcurrency removed: conflicts with
+                        # maxConnections in Xray 26.3.27, crashes on startup).
+                        "maxConnections": 4,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
@@ -691,10 +691,10 @@ def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, d
                     "mode": params.get("mode", "auto"),
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        # 32 parallel substreams per connection with long-lived
-                        # reuse keeps Telegram media chunks flowing concurrently.
-                        "maxConcurrency": 32,
-                        "maxConnections": 8,
+                        # long-lived reuse keeps Telegram media chunks flowing
+                        # concurrently (maxConcurrency removed: conflicts with
+                        # maxConnections in Xray 26.3.27, crashes on startup).
+                        "maxConnections": 4,
                         "hMaxRequestTimes": "800-900",
                         "hMaxReusableSecs": "1000-2000",
                     },
