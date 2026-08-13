@@ -335,18 +335,26 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
     if [ -d "$AGENT_DIR/configs" ]; then
         say "$T_PRESERVE"
         mkdir -p /tmp/fleet-config-backup 2>/dev/null || true
-        # configs/ is usually root-owned (the agent container runs as root and
-        # writes agent_state.json), so a plain cp fails - retry via sudo.
-        if ! cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null; then
-            sudo -n cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null || true
-        fi
+        cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null || true
     fi
 
-    # Same ownership story: rm -rf as the current user fails on root-owned
-    # files (configs/, __pycache__), which under `set -e` used to abort the
-    # reinstall. Retry via sudo (passwordless on Armbian/Ubuntu-server).
-    rm -rf "$AGENT_DIR" 2>/dev/null || sudo -n rm -rf "$AGENT_DIR" 2>/dev/null || err "Cannot remove the old install at $AGENT_DIR (root-owned files). Run manually: sudo rm -rf $AGENT_DIR"
-    say "$T_OLD_CLEANED"
+    # The agent container runs as root, so configs/ and __pycache__ are
+    # root-owned and a plain rm -rf fails (and under `set -e` used to abort the
+    # reinstall). No sudo password is available on most hosts: instead reuse
+    # the previously built node-agent image (also root) via a throwaway
+    # container to purge the directory, then retry the plain rm.
+    if ! rm -rf "$AGENT_DIR" 2>/dev/null; then
+        warn "Old install contains root-owned files - cleaning via docker..."
+        agent_img="$($COMPOSE_CMD config 2>/dev/null | awk -F': ' '/^  node-agent:/{f=1} f&&/^    image:/{print $2; exit}')"
+        agent_img="${agent_img:-malaxis-fleet-client_node-agent}"
+        if docker run --rm -v "$AGENT_DIR":/app --entrypoint /bin/sh "$agent_img" -c 'rm -rf /app/* /app/.[!.]*; exit 0' 2>/dev/null && rm -rf "$AGENT_DIR" 2>/dev/null; then
+            say "$T_OLD_CLEANED"
+        else
+            err "Cannot remove the old install at $AGENT_DIR (root-owned files). Remove it manually: sudo rm -rf $AGENT_DIR"
+        fi
+    else
+        say "$T_OLD_CLEANED"
+    fi
 fi
 
 mkdir -p "$AGENT_DIR/configs" 2>/dev/null || err "Failed to create $AGENT_DIR/configs"
