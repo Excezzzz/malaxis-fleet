@@ -17,31 +17,36 @@ say()  { printf "${GREEN}[+]${NC} %s\n" "$*"; }
 warn() { printf "${YELLOW}[!]${NC} %s\n" "$*"; }
 err()  { printf "${RED}[x]${NC} %s\n" "$*"; exit 1; }
 
-# Interactive reads: this script is normally piped via `curl | bash`, so
-# stdin carries the script itself rather than terminal input. Every prompt
-# therefore reads from /dev/tty. When no TTY is available (e.g. headless
-# provisioning), prompts silently fall back to their defaults.
-if ! exec 3</dev/tty 2>/dev/null; then
-    exec 3</dev/null 2>/dev/null || true
-fi
-
 # Never die silently: under `set -e` ANY command returning non-zero (e.g. a
 # `read` hitting EOF without a TTY, or a failed mkdir) aborts the script. The
 # ERR trap reports the exact failing line so the user always knows why the
 # installer stopped instead of just dropping back to the shell prompt.
 trap 'echo "[x] Installer encountered an error at line $LINENO. Continuing safely..."' ERR
 
-# Safe interactive prompt: a failed/EOF `read` must NEVER kill the installer.
-# On failure the target variable is force-set to "" (validated name) so the
-# `${VAR:-default}` fallbacks at every call site always see a defined value,
-# and the error is fully swallowed (no ERR trap spam for expected EOF).
-ask() {
-    if ! read -r -p "$1" "$2" <&3 2>/dev/null; then
-        case "$2" in
-            *[!A-Za-z0-9_]*) : ;;
-            *) eval "$2=\"\"" ;;
-        esac
+# Safe interactive prompt that can NEVER hang the installer. This script is
+# normally piped via `curl | bash`, so stdin carries the script itself rather
+# than terminal input. The controlling terminal /dev/tty may be missing,
+# non-interactive or blocked by the execution environment - in EVERY such case
+# a plain `read </dev/tty` blocks on the read syscall FOREVER. safe_read
+# therefore:
+#   1. verifies /dev/tty is a usable character device,
+#   2. times out after 15 seconds (`-t 15`),
+#   3. falls back to the given default on timeout / EOF / failure.
+safe_read() {
+    local prompt="$1"
+    local default_val="$2"
+    local var_name="$3"
+    local result=""
+    if [ -c /dev/tty ] && [ -r /dev/tty ]; then
+        read -t 15 -r -p "$prompt" result </dev/tty 2>/dev/null || result=""
     fi
+    if [ -z "$result" ]; then
+        result="$default_val"
+    fi
+    case "$var_name" in
+        *[!A-Za-z0-9_]*) : ;;
+        *) eval "$var_name=\"$result\"" ;;
+    esac
 }
 
 # ------------------------------------------------------------
@@ -51,7 +56,7 @@ echo ""
 echo "Select installer language / Выберите язык установки:"
 echo "  [1] Русский (По умолчанию / Default)"
 echo "  [2] English"
-ask "> " LANG_CHOICE
+safe_read "> " "1" LANG_CHOICE
 LANG_CHOICE=${LANG_CHOICE:-1}
 
 if [ "$LANG_CHOICE" = "2" ] || [ "$LANG_CHOICE" = "en" ] || [ "$LANG_CHOICE" = "EN" ]; then
@@ -232,7 +237,7 @@ if [ "$HAVE_COMPOSE_V2" = true ] && [ "$HAVE_COMPOSE_V1" = true ]; then
     echo "$T_COMPOSE_BOTH"
     echo "$T_COMPOSE_OPT_V2"
     echo "$T_COMPOSE_OPT_V1"
-    ask "> " COMPOSE_CHOICE
+    safe_read "> " "1" COMPOSE_CHOICE
     if [ "${COMPOSE_CHOICE:-1}" = "2" ]; then
         COMPOSE_CMD="docker-compose"
     else
@@ -263,7 +268,7 @@ echo "$T_DIR_1"
 echo "$T_DIR_2"
 echo "$T_DIR_3"
 echo "$T_DIR_4"
-ask "$(t_dir_prompt)" DIR_CHOICE
+safe_read "$(t_dir_prompt)" "$DEFAULT_CHOICE" DIR_CHOICE
 DIR_CHOICE=${DIR_CHOICE:-$DEFAULT_CHOICE}
 
 BASE_DIR=""
@@ -272,7 +277,7 @@ case "$DIR_CHOICE" in
     2) BASE_DIR="$HOME/Desktop" ;;
     3) BASE_DIR="$HOME" ;;
     4)
-        ask "$T_CUSTOM_PATH" CUSTOM_DIR
+        safe_read "$T_CUSTOM_PATH" "" CUSTOM_DIR
         CUSTOM_DIR=${CUSTOM_DIR/#\~/$HOME}
         if [ -z "$CUSTOM_DIR" ]; then
             err "$T_PATH_EMPTY"
@@ -291,10 +296,10 @@ say "${T_INSTALL_DIR}$AGENT_DIR"
 # ------------------------------------------------------------
 # 3. Interactive setup (onboarding prompts)
 # ------------------------------------------------------------
-ask "$(t_node_prompt)" NODE_NAME
+safe_read "$(t_node_prompt)" "$HOSTNAME_CURRENT" NODE_NAME
 NODE_NAME=${NODE_NAME:-$HOSTNAME_CURRENT}
 
-ask "$T_SUB_PROMPT" SUB_URL
+safe_read "$T_SUB_PROMPT" "" SUB_URL
 SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
 
 echo ""
@@ -302,7 +307,7 @@ echo "$T_MODE_TITLE"
 echo "$T_MODE_1"
 echo "$T_MODE_2"
 echo "$T_MODE_3"
-ask "$T_MODE_PROMPT" MODE_CHOICE
+safe_read "$T_MODE_PROMPT" "1" MODE_CHOICE
 case "${MODE_CHOICE:-1}" in
     2) SMART_MODE="fastest" ;;
     3) SMART_MODE="manual" ;;
