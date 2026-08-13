@@ -273,8 +273,7 @@ function Update-Subscription {
 
     Set-State "sub_url" $sub_url
     Write-Host "Subscription URL saved. Fetching subscription now..." -ForegroundColor Green
-    & docker exec node-agent python3 -c "import node_agent; exit(node_agent.fetch_subscription_now('$sub_url'))" 2>$null | Out-Null
-    & docker exec node-agent python3 -c "import node_agent; node_agent.report()" 2>$null | Out-Null
+    & docker exec node-agent python3 -c "import agent_src.main; agent_src.main.update_subscription_cli('$sub_url')" 2>$null | Out-Null
     Write-Host "Subscription URL synced to the web dashboard." -ForegroundColor Green
     Start-Sleep 2
 
@@ -461,6 +460,15 @@ if (-not (Test-Path -LiteralPath $DOCKER_COMPOSE_FILE)) {
     Write-Host "Please run the installation script first:"
     Write-Host "  irm https://__JOIN_DOMAIN__/join.ps1?t=__SECRET_TOKEN__ | iex"
     exit 1
+}
+
+# The CLI is interactive: when stdin is redirected (piped/cron/CI) Read-Host
+# gets no real console input, so report it and exit instead of silently
+# swallowing every prompt.
+if ([Console]::IsInputRedirected) {
+    Write-Host "No interactive terminal detected. Run the CLI from a real terminal:" -ForegroundColor Yellow
+    Write-Host "  .\fleet-cli.ps1"
+    exit 0
 }
 
 Show-Menu

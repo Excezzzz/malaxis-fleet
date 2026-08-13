@@ -574,6 +574,18 @@ func (b *Bot) handleSwitch(chatID int64, messageID int, nodeID, target string) {
 	b.showNodeDetail(chatID, messageID, nodeID, "🛡️ "+b.tr("Переключение на", "Switch to")+" <b>"+target+"</b> "+b.tr("поставлено в очередь", "queued"))
 }
 
+// backToNodesMarkup is the standard "🔙 Back to Nodes List" footer row, used
+// after a node was deleted/rejected so the admin returns to the node list
+// (the deleted node can no longer render its detail view).
+func (b *Bot) backToNodesMarkup() *tgbotapi.InlineKeyboardMarkup {
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔙", "К списку узлов", "Back to Nodes List"), "nodes:list"),
+		),
+	)
+	return &markup
+}
+
 // handleRejectNode is the onboarding "Reject & Delete" action. Instead of only
 // dropping the DB row, it queues a full TERMINATE command so the unwanted
 // client actually stops its Docker containers and destroys its local config on
@@ -597,7 +609,7 @@ func (b *Bot) handleRejectNode(chatID int64, messageID int, nodeID string) {
 	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Rejected node "+name+": queued terminate (self-destruct) command (via Telegram bot)")
 	b.editMessage(chatID, messageID,
 		"❌ "+b.tr("Устройство отклонено. Команда завершения отправлена. Клиент остановит и удалит свои контейнеры.", "Device rejected. Termination command sent. The client will stop and remove its containers."),
-		b.cancelMarkup())
+		b.backToNodesMarkup())
 }
 
 // handleSoftDelete is the node-menu "Soft Delete" action: it removes the DB
@@ -612,7 +624,7 @@ func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, nodeID, "Rejected and deleted node "+name+" (via Telegram bot)")
 	b.editMessage(chatID, messageID,
 		fmt.Sprintf("❌ %s <b>%s</b> %s", b.tr("Узел", "Node"), name, b.tr("отклонён и удалён.", "rejected and deleted.")),
-		b.cancelMarkup())
+		b.backToNodesMarkup())
 }
 
 // handleRefreshAllSubs mirrors the web UI "Refresh All Subscriptions" action:

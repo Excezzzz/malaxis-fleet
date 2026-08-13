@@ -79,6 +79,8 @@ if ($lang -eq "en") {
     $T_PATH_EMPTY           = "Custom path cannot be empty."
     $T_INSTALL_DIR          = "Installation directory: "
     $T_NODE_PROMPT          = "Enter a friendly name for this device [Default: $hostName]"
+    $T_NAME_RETRY           = "Device name cannot be empty - please enter a name: "
+    $T_NAME_DEFAULT         = "Using default device name: "
     $T_SUB_PROMPT           = "Enter your 3x-ui Subscription URL (Press Enter to skip)"
     $T_MODE_TITLE           = "Select default Smart Routing Mode:"
     $T_MODE_1               = "[1] Balanced - Best stability & lowest jitter (Recommended)"
@@ -131,6 +133,8 @@ if ($lang -eq "en") {
     $T_PATH_EMPTY           = "Путь не может быть пустым."
     $T_INSTALL_DIR          = "Папка установки: "
     $T_NODE_PROMPT          = "Введите имя устройства [По умолчанию: $hostName]"
+    $T_NAME_RETRY           = "Имя устройства не может быть пустым - введите имя: "
+    $T_NAME_DEFAULT         = "Использую имя устройства по умолчанию: "
     $T_SUB_PROMPT           = "Введите ссылку подписки 3x-ui (Enter — пропустить)"
     $T_MODE_TITLE           = "Режим балансировки по умолчанию:"
     $T_MODE_1               = "[1] Балансировка — лучшая стабильность и минимальный джиттер (Рекомендуется)"
@@ -252,8 +256,20 @@ Say "$T_INSTALL_DIR$installDir"
 # ------------------------------------------------------------
 # 3. Interactive setup (onboarding prompts)
 # ------------------------------------------------------------
+# Device name: asked on EVERY install and never silently discarded - an empty
+# answer (accidental Enter) triggers a second prompt while a console is
+# available; only a fully non-interactive run falls back to the hostname.
 $nodeName = Read-Host $T_NODE_PROMPT
-if ([string]::IsNullOrWhiteSpace($nodeName)) { $nodeName = $hostName }
+if ([string]::IsNullOrWhiteSpace($nodeName)) {
+    if (-not [Console]::IsInputRedirected) {
+        Warn $T_NAME_RETRY
+        $nodeName = Read-Host $T_NODE_PROMPT
+    }
+}
+if ([string]::IsNullOrWhiteSpace($nodeName)) {
+    $nodeName = $hostName
+    Say "$T_NAME_DEFAULT$hostName"
+}
 
 $subUrl = Read-Host $T_SUB_PROMPT
 $subUrl = $subUrl.Trim()

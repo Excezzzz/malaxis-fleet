@@ -108,6 +108,22 @@ cache_get() {
     fi
 }
 
+# Safe interactive read: opens the controlling terminal on fd4 explicitly.
+# A plain `read` reads STDIN, which may be EOF/piped (the CLI is often invoked
+# through the installer or a wrapper) - under `set -e` that EOF used to kill
+# the CLI right in the middle of Option 1. Reading from /dev/tty always reaches
+# the real terminal and the timeout keeps the CLI from hanging.
+cli_read() {
+    local var="$1"
+    shift
+    local result=""
+    if { exec 4</dev/tty; } 2>/dev/null; then
+        read -t 30 -r "$@" result <&4 2>/dev/null || result=""
+        exec 4<&- 2>/dev/null || true
+    fi
+    printf -v "$var" '%s' "$result"
+}
+
 # Detect a terminated / rejected node: an explicit marker written by the agent
 # during self-destruct, or the agent container being gone entirely while Docker
 # is up (Docker being down just means the regular "Start Docker" menu applies).
@@ -138,7 +154,7 @@ show_menu() {
         echo " 1) Send Re-join Request"
         echo " 2) Exit"
         echo ""
-        read -p "Select option [1-2]: " choice
+        cli_read choice -p "Select option [1-2]: "
         case "$choice" in
             1) rejoin ;;
             2) clear; exit 0 ;;
@@ -154,7 +170,7 @@ show_menu() {
         echo " 1) Set Subscription URL"
         echo " 2) Exit"
         echo ""
-        read -p "Select option [1-2]: " choice
+        cli_read choice -p "Select option [1-2]: "
         case "$choice" in
             1) update_subscription ;;
             2) clear; exit 0 ;;
@@ -169,7 +185,7 @@ show_menu() {
         echo "1) Start Docker & Agent"
         echo "2) Exit"
         echo ""
-        read -p "Select option [1-2]: " choice
+        cli_read choice -p "Select option [1-2]: "
         case "$choice" in
             1) sudo systemctl start docker 2>/dev/null || true
                cd "$AGENT_DIR" && $(compose_cmd) up -d 2>/dev/null || true
@@ -257,7 +273,7 @@ show_menu() {
     echo " 8) Exit"
     echo "------------------------------------------"
     echo ""
-    read -p "Select option [1-8]: " choice
+    cli_read choice -p "Select option [1-8]: "
 
     case "$choice" in
         1) update_subscription ;;
@@ -278,7 +294,7 @@ rejoin() {
     echo "${YELLOW}WARNING:${NC} This wipes the local identity and re-registers this"
     echo "device with the fleet as a brand-new node. This cannot be undone."
     echo ""
-    read -p "Continue? [y/N]: " confirm
+    cli_read confirm -p "Continue? [y/N]: "
     case "$confirm" in
         y|Y) ;;
         *) echo "${YELLOW}Cancelled.${NC}"; sleep 2; show_menu; return ;;
@@ -303,27 +319,26 @@ update_subscription() {
     current_url=$(get_state "sub_url" "")
     if [ -n "$current_url" ] && [ "$current_url" != "null" ]; then
         echo "Current URL: ${current_url}"
-        read -p "Enter new subscription URL (or press Enter to keep current): " sub_url
-        sub_url=$(echo "$sub_url" | tr -d '[:space:]')
-        if [ -z "$sub_url" ]; then
-            sub_url="$current_url"
+        cli_read SUB_URL -p "Enter new subscription URL (or press Enter to keep current): "
+        SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
+        if [ -z "$SUB_URL" ]; then
+            SUB_URL="$current_url"
         fi
     else
-        read -p "Enter your 3x-ui subscription URL: " sub_url
-        sub_url=$(echo "$sub_url" | tr -d '[:space:]')
+        cli_read SUB_URL -p "Enter 3x-ui Subscription URL: "
+        SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
     fi
 
-    if [ -z "$sub_url" ]; then
+    if [ -z "$SUB_URL" ]; then
         echo "${YELLOW}No URL entered. Cancelled.${NC}"
         sleep 2
         show_menu
         return
     fi
 
-    set_state "sub_url" "$sub_url"
+    set_state "sub_url" "$SUB_URL"
     echo "${GREEN}Subscription URL saved.${NC} Fetching subscription now..."
-    docker exec node-agent python3 -c "import node_agent; exit(node_agent.fetch_subscription_now('$sub_url'))" 2>/dev/null || true
-    docker exec node-agent python3 -c "import node_agent; node_agent.report()" 2>/dev/null || true
+    docker exec node-agent python3 -c "import agent_src.main; agent_src.main.update_subscription_cli('$SUB_URL')" 2>/dev/null || true
     echo "${GREEN}Subscription URL synced to the web dashboard.${NC}"
     sleep 2
 
@@ -368,7 +383,7 @@ rename_node() {
     local current_name
     current_name=$(get_state "node_name" "$(hostname 2>/dev/null || echo 'this node')")
     echo "Current name: ${current_name}"
-    read -p "Enter new name for this node: " new_name
+    cli_read new_name -p "Enter new name for this node: "
     new_name=$(echo "$new_name" | tr -d '[:space:]')
     if [ -z "$new_name" ]; then
         echo "${YELLOW}No name entered. Cancelled.${NC}"
@@ -390,7 +405,7 @@ terminate_node() {
     echo "${RED}WARNING:${NC} This will tear down the VPN containers, wipe this node's local"
     echo "configuration, and remove the agent. This cannot be undone."
     echo ""
-    read -p "Type TERMINATE to confirm, or anything else to cancel: " confirm_word
+    cli_read confirm_word -p "Type TERMINATE to confirm, or anything else to cancel: "
     if [ "$confirm_word" != "TERMINATE" ]; then
         echo "${YELLOW}Cancelled.${NC}"
         sleep 2
@@ -437,7 +452,7 @@ print(len(servers))
     echo "  B) Balanced  (Auto-select highest stability & lowest jitter)"
     echo "  0) Cancel"
     echo ""
-    read -p "Select [F/B/1-$server_count] or 0 to Cancel: " choice
+    cli_read choice -p "Select [F/B/1-$server_count] or 0 to Cancel: "
 
     if [ "$choice" = "0" ] 2>/dev/null; then
         show_menu
@@ -500,7 +515,7 @@ view_logs() {
     echo ""
     docker logs node-agent --tail 30 2>/dev/null || echo "${YELLOW}No logs available.${NC}"
     echo ""
-    read -p "Press Enter to return to menu..."
+    cli_read _ -p "Press Enter to return to menu..."
     show_menu
 }
 
@@ -514,5 +529,15 @@ fi
 cd "$AGENT_DIR"
 
 trap '' SIGINT
+
+# The CLI is interactive: without a usable controlling terminal the prompts
+# cannot work, so report it and exit instead of dying mid-prompt (EOF under
+# set -e) or spinning forever on empty reads.
+if ! { exec 4</dev/tty; } 2>/dev/null; then
+    echo "${YELLOW}No interactive terminal detected. Run the CLI from a real terminal:${NC}"
+    echo "  malaxis-fleet"
+    exit 0
+fi
+exec 4<&- 2>/dev/null || true
 
 show_menu

@@ -104,8 +104,10 @@ if [ "$lang" = "en" ]; then
     T_DIR_4="[4] Custom Path"
     T_CUSTOM_PATH="Enter custom installation path: "
     T_PATH_EMPTY="Custom path cannot be empty."
-    T_INVALID_CHOICE="Invalid selection: "
+    T_INVALID_CHOICE="Invalid choice: "
     T_INSTALL_DIR="Installation directory: "
+    T_NAME_RETRY="Device name cannot be empty - please enter a name: "
+    T_NAME_DEFAULT="Using default device name: "
     T_SUB_PROMPT="Enter your 3x-ui Subscription URL (Press Enter to skip): "
     T_MODE_TITLE="Select default Smart Routing Mode:"
     T_MODE_1="[1] Balanced - Best stability & lowest jitter (Recommended)"
@@ -154,6 +156,8 @@ else
     T_PATH_EMPTY="Путь не может быть пустым."
     T_INVALID_CHOICE="Неверный выбор: "
     T_INSTALL_DIR="Папка установки: "
+    T_NAME_RETRY="Имя устройства не может быть пустым - введите имя: "
+    T_NAME_DEFAULT="Использую имя устройства по умолчанию: "
     T_SUB_PROMPT="Введите ссылку подписки 3x-ui (Enter — пропустить): "
     T_MODE_TITLE="Режим балансировки по умолчанию:"
     T_MODE_1="[1] Балансировка — лучшая стабильность и минимальный джиттер (Рекомендуется)"
@@ -302,7 +306,22 @@ say "${T_INSTALL_DIR}$AGENT_DIR"
 # ------------------------------------------------------------
 # 3. Interactive setup (onboarding prompts)
 # ------------------------------------------------------------
-safe_read "$(t_node_prompt)" "$HOSTNAME_CURRENT" NODE_NAME
+# Device name: asked on EVERY install, and never silently discarded - an empty
+# answer (accidental Enter) triggers a second prompt while a terminal is
+# available, and only a fully non-interactive run falls back to the hostname.
+safe_read "$(t_node_prompt)" "" NODE_NAME
+NODE_NAME=$(echo "$NODE_NAME" | tr -d '[:space:]')
+if [ -z "$NODE_NAME" ]; then
+    if { exec 4</dev/tty; } 2>/dev/null; then
+        exec 4<&- 2>/dev/null || true
+        warn "$T_NAME_RETRY"
+        safe_read "$(t_node_prompt)" "" NODE_NAME
+        NODE_NAME=$(echo "$NODE_NAME" | tr -d '[:space:]')
+    fi
+fi
+if [ -z "$NODE_NAME" ]; then
+    say "${T_NAME_DEFAULT}$HOSTNAME_CURRENT"
+fi
 NODE_NAME=${NODE_NAME:-$HOSTNAME_CURRENT}
 
 safe_read "$T_SUB_PROMPT" "" SUB_URL

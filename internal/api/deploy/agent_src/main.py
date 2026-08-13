@@ -42,11 +42,42 @@ from agent_src.network import poll, report  # noqa: F401
 from agent_src.config_builder import parse_url_to_outbound  # noqa: F401
 
 
+def update_subscription_cli(sub_url: str) -> int:
+    """CLI entry point (fleet-cli.sh / fleet-cli.ps1): persist the subscription
+    URL, trigger an immediate fetch/apply and report the result - mirrors the
+    onboarding 'update_sub' flow without requiring a pending command."""
+    sub_url = (sub_url or "").strip()
+    if not sub_url:
+        agent.log("update_subscription_cli: empty URL")
+        return 1
+    state = agent.load_state()
+    state["sub_url"] = sub_url
+    agent.save_state(state)
+    agent.log(f"sub_url updated via CLI to {sub_url}")
+    applied = engine.update_subscription()
+    if applied:
+        _reselect_after_update()
+    network.report()
+    return 0
+
+
 def health_loop() -> None:
     fail_count = 0
+    dormant_logged = False
     while True:
         time.sleep(agent.HEALTH_INTERVAL)
         try:
+            # Dormant state: without a subscription there is nothing to probe
+            # (the inbounds serve dummy direct configs), so skip the probes and
+            # the transient-miss warnings entirely. Resume automatically as
+            # soon as a subscription URL is configured.
+            state = agent.load_state()
+            if not (state.get("sub_url") or "").strip():
+                if not dormant_logged:
+                    agent.log("No subscription configured, healthcheck dormant.")
+                    dormant_logged = True
+                continue
+            dormant_logged = False
             ok, status = engine.test_proxy()
             if ok:
                 if fail_count > 0:
