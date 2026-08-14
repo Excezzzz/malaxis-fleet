@@ -4,6 +4,7 @@
 proxy link (vless/vmess/trojan/ss/hysteria2/tuic/wireguard) into a uniform
 server descriptor consumed by the config builders."""
 import base64
+import json
 import traceback
 import urllib.parse
 from typing import Optional
@@ -120,6 +121,41 @@ def _get_param(query: str, key: str, default: str = "") -> str:
     return default
 
 
+def _parse_vmess_payload(link: str, info: dict) -> bool:
+    """Fallback for vmess://base64json links (3x-ui default format)."""
+    payload = link.partition("://")[2].split("#", 1)[0].split("?", 1)[0]
+    try:
+        decoded = base64.b64decode(payload + "=" * (-len(payload) % 4)).decode()
+        data = json.loads(decoded)
+    except Exception:
+        return False
+    if not isinstance(data, dict) or not data.get("add"):
+        return False
+    try:
+        info["hostname"] = data.get("add", "")
+        info["port"] = int(data.get("port", 0) or 0)
+        info["uuid"] = data.get("id", "")
+        info["network"] = data.get("net", "tcp")
+        info["path"] = data.get("path", "/")
+        if data.get("host"):
+            info["host"] = data["host"]
+        tls_val = str(data.get("tls", "") or "").lower()
+        if tls_val == "reality":
+            info["security"] = "reality"
+            for key in ["pbk", "sid", "fp", "spx"]:
+                if data.get(key):
+                    info[key] = data[key]
+        elif tls_val == "tls":
+            info["security"] = "tls"
+        else:
+            info["security"] = "none"
+        if info["security"] in ("reality", "tls") and not info.get("sni"):
+            info["sni"] = data.get("host") or data.get("add")
+        return True
+    except Exception:
+        return False
+
+
 def _parse_vlike(link: str, info: dict) -> None:
     parsed = urllib.parse.urlparse(link)
     info["hostname"] = parsed.hostname or ""
@@ -138,8 +174,10 @@ def _parse_vlike(link: str, info: dict) -> None:
             info["network"] = transport
     if not info.get("encryption"):
         info["encryption"] = "none"
+    if not info.get("hostname") or (info.get("type") == "vmess" and not parsed.username):
+        _parse_vmess_payload(link, info)
     if not info.get("security"):
-        info["security"] = "reality"
+        info["security"] = "reality" if info.get("type") == "vless" else "none"
     if not info.get("network"):
         info["network"] = "tcp"
 

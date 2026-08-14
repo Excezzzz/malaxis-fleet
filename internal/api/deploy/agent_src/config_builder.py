@@ -4,6 +4,7 @@
 descriptors, converts a raw proxy URL into an outbound object, and ships the
 default bootstrap configs."""
 import base64
+import re
 import urllib.parse
 from typing import Optional, Tuple
 
@@ -97,11 +98,11 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
                 # media streams are never rewritten (avoids the upload freeze).
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"], "routeOnly": True},
                 "tag": "socks-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
         ],
         "outbounds": [],
@@ -111,8 +112,11 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
         if ob:
             ob["tag"] = srv.get("tag", f"server-{i}")
             cfg["outbounds"].append(ob)
-    tag = servers[active_idx].get("tag", f"server-{active_idx}") if servers else "direct"
-    cfg["outbounds"].append({"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15}}})
+    tag = "direct"
+    if servers:
+        idx = active_idx if 0 <= active_idx < len(servers) else 0
+        tag = servers[idx].get("tag", f"server-{idx}")
+    cfg["outbounds"].append({"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpKeepAliveInterval": 15}}})
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
@@ -126,11 +130,51 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
     return cfg
 
 
+_VALID_NETWORKS = {
+    "tcp", "raw", "kcp", "mkcp", "grpc", "ws", "websocket",
+    "xhttp", "splithttp", "httpupgrade", "hysteria",
+}
+_VALID_SECURITY = {"none", "tls", "reality"}
+_VALID_FLOWS = {"", "xtls-rprx-vision", "xtls-rprx-vision-udp443"}
+_VALID_FP = {"chrome", "firefox", "edge", "safari", "ios", "android", "360", "qq", "random", "randomized"}
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _is_valid_uuid(uuid_str: str) -> bool:
+    return bool(uuid_str) and bool(_UUID_RE.match(uuid_str))
+
+
+def _valid_reality_pbk(pbk: str) -> bool:
+    if not pbk:
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(pbk + "=" * (-len(pbk) % 4))
+        return len(decoded) == 32
+    except Exception:
+        return False
+
+
+def _sanitize_network(net: str) -> str:
+    net = (net or "").strip().lower()
+    if net in _VALID_NETWORKS:
+        return net
+    return "tcp"
+
+
+def _sanitize_intrange(val: str, default: str) -> str:
+    s = str(val or "").strip()
+    if re.fullmatch(r"\d+(-\d+)?", s):
+        return s
+    return default
+
+
 def _normalize_fp(fp: str) -> str:
-    normalized = fp.strip().lower()
-    if normalized in ("randomized", "random", "ios", "firefox", "edge", "safari", "disabled", "none", ""):
-        return "chrome"
-    return fp
+    # Xray rejects any fingerprint outside the known uTLS set with a hard
+    # startup error; everything unrecognized falls back to chrome.
+    normalized = (fp or "").strip().lower()
+    if normalized in _VALID_FP:
+        return normalized
+    return "chrome"
 
 
 def _xray_outbound(srv: dict) -> Optional[dict]:
@@ -139,71 +183,89 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
     port = int(srv.get("port", 0))
 
     if stype == "vless":
-        net_type = srv.get("network", "tcp")
-        if net_type == "http":
-            agent.log("[VLESS patch] Correcting network type 'http' to 'tcp' for Reality.")
-            net_type = "tcp"
-        security_str = srv.get("security", "none")
-        flow_str = srv.get("flow", "")
-        sni_str = srv.get("sni", "")
-        if not sni_str:
-            agent.log("[SNI patch] Empty SNI, keeping hostname")
-            sni_str = srv.get("hostname", "")
-
-        pbk_str = srv.get("pbk", "")
-        fp_str = _normalize_fp(srv.get("fp", "chrome"))
-        spx_str = srv.get("spx", "")
-        sid_str = srv.get("sid", "")
-        path_str = srv.get("path", "/")
         host_str = srv.get("hostname", "")
+        port = int(srv.get("port", 0) or 0)
+        if not host_str or port <= 0:
+            agent.log(f"[VLESS sanitize] Skipping server with invalid host/port: {host_str}:{port}")
+            return None
+        uuid_val = srv.get("uuid", "")
+        if not _is_valid_uuid(uuid_val):
+            agent.log(f"[VLESS sanitize] Skipping server with invalid uuid: {uuid_val}")
+            return None
 
-        agent.log(f"[VLESS outbound] uuid={srv.get('uuid','')} host={host_str} port={srv.get('port',0)} net={net_type} sec={security_str} flow={flow_str} sni={sni_str} pbk={pbk_str} fp={fp_str} sid={sid_str} spx={spx_str} path={path_str}")
+        net_type = _sanitize_network(srv.get("network", "tcp"))
+        security_str = (srv.get("security") or "none").strip().lower()
+        if security_str not in _VALID_SECURITY:
+            agent.log(f"[VLESS sanitize] Unsupported security '{security_str}', using 'none'")
+            security_str = "none"
+        flow_str = srv.get("flow", "")
+        if flow_str not in _VALID_FLOWS:
+            agent.log(f"[VLESS sanitize] Unsupported flow '{flow_str}', removing it")
+            flow_str = ""
+        sni_str = srv.get("sni", "") or host_str
+        pbk_str = (srv.get("pbk") or "").strip()
+        fp_str = _normalize_fp(srv.get("fp", "chrome"))
+        spx_str = urllib.parse.unquote(srv.get("spx") or "").strip()
+        sid_str = (srv.get("sid") or "").strip()
+        path_str = srv.get("path", "/") or "/"
 
-        user_spec = {"id": srv.get("uuid", ""), "encryption": "none"}
-        if security_str == "reality" and flow_str:
-            user_spec["flow"] = flow_str
+        agent.log(f"[VLESS outbound] uuid={uuid_val} host={host_str} port={port} net={net_type} sec={security_str} flow={flow_str} sni={sni_str} pbk={pbk_str} fp={fp_str} sid={sid_str} spx={spx_str} path={path_str}")
+
+        user_spec = {"id": uuid_val, "encryption": "none"}
+        if security_str == "reality":
+            if not _valid_reality_pbk(pbk_str):
+                agent.log("[VLESS sanitize] Reality requires a valid 32-byte publicKey; falling back to 'none'")
+                security_str = "none"
+            else:
+                if len(sid_str) > 16 or (sid_str and not re.fullmatch(r"[0-9a-fA-F]+", sid_str)):
+                    agent.log("[VLESS sanitize] Invalid shortId, dropping it")
+                    sid_str = ""
+                if not spx_str.startswith("/"):
+                    agent.log("[VLESS sanitize] Invalid spiderX, dropping it")
+                    spx_str = ""
+                if flow_str:
+                    user_spec["flow"] = flow_str
 
         ob: dict = {
             "protocol": "vless",
             "settings": {
                 "vnext": [{
                     "address": host_str,
-                    "port": int(srv.get("port", 0)),
+                    "port": port,
                     "users": [user_spec],
                 }]
             },
             "streamSettings": {
-                "network": net_type if net_type else "tcp",
-                "security": "reality" if security_str == "reality" else "none",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15},
+                "network": net_type,
+                "security": security_str,
+                "sockopt": {"tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15},
             },
         }
 
         if security_str == "reality":
             ob["streamSettings"]["realitySettings"] = {
                 "show": False,
-                "fingerprint": fp_str if fp_str else "chrome",
-                "serverName": sni_str if sni_str else host_str,
+                "fingerprint": fp_str,
+                "serverName": sni_str,
                 "publicKey": pbk_str,
-                "shortId": sid_str if sid_str else "",
-                "spiderX": spx_str if spx_str else "",
+                "shortId": sid_str,
+                "spiderX": spx_str,
             }
+        elif security_str == "tls":
+            ob["streamSettings"]["tlsSettings"] = {"serverName": sni_str}
 
         if net_type == "xhttp":
-            xpadding = srv.get("x_padding_bytes", "") or "100-1000"
+            xpadding = _sanitize_intrange(srv.get("x_padding_bytes", ""), "100-1000")
             ob["streamSettings"]["xhttpSettings"] = {
                 "mode": "auto",
-                "path": path_str if path_str else "/",
+                "path": path_str,
                 "extra": {
                     "mode": "auto",
                     "xPaddingBytes": xpadding,
                     "xmux": {
-                        # long-lived reuse keeps Telegram media chunks flowing
-                        # concurrently (maxConcurrency removed: conflicts with
-                        # maxConnections in Xray 26.3.27, crashes on startup).
+                        # strictly maxConnections-only: Xray 26.x hard-errors on
+                        # maxConcurrency + maxConnections combined at startup.
                         "maxConnections": 4,
-                        "hMaxRequestTimes": "800-900",
-                        "hMaxReusableSecs": "1000-2000",
                     },
                 },
             }
@@ -212,24 +274,45 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
         return ob
 
     if stype == "vmess":
+        if not host or port <= 0:
+            agent.log(f"[vmess sanitize] Skipping server with invalid host/port: {host}:{port}")
+            return None
+        uuid_val = srv.get("uuid", "")
+        if not _is_valid_uuid(uuid_val):
+            agent.log(f"[vmess sanitize] Skipping server with invalid uuid: {uuid_val}")
+            return None
+        net_type = _sanitize_network(srv.get("network", "tcp"))
+        security_str = (srv.get("security") or "none").strip().lower()
+        if security_str not in ("none", "tls"):
+            agent.log(f"[vmess sanitize] Unsupported security '{security_str}', using 'none'")
+            security_str = "none"
         ob: dict = {
             "protocol": "vmess",
             "settings": {
                 "vnext": [{
                     "address": host,
                     "port": port,
-                    "users": [{"id": srv.get("uuid", ""), "security": "auto"}],
+                    "users": [{"id": uuid_val, "security": "auto"}],
                 }]
             },
             "streamSettings": {
-                "network": srv.get("network", "tcp"),
-                "security": srv.get("security", "none"),
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "network": net_type,
+                "security": security_str,
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
         }
+        if security_str == "tls":
+            tls_settings: dict = {}
+            sni_val = srv.get("sni", "")
+            if sni_val:
+                tls_settings["serverName"] = sni_val
+            ob["streamSettings"]["tlsSettings"] = tls_settings
         return ob
 
     if stype == "trojan":
+        if not host or port <= 0:
+            agent.log(f"[trojan sanitize] Skipping server with invalid host/port: {host}:{port}")
+            return None
         ob: dict = {
             "protocol": "trojan",
             "settings": {
@@ -237,12 +320,11 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             },
             "streamSettings": {
                 "network": "tcp",
-                "security": srv.get("security", "tls"),
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "security": "tls",
+                "tlsSettings": {"serverName": srv.get("sni", "") or host},
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
         }
-        if srv.get("sni"):
-            ob["streamSettings"]["tlsSettings"] = {"serverName": srv["sni"]}
         return ob
 
     if stype == "ss":
@@ -254,7 +336,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             "streamSettings": {
                 "network": "tcp",
                 "security": "none",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
         }
 
@@ -277,14 +359,14 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
                 # media streams are never rewritten (avoids the upload freeze).
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"], "routeOnly": True},
                 "tag": "socks-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15},
             },
         ],
-        "outbounds": [ob, {"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15}}}],
+        "outbounds": [ob, {"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpKeepAliveInterval": 15}}}],
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
@@ -358,7 +440,10 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         if ob:
             ob["tag"] = srv.get("tag", f"server-{i}")
             cfg["outbounds"].append(ob)
-    tag = servers[active_idx].get("tag", f"server-{active_idx}") if servers else "direct"
+    tag = "direct"
+    if servers:
+        idx = active_idx if 0 <= active_idx < len(servers) else 0
+        tag = servers[idx].get("tag", f"server-{idx}")
     cfg["route"] = {
         "final": tag,
         "auto_detect_interface": True,
@@ -531,7 +616,7 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
         srv["pbk"] = params.get("pbk", "")
         srv["sid"] = params.get("sid", "")
         srv["sni"] = params.get("sni", "") or host
-        srv["spx"] = params.get("spx", "")
+        srv["spx"] = urllib.parse.unquote(params.get("spx", ""))
         srv["path"] = params.get("path", "/")
         srv["host"] = params.get("host", "")
         srv["alpn"] = params.get("alpn", "")
@@ -634,76 +719,13 @@ def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, d
         return "xray", {"protocol": "freedom", "tag": "direct"}
 
     if scheme == "vless":
-        uuid_val = user_info
-        encryption = params.get("encryption", "none")
-        flow_val = params.get("flow", "")
-        net_type = params.get("type", "tcp")
-        if net_type == "http":
-            net_type = "tcp"
-        security = params.get("security", "none")
-        pbk = params.get("pbk", "")
-        sid = params.get("sid", "")
-        sni = params.get("sni", host)
-        if not sni:
-            agent.log("[SNI patch] Empty SNI, keeping hostname")
-            sni = host
-        fp = params.get("fp", "chrome")
-        path = params.get("path", "/")
-
-        user_obj = {"id": uuid_val, "encryption": encryption}
-        if security == "reality" and flow_val:
-            user_obj["flow"] = flow_val
-
-        outbound: dict = {
-            "protocol": "vless",
-            "tag": tag,
-            "settings": {
-                "vnext": [{
-                    "address": host,
-                    "port": port,
-                    "users": [user_obj],
-                }]
-            },
-            "streamSettings": {
-                "network": net_type,
-                "security": security,
-                "sockopt": {"tcpNoDelay": True, "tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15},
-            },
-        }
-
-        if security == "reality":
-            spx_str = urllib.parse.unquote(params.get("spx", ""))
-            outbound["streamSettings"]["realitySettings"] = {
-                "show": False,
-                "fingerprint": _normalize_fp(fp),
-                "serverName": sni,
-                "publicKey": pbk,
-                "shortId": sid,
-                "spiderX": spx_str,
-            }
-
-        if net_type == "xhttp":
-            xpadding = params.get("x_padding_bytes", "") or "100-1000"
-            outbound["streamSettings"]["xhttpSettings"] = {
-                "mode": params.get("mode", "auto"),
-                "path": path,
-                "extra": {
-                    "mode": params.get("mode", "auto"),
-                    "xPaddingBytes": xpadding,
-                    "xmux": {
-                        # long-lived reuse keeps Telegram media chunks flowing
-                        # concurrently (maxConcurrency removed: conflicts with
-                        # maxConnections in Xray 26.3.27, crashes on startup).
-                        "maxConnections": 4,
-                        "hMaxRequestTimes": "800-900",
-                        "hMaxReusableSecs": "1000-2000",
-                    },
-                },
-            }
-
-        outbound["mux"] = {"enabled": False}
-
-        return "xray", outbound
+        srv = _url_to_srv(scheme, user_info, host, port, params, tag)
+        ob = _xray_outbound(srv)
+        if ob is not None:
+            ob["tag"] = tag
+            return "xray", ob
+        agent.log("[xray] No xray outbound for vless server")
+        return "xray", {"protocol": "freedom", "tag": "direct"}
 
     elif scheme in ("hysteria2", "hy2"):
         password = user_info
