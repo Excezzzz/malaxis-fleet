@@ -37,12 +37,13 @@ safe_read() {
     local default_val="$2"
     local var_name="$3"
     local result=""
-    # Open the tty on fd4 first: if there is no controlling terminal the open
-    # fails (ENXIO) and the error is silenced. NOTE: the `{ exec; } 2>/dev/null`
-    # group is required - a bare `exec 4</dev/tty 2>/dev/null` still leaks the
-    # shell's redirection error, because bash processes redirections left to
-    # right and aborts on the FIRST failure before applying `2>/dev/null`.
-    if { exec 4</dev/tty; } 2>/dev/null; then
+    # The controlling terminal is opened ONCE at script start (see
+    # FLEET_TTY_OPEN below) and kept open: closing and re-opening /dev/tty
+    # between prompts makes bash 5.1 stop displaying `read -p` prompts on PTYs
+    # after the first close/reopen cycle (the read still blocks, but the user
+    # sees NO prompt and the installer looks frozen). The open itself fails
+    # cleanly (ENXIO) when there is no controlling terminal (piped runs).
+    if [ "${FLEET_TTY_OPEN:-0}" = "1" ]; then
         # Drain stale input already buffered on the tty (typically a leftover
         # newline from the previous prompt, or keystrokes the user typed while
         # an earlier prompt was being displayed). Without this the next `read`
@@ -52,9 +53,12 @@ safe_read() {
         # ever accepted.
         while read -t 0.05 -n 1 -r _ <&4 2>/dev/null; do :; done || true
         # Strictly wait for real input, up to 15 seconds; timeout/EOF falls
-        # back to the default below.
-        read -t 15 -r -p "$prompt" result <&4 2>/dev/null || result=""
-        exec 4<&- 2>/dev/null || true
+        # back to the default below. NOTE: `read -p` writes the prompt to
+        # STDERR - a `2>/dev/null` here would make every prompt invisible and
+        # the installer look frozen while waiting for input. The stderr of the
+        # fd-open failure is already silenced above by the `{ exec; } 2>/dev/null`
+        # group, so the prompt must stay visible to the user.
+        read -t 15 -r -p "$prompt" result <&4 || result=""
     fi
     if [ -z "$result" ]; then
         result="$default_val"
@@ -64,6 +68,15 @@ safe_read() {
         *) eval "$var_name=\"$result\"" ;;
     esac
 }
+
+# Open the controlling terminal ONCE on fd4, guarded by a flag. NOTE: the
+# `{ exec; } 2>/dev/null` group is required - a bare `exec 4</dev/tty 2>/dev/null`
+# still leaks the shell's redirection error, because bash processes redirections
+# left to right and aborts on the FIRST failure before applying `2>/dev/null`.
+FLEET_TTY_OPEN=0
+if { exec 4</dev/tty; } 2>/dev/null; then
+    FLEET_TTY_OPEN=1
+fi
 
 # ------------------------------------------------------------
 # 0. Language selector (first step, before any other output)

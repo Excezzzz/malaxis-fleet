@@ -23,7 +23,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      # NOTE: no `start_period` - docker-compose v1.25.0 (Debian Bullseye) rejects
+      # it with "Additional properties are not allowed" even on format 3.3.
 
   xray-node:
     image: ghcr.io/xtls/xray-core:latest
