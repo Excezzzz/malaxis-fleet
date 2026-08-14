@@ -335,8 +335,7 @@ say "${T_INSTALL_DIR}$AGENT_DIR"
 safe_read "$(t_node_prompt)" "" NODE_NAME
 NODE_NAME=$(echo "$NODE_NAME" | tr -d '[:space:]')
 if [ -z "$NODE_NAME" ]; then
-    if { exec 4</dev/tty; } 2>/dev/null; then
-        exec 4<&- 2>/dev/null || true
+    if [ "${FLEET_TTY_OPEN:-0}" = "1" ]; then
         warn "$T_NAME_RETRY"
         safe_read "$(t_node_prompt)" "" NODE_NAME
         NODE_NAME=$(echo "$NODE_NAME" | tr -d '[:space:]')
