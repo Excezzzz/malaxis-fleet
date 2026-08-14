@@ -1,8 +1,11 @@
 # Stage 1: build the Vue dashboard
 FROM node:24-alpine AS web-builder
+# Allow overriding the npm registry (some networks block/slow npmjs.org):
+#   docker build --build-arg NPM_REGISTRY=https://registry.npmmirror.com .
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app/web
 COPY internal/api/web/package*.json ./
-RUN npm ci
+RUN npm ci --registry=$NPM_REGISTRY
 COPY internal/api/web/ ./
 RUN npm run build
 

@@ -6,7 +6,12 @@ services:
     # is used instead, the image is built from source and tagged with the same
     # name locally.
     image: ghcr.io/excezzzz/malaxis-fleet:latest
-    build: .
+    build:
+      context: .
+      args:
+        # Override when npmjs.org is slow/blocked on your network, e.g.
+        # NPM_REGISTRY=https://registry.npmmirror.com docker compose up -d --build
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
     container_name: fleet-master
     restart: always
     # No host ports are published. The backend is reached ONLY through Caddy,

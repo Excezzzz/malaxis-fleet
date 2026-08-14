@@ -93,8 +93,15 @@ Check-Error
 # container stays attached to it, so caddy loses DNS + routing to fleet-master
 # for the whole image build and the dashboard/API return 502s. Compose's `up`
 # recreates containers in place and keeps the shared network alive.
+# If the local build needs a custom npm registry (e.g. npmjs.org is slow or
+# blocked on this network), it is forwarded to the remote build via
+# NPM_REGISTRY (see Dockerfile ARG + docker-compose.yml build args).
 Write-Host ">>> Restarting services on remote host..."
-$sshCommand = "cd $RemotePath && docker compose up -d --build --remove-orphans && docker builder prune -a -f && docker system prune -a --volumes -f"
+$envPrefix = ""
+if ($env:NPM_REGISTRY) {
+    $envPrefix = "NPM_REGISTRY='$($env:NPM_REGISTRY)' "
+}
+$sshCommand = "cd $RemotePath && ${envPrefix}docker compose up -d --build --remove-orphans && docker builder prune -a -f && docker system prune -a --volumes -f"
 ssh -t $VpsTarget $sshCommand
 Check-Error
 

@@ -1,7 +1,7 @@
 data/
 backups/
 .git/
-node_modules/
+**/node_modules/
 internal/api/web/dist/
 master_server
 *.log

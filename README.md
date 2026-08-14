@@ -32,12 +32,27 @@ configured by default.
 curl -sSL https://raw.githubusercontent.com/Excezzzz/malaxis-fleet/main/install.sh | bash
 ```
 
-The installer creates a 2 GB swap file when memory is below 2 GB, installs
-Docker, clones the repository into `/opt/malaxis-fleet`, prompts for the
-subdomains and admin credentials, writes `.env`, and launches the stack:
+The installer runs as root and offers **two install modes**:
+
+| Mode | Who is it for | What it asks |
+|------|---------------|--------------|
+| **Simple** (default, recommended) | Regular users — no Docker or server knowledge needed | Only your main domain (e.g. `example.com`) and an admin password. Everything else — the `dash.`/`api.`/`join.`/`sub.` subdomains, all secrets, the Docker install and the pre-built image — is configured automatically. |
+| **Advanced** | Users who know what Docker is and want full control | Install method (pre-built image vs build from source), four separate subdomains, admin password, Telegram bot token/chat ID, swap file management. |
+
+Pick the mode at the first prompt (`1` = Simple, `2` = Advanced). The installer
+creates a 2 GB swap file when memory is below 2 GB (advanced mode only),
+installs Docker, clones the repository into `/opt/malaxis-fleet`, writes
+`.env`, creates the shared `caddy` network, and launches the stack:
 
 ```bash
 docker compose up -d --build
+```
+
+If npmjs.org is slow or unreachable on your network, point the build at a
+registry mirror instead:
+
+```bash
+NPM_REGISTRY=https://registry.npmmirror.com sudo bash install.sh
 ```
 
 Sign in at `https://dash.yourdomain.com` (default credentials: `owner` /
@@ -211,11 +226,17 @@ python -m py_compile internal/api/deploy/agent_src/*.py   # agent checks
 
 The dashboard build output is embedded into the Go binary at compile time
 (`//go:embed web/dist`), so rebuild it before deploying. Deployment from a
-Windows workstation:
+Windows workstation (equivalent of the Linux installer):
 
 ```powershell
 .\build_and_deploy.ps1 admin@your-server-ip
 ```
+
+It sanity-builds the dashboard locally, ships the source tree over SSH to
+`~/malaxis-fleet`, uploads `.env`, rebuilds the image in Docker on the server
+and restarts the stack. Set `NPM_REGISTRY` in your shell first when npmjs.org
+is slow or blocked on your network (the value is forwarded to the remote
+build): `$env:NPM_REGISTRY = "https://registry.npmmirror.com"`.
 
 ---
 
