@@ -43,6 +43,16 @@ safe_read() {
     # shell's redirection error, because bash processes redirections left to
     # right and aborts on the FIRST failure before applying `2>/dev/null`.
     if { exec 4</dev/tty; } 2>/dev/null; then
+        # Drain stale input already buffered on the tty (typically a leftover
+        # newline from the previous prompt, or keystrokes the user typed while
+        # an earlier prompt was being displayed). Without this the next `read`
+        # instantly consumes that stale line as an EMPTY answer and the prompt
+        # is silently skipped. The drain is bounded (50ms of silence) and runs
+        # BEFORE the prompt is printed, so only a fresh, deliberate answer is
+        # ever accepted.
+        while read -t 0.05 -n 1 -r _ <&4 2>/dev/null; do :; done || true
+        # Strictly wait for real input, up to 15 seconds; timeout/EOF falls
+        # back to the default below.
         read -t 15 -r -p "$prompt" result <&4 2>/dev/null || result=""
         exec 4<&- 2>/dev/null || true
     fi
@@ -457,11 +467,14 @@ say "$T_DL_CLI"
 curl -sSL "https://__JOIN_DOMAIN__/fleet-cli?t=__SECRET_TOKEN__" -o fleet-cli.sh || err "Failed to download fleet-cli.sh"
 chmod +x fleet-cli.sh
 
-# Create a global "malaxis-fleet" command so the CLI works from any directory
+# Create a global "malaxis-fleet" command so the CLI works from any directory.
+# Use `sudo -n` (non-interactive): a plain `sudo` would block the whole
+# installer on a password prompt mid-install. If passwordless sudo is not
+# configured the symlink is skipped with a clear notice - never a hang.
 if [ -w "/usr/local/bin" ]; then
     ln -sf "$AGENT_DIR/fleet-cli.sh" /usr/local/bin/malaxis-fleet
 else
-    sudo ln -sf "$AGENT_DIR/fleet-cli.sh" /usr/local/bin/malaxis-fleet 2>/dev/null || true
+    sudo -n ln -sf "$AGENT_DIR/fleet-cli.sh" /usr/local/bin/malaxis-fleet 2>/dev/null || echo "[!] Could not create global command 'malaxis-fleet' (requires root). You can run it manually via ./fleet-cli.sh"
 fi
 
 # ------------------------------------------------------------
@@ -493,7 +506,11 @@ compose_up() {
     if ! $COMPOSE_CMD up -d --build; then
         warn "docker-compose v1 ordering detected - bootstrapping xray-node first..."
         awk '/^  singbox-node:/{skip=1} /^networks:/{skip=0} !skip{print}' docker-compose.yml > .compose-xray-only.yml
-        $COMPOSE_CMD -f .compose-xray-only.yml up -d xray-node 2>/dev/null || true
+        # Do NOT hide stderr here: a silent failure turns into the baffling
+        # "Docker Compose up failed" with zero output. The bootstrap is
+        # best-effort (`|| true` swallows only the exit code), but its stderr
+        # must stay visible so the user sees the real reason for a failure.
+        $COMPOSE_CMD -f .compose-xray-only.yml up -d xray-node || true
         $COMPOSE_CMD up -d --build || err "Docker Compose up failed - review the output above and re-run this script"
     fi
 }

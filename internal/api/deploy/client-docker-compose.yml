@@ -1,3 +1,9 @@
+# Compose format 3.3: maximum version supported by the ancient docker-compose
+# v1 (e.g. 1.25.0 from Debian Bullseye apt) that ships on SBC / ARM boards.
+# Format 3.8 (and even a missing version key, which v1 treats as the removed
+# legacy format) makes v1 fail. Every feature below works in 3.3.
+version: '3.3'
+
 services:
   node-agent:
     build: .
