@@ -93,10 +93,9 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                # routeOnly keeps the sniffed result for routing decisions only;
-                # MTProto connections keep their IP destination, so Telegram
-                # media streams are never rewritten (avoids the upload freeze).
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls"], "routeOnly": True},
+                # destOverride http/tls for routing decisions only; keep the
+                # block minimal - routeOnly is rejected by some Xray builds.
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
                 "sockopt": {"tcpKeepAliveInterval": 15},
             },
@@ -127,6 +126,7 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": tag},
         ],
     }
+    _purge_route_only(cfg)
     return cfg
 
 
@@ -166,6 +166,22 @@ def _sanitize_intrange(val: str, default: str) -> str:
     if re.fullmatch(r"\d+(-\d+)?", s):
         return s
     return default
+
+
+def _purge_route_only(obj) -> None:
+    """Failsafe: recursively strip `routeOnly` from every sniffing block.
+
+    Some Xray builds hard-reject the key at config load, so no generated
+    config may ever contain it, no matter where it was introduced.
+    """
+    if isinstance(obj, dict):
+        for key, val in list(obj.items()):
+            if key == "sniffing" and isinstance(val, dict):
+                val.pop("routeOnly", None)
+            _purge_route_only(val)
+    elif isinstance(obj, list):
+        for item in obj:
+            _purge_route_only(item)
 
 
 def _normalize_fp(fp: str) -> str:
@@ -344,7 +360,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
 
 
 def _xray_cfg_with_outbound(ob: dict) -> dict:
-    return {
+    cfg = {
         "log": {"loglevel": "warning"},
         "dns": {
             "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
@@ -354,10 +370,9 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                # routeOnly keeps the sniffed result for routing decisions only;
-                # MTProto connections keep their IP destination, so Telegram
-                # media streams are never rewritten (avoids the upload freeze).
-                "sniffing": {"enabled": True, "destOverride": ["http", "tls"], "routeOnly": True},
+                # destOverride http/tls for routing decisions only; keep the
+                # block minimal - routeOnly is rejected by some Xray builds.
+                "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
                 "sockopt": {"tcpKeepAliveInterval": 15},
             },
@@ -378,6 +393,8 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             ],
         },
     }
+    _purge_route_only(cfg)
+    return cfg
 
 
 def _singbox_cfg_with_outbound(ob: dict) -> dict:

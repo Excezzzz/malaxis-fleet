@@ -88,16 +88,31 @@ def _docker_logs(container: str, tail: int = 200) -> str:
 
     Resolves the container dynamically because docker-compose renames services
     into e.g. `fleet-agent-xray-node-1` (project-scoped). `docker logs xray-node`
-    would then fail, so we look up the real container id by name filter first.
-    The output is cleaned of ANSI codes and decoded as UTF-8 with errors
-    ignored so JSON serialization never truncates or fails.
+    would then fail, so we look up the real container id by name filter first;
+    if that misses, we fall back to `docker compose logs <service>` which
+    resolves the compose service name itself. The output is cleaned of ANSI
+    codes and decoded as UTF-8 with errors ignored so JSON serialization never
+    truncates or fails.
     """
     target = _resolve_container_id(container)
-    if not target:
-        return f"(container '{container}' not found - is it running?)"
+    if target:
+        try:
+            r = subprocess.run(
+                ["docker", "logs", target, "--tail", str(tail), "--timestamps"],
+                capture_output=True, timeout=30,
+            )
+            out = r.stdout.decode("utf-8", errors="ignore")
+            err = r.stderr.decode("utf-8", errors="ignore")
+            combined = _clean_log_text((out + err)).strip()
+            if combined:
+                return combined
+        except subprocess.TimeoutExpired:
+            return f"(docker logs {container} timed out)"
+        except Exception:
+            pass
     try:
         r = subprocess.run(
-            ["docker", "logs", target, "--tail", str(tail), "--timestamps"],
+            _compose_cmd() + ["logs", "--tail", str(tail), "--timestamps", container],
             capture_output=True, timeout=30,
         )
         out = r.stdout.decode("utf-8", errors="ignore")
@@ -105,11 +120,11 @@ def _docker_logs(container: str, tail: int = 200) -> str:
         combined = _clean_log_text((out + err)).strip()
         if combined:
             return combined
-        return f"(container '{container}' has no log output)"
     except subprocess.TimeoutExpired:
-        return f"(docker logs {container} timed out)"
+        return f"(docker compose logs {container} timed out)"
     except Exception as e:
         return f"(failed to fetch logs for {container}: {e})"
+    return f"(container '{container}' not found - is it running?)"
 
 
 def _resolve_container_id(name: str) -> str:
