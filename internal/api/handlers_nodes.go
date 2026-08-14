@@ -380,29 +380,21 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Execute direct PostgreSQL UPDATE to ensure sub_url is properly committed
-	node, err := a.repo.GetNodeByID(nodeID)
-	if err != nil {
+	if _, err := a.repo.GetNodeByID(nodeID); err != nil {
 		http.Error(w, "Node not found", http.StatusNotFound)
 		return
 	}
 
-	node.SubURL = req.SubURL
-	if err := a.repo.UpdateNode(node); err != nil {
-		log.Printf("ERROR: Failed to update sub_url for node %s: %v", nodeID, err)
-		http.Error(w, "Internal Server Error: Failed to update subscription URL", http.StatusInternalServerError)
-		return
-	}
-
 	// Queue an update_sub command so the node fetches the new subscription.
+	// Single atomic UPDATE: sub_url and the queued update_sub command are
+	// committed together, so the agent is always triggered to fetch servers.
 	command := map[string]string{"action": "update_sub", "sub_url": req.SubURL}
 	cmdJSON, _ := json.Marshal(command)
 	messageID := time.Now().Unix()
-	if err := a.repo.SetPendingCommand(nodeID, string(cmdJSON), messageID); err != nil {
-		log.Printf("ERROR: Failed to queue update_sub command for node %s: %v", nodeID, err)
-	} else {
-		if err := a.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub"); err != nil {
-			log.Printf("ERROR: Failed to set pipeline status for node %s: %v", nodeID, err)
-		}
+	if err := a.repo.UpdateNodeSubURLAndQueue(nodeID, req.SubURL, string(cmdJSON), messageID); err != nil {
+		log.Printf("ERROR: Failed to update sub_url and queue update_sub for node %s: %v", nodeID, err)
+		http.Error(w, "Internal Server Error: Failed to update subscription URL", http.StatusInternalServerError)
+		return
 	}
 
 	actorUser := a.actor(r)

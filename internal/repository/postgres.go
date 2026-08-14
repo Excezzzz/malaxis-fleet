@@ -575,6 +575,24 @@ func (r *postgresRepository) SetPendingCommand(nodeID, command string, messageID
 	return nil
 }
 
+func (r *postgresRepository) UpdateNodeSubURLAndQueue(nodeID, subURL, command string, messageID int64) error {
+	// Single atomic UPDATE: saving the sub_url and queuing the update_sub
+	// command must succeed or fail together, otherwise a sub_url change
+	// could be persisted without ever triggering the agent to fetch it.
+	res, err := r.db.Exec("UPDATE nodes SET sub_url = $1, pending_command = $2, pending_msg_id = $3, pipeline_status = 'Queued', status_message = '' WHERE id = $4", subURL, command, messageID, nodeID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrNodeNotFound
+	}
+	return nil
+}
+
 func (r *postgresRepository) ClearPendingCommand(nodeID string) error {
 	query := "UPDATE nodes SET pending_command = NULL, pending_msg_id = 0 WHERE id = $1"
 	_, err := r.db.Exec(query, nodeID)

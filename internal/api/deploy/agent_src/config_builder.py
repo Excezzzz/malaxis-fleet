@@ -60,12 +60,14 @@ DEFAULT_SINGBOX_CONFIG = {
     "inbounds": [
         {
             "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
+            "tcp_fast_open": True,
         },
         {
             "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
+            "tcp_fast_open": True,
         },
     ],
-    "outbounds": [{"type": "direct", "tag": "direct"}],
+    "outbounds": [{"type": "direct", "tag": "direct", "tcp_fast_open": True}],
     "route": {
         "final": "direct",
         "auto_detect_interface": True,
@@ -159,13 +161,6 @@ def _sanitize_network(net: str) -> str:
     if net in _VALID_NETWORKS:
         return net
     return "tcp"
-
-
-def _sanitize_intrange(val: str, default: str) -> str:
-    s = str(val or "").strip()
-    if re.fullmatch(r"\d+(-\d+)?", s):
-        return s
-    return default
 
 
 def _purge_route_only(obj) -> None:
@@ -271,13 +266,13 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             ob["streamSettings"]["tlsSettings"] = {"serverName": sni_str}
 
         if net_type == "xhttp":
-            xpadding = _sanitize_intrange(srv.get("x_padding_bytes", ""), "100-1000")
+            # No xPaddingBytes: Xray 26.x accepts xhttp without padding, and
+            # padding adds latency to every small Telegram media packet.
             ob["streamSettings"]["xhttpSettings"] = {
                 "mode": "auto",
                 "path": path_str,
                 "extra": {
                     "mode": "auto",
-                    "xPaddingBytes": xpadding,
                     "xmux": {
                         # strictly maxConnections-only: Xray 26.x hard-errors on
                         # maxConcurrency + maxConnections combined at startup.
@@ -411,12 +406,14 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
+                "tcp_fast_open": True,
             },
             {
                 "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
+                "tcp_fast_open": True,
             },
         ],
-        "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
+        "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_fast_open": True, "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
         "route": {
             "final": ob.get("tag", "proxy"),
             "auto_detect_interface": True,
@@ -445,9 +442,11 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
+                "tcp_fast_open": True,
             },
             {
                 "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358,
+                "tcp_fast_open": True,
             },
         ],
         "outbounds": [],
@@ -474,7 +473,7 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         ],
     }
     cfg["experimental"] = {"cache_file": {"enabled": True}}
-    cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
+    cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_fast_open": True, "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
     return cfg
 
 
@@ -494,7 +493,9 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         # Socket hardening for all proxy outbounds: TCP keepalive keeps NAT
         # mappings and idle tunnels alive through transient link dropouts.
         # (sing-box >= 1.13; tcp_no_delay is removed there - Go enables
-        # TCP_NODELAY by default.)
+        # TCP_NODELAY by default. tcp_fast_open reduces connection-setup
+        # latency for the frequent small connections Telegram opens.)
+        "tcp_fast_open": True,
         "tcp_keep_alive": "5m",
         "tcp_keep_alive_interval": "15s",
     }

@@ -443,27 +443,21 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 		return
 	}
 
-	node, err := b.repo.GetNodeByID(state.NodeID)
-	if err != nil {
+	if _, err := b.repo.GetNodeByID(state.NodeID); err != nil {
 		log.Printf("Bot: node %s not found for sub update: %v", state.NodeID, err)
 		b.showNodeDetail(chatID, b.getMainMenuID(chatID), state.NodeID, "❌ "+b.tr("Узел не найден", "Node not found"))
-		return
-	}
-
-	node.SubURL = subURL
-	if err := b.repo.UpdateNode(node); err != nil {
-		log.Printf("Bot: failed to update sub_url for node %s: %v", state.NodeID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить URL подписки.", "Failed to update subscription URL.")+"</b>", b.cancelMarkup())
 		return
 	}
 
 	command := map[string]string{"action": "update_sub", "sub_url": subURL}
 	cmdJSON, _ := json.Marshal(command)
 	messageID := time.Now().Unix()
-	if err := b.repo.SetPendingCommand(state.NodeID, string(cmdJSON), messageID); err != nil {
-		log.Printf("Bot: failed to queue update_sub for node %s: %v", state.NodeID, err)
-	} else {
-		b.repo.UpdateNodePipelineStatus(state.NodeID, "Queued", "update_sub")
+	// Single atomic UPDATE: sub_url and the queued update_sub command are
+	// committed together, so the agent is always triggered to fetch servers.
+	if err := b.repo.UpdateNodeSubURLAndQueue(state.NodeID, subURL, string(cmdJSON), messageID); err != nil {
+		log.Printf("Bot: failed to update sub_url and queue update_sub for node %s: %v", state.NodeID, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить URL подписки.", "Failed to update subscription URL.")+"</b>", b.cancelMarkup())
+		return
 	}
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateDevice, state.NodeID, "Updated subscription URL to "+subURL+" (via Telegram bot)")

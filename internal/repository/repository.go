@@ -48,6 +48,10 @@ type Repository interface {
 	// --- Command Methods ---
 	GetPendingCommand(nodeID string) (string, error)
 	SetPendingCommand(nodeID, command string, messageID int64) error
+	// UpdateNodeSubURLAndQueue atomically saves the subscription URL and
+	// queues the agent update command in a single UPDATE, so a sub_url change
+	// can never be persisted without triggering the agent to fetch it.
+	UpdateNodeSubURLAndQueue(nodeID, subURL, command string, messageID int64) error
 	ClearPendingCommand(nodeID string) error
 
 	// --- User Methods ---

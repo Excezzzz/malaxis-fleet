@@ -4,6 +4,10 @@
 #  Run with:  irm https://<join-domain>/join.ps1?t=<SECRET_TOKEN> | iex
 # ============================================================
 
+# Allow this user to run local PowerShell scripts (fleet-cli.ps1 etc.)
+# without execution-policy errors on fresh Windows machines.
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+
 # Force UTF-8 so localized (Russian) text renders correctly on any
 # console codepage (e.g. cp866 / cp437).
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
