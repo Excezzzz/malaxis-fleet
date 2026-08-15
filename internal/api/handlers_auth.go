@@ -128,8 +128,8 @@ func (a *API) enforcePermission(w http.ResponseWriter, r *http.Request, permissi
 		return false
 	}
 
-	// Owner (and the original admin account) implicitly holds every permission.
-	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" || user.Username == "owner" {
+	// Owner and admin implicitly hold every permission.
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
 		return true
 	}
 
@@ -162,7 +162,7 @@ func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 
-	if user.Role == domain.RoleOwner || user.Username == "admin" || user.Username == "owner" {
+	if user.Role == domain.RoleOwner {
 		return true
 	}
 
@@ -247,7 +247,7 @@ func (a *API) parsePermissionsJSON(raw string) []string {
 // bypass checks (implicitly granted all permissions); custom roles read their
 // permissions_json, supporting both array and map storage formats.
 func (a *API) permissionsForUser(user *domain.User) []string {
-	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin || user.Username == "admin" || user.Username == "owner" {
+	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
 		return domain.AllPermissions
 	}
 

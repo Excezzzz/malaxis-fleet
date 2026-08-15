@@ -744,7 +744,7 @@ func (a *API) rolePermissionsAllowed(w http.ResponseWriter, r *http.Request, per
 	}
 
 	// Owner and admin implicitly hold every permission.
-	if actorUser.Role == domain.RoleOwner || actorUser.Username == "admin" || actorUser.Username == "owner" {
+	if actorUser.Role == domain.RoleOwner || actorUser.Role == domain.RoleAdmin {
 		return true
 	}
 
