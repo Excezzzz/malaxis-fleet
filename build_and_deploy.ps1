@@ -101,7 +101,9 @@ $envPrefix = ""
 if ($env:NPM_REGISTRY) {
     $envPrefix = "NPM_REGISTRY='$($env:NPM_REGISTRY)' "
 }
-$sshCommand = "cd $RemotePath && ${envPrefix}docker compose up -d --build --remove-orphans && docker builder prune -a -f && docker system prune -a --volumes -f"
+# IMPORTANT: never pass --volumes to docker system prune: it would destroy
+# named volumes belonging to OTHER projects on the same VPS.
+$sshCommand = "cd $RemotePath && ${envPrefix}docker compose up -d --build --remove-orphans && docker builder prune -a -f && docker system prune -a -f"
 ssh -t $VpsTarget $sshCommand
 Check-Error
 
