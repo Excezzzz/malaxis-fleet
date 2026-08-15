@@ -80,8 +80,9 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	agentAPI.HandleFunc("/agent/latest", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
 	agentAPI.HandleFunc("/agent/latest.zip", payloadTokenGuard(cfg, http.HandlerFunc(api.serveAgentPackage)).ServeHTTP).Methods("GET")
 
-	// Subscription validation endpoint for client onboarding
-	agentAPI.HandleFunc("/subscription/validate", api.ValidateSubscriptionHandler).Methods("POST")
+	// Subscription validation endpoint for client onboarding. The agent HMAC
+	// signature is mandatory: without it anyone could register fake nodes.
+	agentAPI.Handle("/subscription/validate", api.AgentTokenMiddleware(http.HandlerFunc(api.ValidateSubscriptionHandler))).Methods("POST")
 
 	// Client API endpoints (password change, own nodes)
 	clientAPI := apiRouter.PathPrefix("/api/client").Subrouter()
