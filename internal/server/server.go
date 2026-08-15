@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"malaxis-fleet/internal/api"
 	"malaxis-fleet/internal/bot"
@@ -55,7 +56,14 @@ func (s *Server) Start() error {
 	api.RegisterRoutes(s.router, s.repo, s.config, s.bot)
 
 	log.Printf("Starting server on port %d\n", s.config.WebPort)
-	return http.ListenAndServe(fmt.Sprintf(":%d", s.config.WebPort), s.router)
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", s.config.WebPort),
+		Handler:      s.router,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+	return srv.ListenAndServe()
 }
 
 func (s *Server) RebootBot() error {
