@@ -429,10 +429,12 @@ func (a *API) startRateLimitCleanup() {
 	}()
 }
 
-// stripPort removes the port from a domain if it exists (e.g. localhost:8080 -> localhost)
+// stripPort removes the port from a domain if it exists
+// (e.g. localhost:8080 -> localhost, [::1]:8080 -> [::1]). A bare hostname
+// without a port is returned unchanged.
 func stripPort(domain string) string {
-	if strings.Contains(domain, ":") {
-		return strings.Split(domain, ":")[0]
+	if host, _, err := net.SplitHostPort(domain); err == nil {
+		return host
 	}
 	return domain
 }
