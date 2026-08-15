@@ -857,7 +857,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Обновить подписки", "Refresh Subscriptions"), "🔄", emojis), "task:refresh_subs"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Очистить офлайн (>3д)", "Purge Offline (>3d)"), "🧹", emojis), "purge:go"),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Очистить офлайн (>7д)", "Purge Offline (>7d)"), "🧹", emojis), "purge:go"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Скачать бэкап БД", "Download DB Backup"), "📦", emojis), "backup:download"),

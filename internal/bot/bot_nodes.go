@@ -696,16 +696,16 @@ func (b *Bot) handleOtaAll(chatID int64, messageID int) {
 }
 
 func (b *Bot) handlePurge(chatID int64, messageID int) {
-	deleted, err := b.repo.DeleteOfflineNodes(3)
+	deleted, err := b.repo.DeleteOfflineNodes(7)
 	if err != nil {
 		log.Printf("Bot: purge failed: %v", err)
 		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Очистка не удалась.", "Purge failed.")+"</b>", b.cancelMarkup())
 		return
 	}
-	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, "all_nodes", "Purged "+strconv.FormatInt(deleted, 10)+" offline nodes older than 3 days (via Telegram bot)")
+	b.audit.Log("telegram_bot", audit.ActionDeleteDevice, "all_nodes", "Purged "+strconv.FormatInt(deleted, 10)+" offline nodes older than 7 days (via Telegram bot)")
 
 	text, markup := b.getMainMenuContent()
 	b.editMessage(chatID, messageID,
-		fmt.Sprintf("🧹 "+b.tr("Очищено <b>%d</b> офлайн-узлов (старше 3 дней).", "Purged <b>%d</b> offline node(s) (older than 3 days).")+"\n\n%s", deleted, text),
+		fmt.Sprintf("🧹 "+b.tr("Очищено <b>%d</b> офлайн-узлов (старше 7 дней).", "Purged <b>%d</b> offline node(s) (older than 7 days).")+"\n\n%s", deleted, text),
 		&markup)
 }
