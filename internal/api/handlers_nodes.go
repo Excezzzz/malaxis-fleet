@@ -340,14 +340,15 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Per-node rate limit: 3 sub_url updates per minute (one every 20s, burst 3).
 	a.mu.Lock()
-	limiter, exists := a.visitors["rls:"+nodeID]
+	entry, exists := a.visitors["rls:"+nodeID]
 	if !exists {
-		limiter = rate.NewLimiter(rate.Every(20*time.Second), 3)
-		a.visitors["rls:"+nodeID] = limiter
+		entry = &visitorEntry{limiter: rate.NewLimiter(rate.Every(20*time.Second), 3)}
+		a.visitors["rls:"+nodeID] = entry
 	}
+	entry.lastSeen = time.Now()
 	a.mu.Unlock()
 
-	if !limiter.Allow() {
+	if !entry.limiter.Allow() {
 		log.Printf("WARN: sub_url rate limit exceeded for node %s", nodeID)
 		w.Header().Set("Retry-After", "60")
 		http.Error(w, "Too Many Requests", http.StatusTooManyRequests)

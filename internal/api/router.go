@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"malaxis-fleet/internal/audit"
 	"malaxis-fleet/internal/auth"
@@ -43,9 +44,17 @@ type API struct {
 	config       *config.Config
 	auditLogger  *audit.Logger
 	backupEngine *backup.Engine
-	visitors     map[string]*rate.Limiter
+	visitors     map[string]*visitorEntry
 	mu           sync.Mutex
 	botManager   BotManager
+}
+
+// visitorEntry is a per-IP/per-node rate limiter with a lastSeen timestamp so
+// the visitors map can be pruned: without it every unique address (or node)
+// would accumulate an entry forever and leak memory.
+type visitorEntry struct {
+	limiter  *rate.Limiter
+	lastSeen time.Time
 }
 
 //go:embed web/dist
@@ -61,9 +70,10 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 		config:       cfg,
 		auditLogger:  audit.NewLogger(repo),
 		backupEngine: backup.NewEngine(cfg),
-		visitors:     make(map[string]*rate.Limiter),
+		visitors:     make(map[string]*visitorEntry),
 		botManager:   botMgr,
 	}
+	api.startRateLimitCleanup()
 
 	// Subdomain routing
 	dashboardRouter := router.Host(stripPort(cfg.DashboardDomain)).Subrouter()
@@ -380,14 +390,15 @@ func (a *API) RateLimit(rps float64, burst int, next http.Handler) http.Handler 
 		}
 
 		a.mu.Lock()
-		limiter, exists := a.visitors["rl:"+ip]
+		entry, exists := a.visitors["rl:"+ip]
 		if !exists {
-			limiter = rate.NewLimiter(rate.Limit(rps), burst)
-			a.visitors["rl:"+ip] = limiter
+			entry = &visitorEntry{limiter: rate.NewLimiter(rate.Limit(rps), burst)}
+			a.visitors["rl:"+ip] = entry
 		}
+		entry.lastSeen = time.Now()
 		a.mu.Unlock()
 
-		if !limiter.Allow() {
+		if !entry.limiter.Allow() {
 			w.Header().Set("Retry-After", "60")
 			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 			return
@@ -395,6 +406,27 @@ func (a *API) RateLimit(rps float64, burst int, next http.Handler) http.Handler 
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// startRateLimitCleanup prunes rate-limit entries that have not been touched
+// for 15 minutes. Without it, the visitors map would grow unboundedly: every
+// unique IP (login attempts) and node id (sub_url updates) would leave a
+// permanent entry and eventually exhaust memory on a busy master.
+func (a *API) startRateLimitCleanup() {
+	go func() {
+		ticker := time.NewTicker(10 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cutoff := time.Now().Add(-15 * time.Minute)
+			a.mu.Lock()
+			for key, entry := range a.visitors {
+				if entry.lastSeen.Before(cutoff) {
+					delete(a.visitors, key)
+				}
+			}
+			a.mu.Unlock()
+		}
+	}()
 }
 
 // stripPort removes the port from a domain if it exists (e.g. localhost:8080 -> localhost)
