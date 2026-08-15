@@ -23,7 +23,7 @@ const (
 )
 
 // RoleRank returns the numeric hierarchy rank of a role. Custom roles and
-// unknown roles default to the client rank (50).
+// unknown roles default to the client rank (30).
 func RoleRank(role string) int {
 	switch role {
 	case RoleOwner:
