@@ -122,6 +122,19 @@ func main() {
 }
 
 func createInitialAdmin(repo repository.Repository, username, password string) error {
+	// Seed the default admin only on the FIRST boot. Once any user row
+	// exists, the configured ADMIN_USER/ADMIN_PASS no longer override
+	// anything: passwords changed through the UI or the bot must survive
+	// restarts.
+	empty, err := repo.IsUsersEmpty()
+	if err != nil {
+		return fmt.Errorf("failed to check users table: %w", err)
+	}
+	if !empty {
+		log.Println("Users already exist, skipping initial admin seed")
+		return nil
+	}
+
 	username = strings.TrimSpace(username)
 	password = strings.TrimSpace(password)
 	if username == "" {
@@ -136,16 +149,16 @@ func createInitialAdmin(repo repository.Repository, username, password string) e
 		return err
 	}
 
-	// Unconditional upsert: creates the admin user if missing and ALWAYS
-	// overwrites the existing password_hash with a fresh bcrypt hash of the
-	// configured default. Because the admin row already exists from previous
-	// sessions, a naive "IF NOT EXISTS" seed would skip the update and keep
-	// the stale hash -> 401. This path cannot skip: the hash is rewritten on
-	// every single startup.
-	if err := repo.UpsertAdminUser(username, string(hashedPassword)); err != nil {
+	if _, err := repo.AddUser(&domain.User{
+		Username:     username,
+		PasswordHash: string(hashedPassword),
+		Role:         domain.RoleOwner,
+		CreatedAt:    time.Now(),
+		ColorHex:     "#FF5733",
+	}); err != nil {
 		return fmt.Errorf("failed to seed admin user: %w", err)
 	}
-	log.Printf("Admin user '%s' upserted (password hash force-synced)", username)
+	log.Printf("Seeded initial admin user '%s' (owner role)", username)
 	return nil
 }
 
