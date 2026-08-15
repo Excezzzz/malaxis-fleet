@@ -653,12 +653,20 @@ func (b *Bot) handleRefreshAllSubs(chatID int64, messageID int) {
 
 func (b *Bot) handleOtaAll(chatID int64, messageID int) {
 	baseURL := "https://" + b.cfg.SubDomain
+	token := b.cfg.FleetSecret
+	// Tokenized download URLs: every payload endpoint on the sub-domain
+	// requires ?t=<SECRET_TOKEN> (payloadTokenGuard serves a fake nginx 404
+	// otherwise), so OTA silently failed before the token was added. The
+	// pkg_url field (agent_src.zip) is required by the agent to update its
+	// own Python package; the web handler (UpdateClientFilesHandler) sets the
+	// exact same fields.
 	command, _ := json.Marshal(map[string]string{
 		"action":         "update_client_files",
-		"agent_url":      baseURL + "/node_agent.py",
-		"cli_url":        baseURL + "/fleet-cli.sh",
-		"req_url":        baseURL + "/requirements.txt",
-		"entrypoint_url": baseURL + "/entrypoint.sh",
+		"agent_url":      baseURL + "/node_agent.py?t=" + token,
+		"pkg_url":        baseURL + "/agent_src.zip?t=" + token,
+		"cli_url":        baseURL + "/fleet-cli.sh?t=" + token,
+		"req_url":        baseURL + "/requirements.txt?t=" + token,
+		"entrypoint_url": baseURL + "/entrypoint.sh?t=" + token,
 	})
 
 	nodes, err := b.repo.GetAllNodes()
