@@ -81,6 +81,7 @@ func setupMasterLogFile(path string) {
 		log.Printf("WARN: cannot create log dir: %v", err)
 		return
 	}
+	rotateMasterLogIfLarge(path)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		log.Printf("WARN: cannot open master log file: %v", err)
@@ -88,4 +89,23 @@ func setupMasterLogFile(path string) {
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
 	log.Printf("Master logs are being written to %s", path)
+}
+
+// rotateMasterLogIfLarge performs a simple rotation at startup: when the log
+// file has grown beyond 50 MB, the current file is renamed to master.log.1
+// and a fresh file is started, so the file can never grow without bound.
+func rotateMasterLogIfLarge(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if info.Size() < 50*1024*1024 {
+		return
+	}
+	rotated := path + ".1"
+	if err := os.Rename(path, rotated); err != nil {
+		log.Printf("WARN: failed to rotate master log: %v", err)
+		return
+	}
+	log.Printf("Master log exceeded 50 MB, rotated to %s", rotated)
 }
