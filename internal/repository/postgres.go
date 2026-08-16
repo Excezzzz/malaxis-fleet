@@ -109,6 +109,10 @@ func (r *postgresRepository) Init() error {
 			value TEXT NOT NULL,
 			updated_at TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS subscription_providers (
+			domain TEXT PRIMARY KEY,
+			name TEXT NOT NULL
+		)`,
 	}
 
 	for _, query := range queries {
@@ -139,6 +143,19 @@ func (r *postgresRepository) Init() error {
 		// Migrate: Add hardware_hash column for hardware fingerprint dedup
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS hardware_hash TEXT`},
 		{query: `CREATE INDEX IF NOT EXISTS idx_nodes_hardware_hash ON nodes(hardware_hash)`},
+		// Migrate: Multi-subscription support - sub_urls JSONB array replaces
+		// the single sub_url TEXT column (kept as a legacy mirror of the first
+		// entry for backwards compatibility).
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS sub_urls JSONB NOT NULL DEFAULT '[]'`},
+		// Backfill: copy any legacy single sub_url into the new array exactly
+		// once (guarded by the empty-array check, so it is idempotent).
+		{query: `UPDATE nodes SET sub_urls = to_jsonb(ARRAY[sub_url]) WHERE (sub_url IS NOT NULL AND sub_url != '') AND sub_urls = '[]'::jsonb`},
+		// Mirror the first array entry back into the legacy sub_url column so
+		// any remaining sub_url consumers keep working after upgrades.
+		{query: `UPDATE nodes SET sub_url = sub_urls->>0 WHERE jsonb_array_length(sub_urls) > 0 AND COALESCE(sub_url, '') = ''`},
+		// Migrate: server_providers column - agent-reported map of server name
+		// -> provider name used for grouping in the web UI, bot and CLI.
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS server_providers TEXT`},
 		// Migrate: Add node_logs column (JSON map of container -> last log tail)
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS node_logs TEXT`},
 		// Migrate: Set default value for device_type and update existing NULL values
@@ -168,13 +185,13 @@ func (r *postgresRepository) Init() error {
 		// Ensure the built-in system roles exist even on upgraded deployments whose
 		// roles table was seeded before the owner/viewer rows were introduced.
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-			SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 80, NOW()
+			SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_manage_providers":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 80, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin')`},
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'client', '#3B82F6', 'system', '{"can_view_nodes":true}', 30, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'client')`},
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
-			SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 100, NOW()
+			SELECT 'owner', '#FF5733', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_manage_providers":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 100, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'owner')`},
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()
@@ -316,20 +333,77 @@ func unmarshalAvailableServers(raw string) []string {
 	return servers
 }
 
+func unmarshalSubURLs(raw string) []string {
+	var out []string
+	if raw == "" || raw == "null" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		// Pre-migration race: a bare string stored instead of a JSON array.
+		var single string
+		if json.Unmarshal([]byte(raw), &single) == nil && single != "" {
+			out = []string{single}
+		}
+	}
+	return out
+}
+
+func unmarshalServerProviders(raw string) map[string]string {
+	out := map[string]string{}
+	if raw == "" || raw == "null" {
+		return out
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		log.Printf("ERROR: invalid server_providers JSON %q: %v", raw, err)
+	}
+	return out
+}
+
+func marshalSubURLs(subURLs []string) string {
+	if len(subURLs) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(subURLs)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
+}
+
+func marshalServerProviders(m map[string]string) string {
+	if len(m) == 0 {
+		return "{}"
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
+}
+
+func firstSubURL(subURLs []string) string {
+	if len(subURLs) > 0 {
+		return subURLs[0]
+	}
+	return ""
+}
+
 func (r *postgresRepository) GetNodeByID(id string) (*domain.Node, error) {
 	var n domain.Node
-	var availRaw string
-	query := `SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_url, ''), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE id = $1`
-	err := r.db.QueryRow(query, id).Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &n.SubURL, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID)
+	var availRaw, subURLsRaw, providersRaw string
+	query := `SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE id = $1`
+	err := r.db.QueryRow(query, id).Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID)
 	if err != nil {
 		return nil, err
 	}
 	n.AvailableServers = unmarshalAvailableServers(availRaw)
+	n.SubURLs = unmarshalSubURLs(subURLsRaw)
+	n.ServerProviders = unmarshalServerProviders(providersRaw)
 	return &n, nil
 }
 
 func (r *postgresRepository) GetAllNodes() ([]domain.Node, error) {
-	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_url, ''), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes`)
+	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes`)
 	if err != nil {
 		return nil, err
 	}
@@ -338,18 +412,20 @@ func (r *postgresRepository) GetAllNodes() ([]domain.Node, error) {
 	var nodes []domain.Node
 	for rows.Next() {
 		var n domain.Node
-		var availRaw string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &n.SubURL, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
+		var availRaw, subURLsRaw, providersRaw string
+		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
 			return nil, err
 		}
 		n.AvailableServers = unmarshalAvailableServers(availRaw)
+		n.SubURLs = unmarshalSubURLs(subURLsRaw)
+		n.ServerProviders = unmarshalServerProviders(providersRaw)
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
 }
 
 func (r *postgresRepository) GetNodesByUserID(userID int64) ([]domain.Node, error) {
-	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_url, ''), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE user_id = $1`, userID)
+	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -358,19 +434,22 @@ func (r *postgresRepository) GetNodesByUserID(userID int64) ([]domain.Node, erro
 	var nodes []domain.Node
 	for rows.Next() {
 		var n domain.Node
-		var availRaw string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &n.SubURL, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
+		var availRaw, subURLsRaw, providersRaw string
+		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
 			return nil, err
 		}
 		n.AvailableServers = unmarshalAvailableServers(availRaw)
+		n.SubURLs = unmarshalSubURLs(subURLsRaw)
+		n.ServerProviders = unmarshalServerProviders(providersRaw)
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
 }
 
 func (r *postgresRepository) AddNode(node *domain.Node) error {
-	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, last_seen, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	_, err := r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, node.SubURL, time.Now(), node.UserID)
+	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, sub_urls, last_seen, user_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	subURLsJSON := marshalSubURLs(node.SubURLs)
+	_, err := r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, firstSubURL(node.SubURLs), subURLsJSON, time.Now(), node.UserID)
 	return err
 }
 
@@ -404,19 +483,20 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 		return node.ID, false, err
 	}
 
-	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, hardware_hash, last_seen)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+	query := `INSERT INTO nodes (id, name, hostname, ip_lan, sub_url, sub_urls, hardware_hash, last_seen)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 		ON CONFLICT (id) DO UPDATE SET
 			last_seen = NOW(),
 			ip_lan = EXCLUDED.ip_lan,
-			sub_url = COALESCE(EXCLUDED.sub_url, nodes.sub_url),
+			sub_urls = CASE WHEN EXCLUDED.sub_urls = '[]'::jsonb THEN nodes.sub_urls ELSE EXCLUDED.sub_urls END,
+			sub_url = CASE WHEN jsonb_array_length(EXCLUDED.sub_urls) > 0 THEN EXCLUDED.sub_urls->>0 ELSE nodes.sub_url END,
 			name = CASE
 				WHEN nodes.name IS NULL OR nodes.name = '' OR nodes.name = nodes.hostname THEN EXCLUDED.name
 				ELSE nodes.name
 			END,
 			hostname = COALESCE(EXCLUDED.hostname, nodes.hostname),
 			hardware_hash = COALESCE(EXCLUDED.hardware_hash, nodes.hardware_hash)`
-	_, err = r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, node.SubURL, node.HardwareHash)
+	_, err = r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, firstSubURL(node.SubURLs), marshalSubURLs(node.SubURLs), node.HardwareHash)
 	return node.ID, isNew, err
 }
 
@@ -440,8 +520,8 @@ func (r *postgresRepository) SetNodeHardwareHash(id, hardwareHash string) error 
 }
 
 func (r *postgresRepository) UpdateNode(node *domain.Node) error {
-	query := `UPDATE nodes SET name = $1, hostname = $2, ip_lan = $3, sub_url = $4, user_id = $5 WHERE id = $6`
-	_, err := r.db.Exec(query, node.Name, node.Hostname, node.IPLan, node.SubURL, node.UserID, node.ID)
+	query := `UPDATE nodes SET name = $1, hostname = $2, ip_lan = $3, sub_urls = $4, sub_url = CASE WHEN jsonb_array_length($4) > 0 THEN $4->>0 ELSE sub_url END, user_id = $5 WHERE id = $6`
+	_, err := r.db.Exec(query, node.Name, node.Hostname, node.IPLan, marshalSubURLs(node.SubURLs), node.UserID, node.ID)
 	return err
 }
 
@@ -502,9 +582,13 @@ func (r *postgresRepository) GetNodeLogs(id string) (string, error) {
 	return raw, nil
 }
 
-func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers, subURL string) error {
-	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5, available_servers = $6, sub_url = COALESCE($8, sub_url) WHERE id = $7`
-	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, availableServers, id, subURL)
+func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers string, subURLs []string, serverProviders map[string]string) error {
+	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5, available_servers = $6,
+		sub_urls = COALESCE(NULLIF($8::jsonb, '[]'::jsonb), sub_urls),
+		server_providers = COALESCE(NULLIF($9::text, ''), server_providers),
+		sub_url = CASE WHEN jsonb_array_length(sub_urls) > 0 THEN sub_urls->>0 ELSE sub_url END
+		WHERE id = $7`
+	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, availableServers, id, marshalSubURLs(subURLs), marshalServerProviders(serverProviders))
 	return err
 }
 
@@ -515,7 +599,7 @@ func (r *postgresRepository) UpdateNodePipelineStatus(nodeID, status, message st
 }
 
 func (r *postgresRepository) GetNodesWithSubURL() ([]domain.Node, error) {
-	rows, err := r.db.Query(`SELECT id, name, COALESCE(sub_url, ''), COALESCE(active_server, ''), COALESCE(active_outbound_json, '') FROM nodes WHERE sub_url != '' AND sub_url IS NOT NULL`)
+	rows, err := r.db.Query(`SELECT id, name, COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_outbound_json, '') FROM nodes WHERE jsonb_array_length(sub_urls) > 0`)
 	if err != nil {
 		return nil, err
 	}
@@ -524,9 +608,11 @@ func (r *postgresRepository) GetNodesWithSubURL() ([]domain.Node, error) {
 	var nodes []domain.Node
 	for rows.Next() {
 		var n domain.Node
-		if err := rows.Scan(&n.ID, &n.Name, &n.SubURL, &n.ActiveServer, &n.ActiveOutboundJSON); err != nil {
+		var subURLsRaw string
+		if err := rows.Scan(&n.ID, &n.Name, &subURLsRaw, &n.ActiveServer, &n.ActiveOutboundJSON); err != nil {
 			return nil, err
 		}
+		n.SubURLs = unmarshalSubURLs(subURLsRaw)
 		nodes = append(nodes, n)
 	}
 	return nodes, nil
@@ -537,9 +623,9 @@ func (r *postgresRepository) AssignNodeToUser(nodeID string, userID int64) error
 	return err
 }
 
-// UpdateAllNodesSubURL updates the sub_url field for ALL nodes in the database.
-func (r *postgresRepository) UpdateAllNodesSubURL(subURL string) error {
-	_, err := r.db.Exec("UPDATE nodes SET sub_url = $1", subURL)
+// UpdateAllNodesSubURLs replaces the subscription URLs for ALL nodes.
+func (r *postgresRepository) UpdateAllNodesSubURLs(subURLs []string) error {
+	_, err := r.db.Exec(`UPDATE nodes SET sub_urls = $1::jsonb, sub_url = CASE WHEN jsonb_array_length($1::jsonb) > 0 THEN $1::jsonb->>0 ELSE '' END`, marshalSubURLs(subURLs))
 	return err
 }
 
@@ -575,11 +661,14 @@ func (r *postgresRepository) SetPendingCommand(nodeID, command string, messageID
 	return nil
 }
 
-func (r *postgresRepository) UpdateNodeSubURLAndQueue(nodeID, subURL, command string, messageID int64) error {
-	// Single atomic UPDATE: saving the sub_url and queuing the update_sub
-	// command must succeed or fail together, otherwise a sub_url change
+func (r *postgresRepository) UpdateNodeSubURLsAndQueue(nodeID string, subURLs []string, command string, messageID int64) error {
+	// Single atomic UPDATE: saving the sub_urls and queuing the update_sub
+	// command must succeed or fail together, otherwise a sub_urls change
 	// could be persisted without ever triggering the agent to fetch it.
-	res, err := r.db.Exec("UPDATE nodes SET sub_url = $1, pending_command = $2, pending_msg_id = $3, pipeline_status = 'Queued', status_message = '' WHERE id = $4", subURL, command, messageID, nodeID)
+	res, err := r.db.Exec(`UPDATE nodes SET sub_urls = $1::jsonb,
+		sub_url = CASE WHEN jsonb_array_length($1::jsonb) > 0 THEN $1::jsonb->>0 ELSE '' END,
+		pending_command = $2, pending_msg_id = $3, pipeline_status = 'Queued', status_message = '' WHERE id = $4`,
+		marshalSubURLs(subURLs), command, messageID, nodeID)
 	if err != nil {
 		return err
 	}
@@ -856,4 +945,54 @@ func (r *postgresRepository) GetSettingKeysByPrefix(prefix string) ([]string, er
 		keys = append(keys, k)
 	}
 	return keys, rows.Err()
+}
+
+// --- Subscription Provider Methods ---
+
+func (r *postgresRepository) GetSubscriptionProviders() ([]domain.SubscriptionProvider, error) {
+	rows, err := r.db.Query(`SELECT domain, name FROM subscription_providers ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var providers []domain.SubscriptionProvider
+	for rows.Next() {
+		var p domain.SubscriptionProvider
+		if err := rows.Scan(&p.Domain, &p.Name); err != nil {
+			return nil, err
+		}
+		providers = append(providers, p)
+	}
+	return providers, rows.Err()
+}
+
+func (r *postgresRepository) GetProviderNames() (map[string]string, error) {
+	rows, err := r.db.Query(`SELECT domain, name FROM subscription_providers`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	names := map[string]string{}
+	for rows.Next() {
+		var d, name string
+		if err := rows.Scan(&d, &name); err != nil {
+			return nil, err
+		}
+		names[d] = name
+	}
+	return names, rows.Err()
+}
+
+func (r *postgresRepository) UpsertSubscriptionProvider(p domain.SubscriptionProvider) error {
+	query := `INSERT INTO subscription_providers (domain, name) VALUES ($1, $2)
+		ON CONFLICT (domain) DO UPDATE SET name = EXCLUDED.name`
+	_, err := r.db.Exec(query, p.Domain, p.Name)
+	return err
+}
+
+func (r *postgresRepository) DeleteSubscriptionProvider(domain string) error {
+	_, err := r.db.Exec(`DELETE FROM subscription_providers WHERE domain = $1`, domain)
+	return err
 }

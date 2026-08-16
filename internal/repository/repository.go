@@ -37,21 +37,29 @@ type Repository interface {
 	DeleteNode(id string) error
 	DeleteOfflineNodes(thresholdDays int) (int64, error)
 	UpdateNodeStatus(id, ipLan string) error
-	UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers, subURL string) error
+	UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers string, subURLs []string, serverProviders map[string]string) error
 	UpdateNodePipelineStatus(nodeID, status, message string) error
 	GetNodesWithSubURL() ([]domain.Node, error)
 	AssignNodeToUser(nodeID string, userID int64) error
-	UpdateAllNodesSubURL(subURL string) error
+	UpdateAllNodesSubURLs(subURLs []string) error
 	SetNodeLogs(id, logsJSON string) error
 	GetNodeLogs(id string) (string, error)
+
+	// --- Subscription Provider Methods ---
+	GetSubscriptionProviders() ([]domain.SubscriptionProvider, error)
+	// GetProviderNames returns a domain -> friendly name map for the agent
+	// poll payload, so agents can tag cached servers with provider names.
+	GetProviderNames() (map[string]string, error)
+	UpsertSubscriptionProvider(p domain.SubscriptionProvider) error
+	DeleteSubscriptionProvider(domain string) error
 
 	// --- Command Methods ---
 	GetPendingCommand(nodeID string) (string, error)
 	SetPendingCommand(nodeID, command string, messageID int64) error
-	// UpdateNodeSubURLAndQueue atomically saves the subscription URL and
-	// queues the agent update command in a single UPDATE, so a sub_url change
+	// UpdateNodeSubURLsAndQueue atomically saves the subscription URLs and
+	// queues the agent update command in a single UPDATE, so a sub_urls change
 	// can never be persisted without triggering the agent to fetch it.
-	UpdateNodeSubURLAndQueue(nodeID, subURL, command string, messageID int64) error
+	UpdateNodeSubURLsAndQueue(nodeID string, subURLs []string, command string, messageID int64) error
 	ClearPendingCommand(nodeID string) error
 
 	// --- User Methods ---

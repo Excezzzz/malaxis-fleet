@@ -66,6 +66,37 @@ func validSubscriptionURL(raw string) bool {
 	return true
 }
 
+// normalizeSubURLs trims whitespace, drops empty entries and exact duplicates
+// while preserving order.
+func normalizeSubURLs(subURLs []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, u := range subURLs {
+		u = strings.TrimSpace(u)
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	return out
+}
+
+// mergeSubURLs appends a single URL to the node's list unless it is already
+// present (order-preserving dedup).
+func mergeSubURLs(subURLs []string, u string) []string {
+	u = strings.TrimSpace(u)
+	if u == "" {
+		return subURLs
+	}
+	for _, existing := range subURLs {
+		if existing == u {
+			return subURLs
+		}
+	}
+	return append(subURLs, u)
+}
+
 // verifySubscriptionURLReachable performs a fast HTTP GET (3s timeout) to
 // confirm the subscription URL actually exists and serves a valid response
 // before it is saved. Any transport error (DNS, connection refused, timeout)
@@ -128,7 +159,7 @@ func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request
 	// Check if node already exists
 	existingNode, err := a.repo.GetNodeByID(req.NodeID)
 	if err == nil && existingNode != nil {
-		existingNode.SubURL = req.SubscriptionURL
+		existingNode.SubURLs = mergeSubURLs(existingNode.SubURLs, req.SubscriptionURL)
 		// Never clobber an existing custom name with the OS hostname; only
 		// apply a name when the caller explicitly provides one.
 		if req.Name != "" {
@@ -140,7 +171,7 @@ func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request
 			ID:       req.NodeID,
 			Name:     req.Name,
 			Hostname: req.Hostname,
-			SubURL:   req.SubscriptionURL,
+			SubURLs:  []string{req.SubscriptionURL},
 		}
 		if newNode.Name == "" {
 			newNode.Name = req.Hostname
@@ -305,14 +336,25 @@ func (a *API) UpdateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	if req.Name != "" {
 		node.Name = req.Name
 	}
-	if req.SubURL != "" {
-		// Live check: the URL must actually be reachable before it is saved.
+	if len(req.SubURLs) > 0 {
+		// Live check: every URL must actually be reachable before it is saved.
+		subURLs := normalizeSubURLs(req.SubURLs)
+		for _, u := range subURLs {
+			if err := verifySubscriptionURLReachable(u); err != nil {
+				log.Printf("WARN: Rejected unreachable sub_url %s for node %s: %v", u, nodeID, err)
+				writeInvalidSubURLError(w)
+				return
+			}
+		}
+		node.SubURLs = subURLs
+	} else if req.SubURL != "" {
+		// Legacy single-URL payload.
 		if err := verifySubscriptionURLReachable(req.SubURL); err != nil {
 			log.Printf("WARN: Rejected unreachable sub_url %s for node %s: %v", req.SubURL, nodeID, err)
 			writeInvalidSubURLError(w)
 			return
 		}
-		node.SubURL = req.SubURL
+		node.SubURLs = []string{req.SubURL}
 	}
 
 	if err := a.repo.UpdateNode(node); err != nil {
@@ -356,56 +398,69 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SubURL string `json:"sub_url"`
+		SubURL  string   `json:"sub_url"`
+		SubURLs []string `json:"sub_urls"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	if req.SubURL == "" {
-		http.Error(w, "Bad Request: sub_url is required", http.StatusBadRequest)
+	subURLs := req.SubURLs
+	if len(subURLs) == 0 && req.SubURL != "" {
+		// Legacy single-URL payload (pre-v1.2.0 clients).
+		subURLs = []string{req.SubURL}
+	}
+	if len(subURLs) == 0 {
+		http.Error(w, "Bad Request: sub_urls is required", http.StatusBadRequest)
 		return
 	}
 
-	if !validSubscriptionURL(req.SubURL) {
-		http.Error(w, "Bad Request: sub_url must be a valid http(s) URL", http.StatusBadRequest)
-		return
+	// Normalize: trim, drop empties and exact duplicates.
+	subURLs = normalizeSubURLs(subURLs)
+
+	// Live check: every URL must actually be reachable before it is saved.
+	for _, u := range subURLs {
+		if !validSubscriptionURL(u) {
+			http.Error(w, "Bad Request: sub_urls must be valid http(s) URLs", http.StatusBadRequest)
+			return
+		}
+		if err := verifySubscriptionURLReachable(u); err != nil {
+			log.Printf("WARN: Rejected unreachable sub_url %s for node %s: %v", u, nodeID, err)
+			writeInvalidSubURLError(w)
+			return
+		}
 	}
 
-	// Live check: the URL must actually be reachable before it is saved.
-	if err := verifySubscriptionURLReachable(req.SubURL); err != nil {
-		log.Printf("WARN: Rejected unreachable sub_url %s for node %s: %v", req.SubURL, nodeID, err)
-		writeInvalidSubURLError(w)
-		return
-	}
-
-	// Execute direct PostgreSQL UPDATE to ensure sub_url is properly committed
+	// Execute direct PostgreSQL UPDATE to ensure sub_urls is properly committed
 	if _, err := a.repo.GetNodeByID(nodeID); err != nil {
 		http.Error(w, "Node not found", http.StatusNotFound)
 		return
 	}
 
-	// Queue an update_sub command so the node fetches the new subscription.
-	// Single atomic UPDATE: sub_url and the queued update_sub command are
+	// Queue an update_sub command so the node fetches the new subscriptions.
+	// Single atomic UPDATE: sub_urls and the queued update_sub command are
 	// committed together, so the agent is always triggered to fetch servers.
-	command := map[string]string{"action": "update_sub", "sub_url": req.SubURL}
+	command := map[string]interface{}{"action": "update_sub", "sub_urls": subURLs}
+	if len(subURLs) > 0 {
+		command["sub_url"] = subURLs[0]
+	}
 	cmdJSON, _ := json.Marshal(command)
 	messageID := time.Now().Unix()
-	if err := a.repo.UpdateNodeSubURLAndQueue(nodeID, req.SubURL, string(cmdJSON), messageID); err != nil {
-		log.Printf("ERROR: Failed to update sub_url and queue update_sub for node %s: %v", nodeID, err)
-		http.Error(w, "Internal Server Error: Failed to update subscription URL", http.StatusInternalServerError)
+	if err := a.repo.UpdateNodeSubURLsAndQueue(nodeID, subURLs, string(cmdJSON), messageID); err != nil {
+		log.Printf("ERROR: Failed to update sub_urls and queue update_sub for node %s: %v", nodeID, err)
+		http.Error(w, "Internal Server Error: Failed to update subscription URLs", http.StatusInternalServerError)
 		return
 	}
 
 	actorUser := a.actor(r)
-	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateDevice, nodeID, "Updated subscription URL to "+req.SubURL)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateDevice, nodeID, "Updated subscription URLs to "+strings.Join(subURLs, ", "))
 
-	log.Printf("Updated sub_url for node %s: %s", nodeID, req.SubURL)
+	log.Printf("Updated sub_urls for node %s: %d URL(s)", nodeID, len(subURLs))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "ok",
-		"message": "Subscription URL updated, node will refresh on next poll",
+		"message": "Subscription URLs updated, node will refresh on next poll",
 	})
 }
 
@@ -417,33 +472,42 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SubURL string `json:"sub_url"`
+		SubURL  string   `json:"sub_url"`
+		SubURLs []string `json:"sub_urls"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	if req.SubURL == "" {
-		http.Error(w, "Bad Request: sub_url is required", http.StatusBadRequest)
+	subURLs := req.SubURLs
+	if len(subURLs) == 0 && req.SubURL != "" {
+		// Legacy single-URL payload (pre-v1.2.0 clients).
+		subURLs = []string{req.SubURL}
+	}
+	if len(subURLs) == 0 {
+		http.Error(w, "Bad Request: sub_urls is required", http.StatusBadRequest)
 		return
 	}
 
-	if !validSubscriptionURL(req.SubURL) {
-		http.Error(w, "Bad Request: sub_url must be a valid http(s) URL", http.StatusBadRequest)
-		return
+	subURLs = normalizeSubURLs(subURLs)
+
+	// Live check: every URL must actually be reachable before it is saved for ALL nodes.
+	for _, u := range subURLs {
+		if !validSubscriptionURL(u) {
+			http.Error(w, "Bad Request: sub_urls must be valid http(s) URLs", http.StatusBadRequest)
+			return
+		}
+		if err := verifySubscriptionURLReachable(u); err != nil {
+			log.Printf("WARN: Rejected unreachable sub_url %s for mass update: %v", u, err)
+			writeInvalidSubURLError(w)
+			return
+		}
 	}
 
-	// Live check: the URL must actually be reachable before it is saved for ALL nodes.
-	if err := verifySubscriptionURLReachable(req.SubURL); err != nil {
-		log.Printf("WARN: Rejected unreachable sub_url %s for mass update: %v", req.SubURL, err)
-		writeInvalidSubURLError(w)
-		return
-	}
-
-	// Update sub_url for ALL nodes in PostgreSQL
-	if err := a.repo.UpdateAllNodesSubURL(req.SubURL); err != nil {
-		log.Printf("ERROR: Failed to mass update sub_url: %v", err)
+	// Update sub_urls for ALL nodes in PostgreSQL
+	if err := a.repo.UpdateAllNodesSubURLs(subURLs); err != nil {
+		log.Printf("ERROR: Failed to mass update sub_urls: %v", err)
 		http.Error(w, "Internal Server Error: Failed to update subscription URLs", http.StatusInternalServerError)
 		return
 	}
@@ -457,10 +521,14 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	messageID := time.Now().Unix()
-	command, _ := json.Marshal(map[string]string{"action": "update_sub", "sub_url": req.SubURL})
+	command := map[string]interface{}{"action": "update_sub", "sub_urls": subURLs}
+	if len(subURLs) > 0 {
+		command["sub_url"] = subURLs[0]
+	}
+	commandJSON, _ := json.Marshal(command)
 	queuedCount := 0
 	for _, node := range nodes {
-		if err := a.repo.SetPendingCommand(node.ID, string(command), messageID); err != nil {
+		if err := a.repo.SetPendingCommand(node.ID, string(commandJSON), messageID); err != nil {
 			log.Printf("ERROR: Failed to queue command for node %s: %v", node.ID, err)
 		} else {
 			queuedCount++
@@ -468,13 +536,13 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	actorUser := a.actor(r)
-	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "all_nodes", "Mass updated subscription URL for all nodes")
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "all_nodes", "Mass updated subscription URLs for all nodes")
 
-	log.Printf("Mass updated sub_url for %d nodes, queued commands for %d nodes", len(nodes), queuedCount)
+	log.Printf("Mass updated sub_urls for %d nodes, queued commands for %d nodes", len(nodes), queuedCount)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":          "ok",
-		"message":         "Subscription URL updated for all nodes",
+		"message":         "Subscription URLs updated for all nodes",
 		"nodes_updated":   len(nodes),
 		"commands_queued": queuedCount,
 	})
@@ -509,16 +577,22 @@ func (a *API) MassUpdateDomainHandler(w http.ResponseWriter, r *http.Request) {
 
 	updatedCount := 0
 	for _, node := range nodes {
-		if node.SubURL == "" {
+		if len(node.SubURLs) == 0 {
 			continue
 		}
-		newURL := replaceDomain(node.SubURL, req.Domain)
-		if newURL == node.SubURL {
+		changed := false
+		for i, u := range node.SubURLs {
+			newURL := replaceDomain(u, req.Domain)
+			if newURL != u {
+				node.SubURLs[i] = newURL
+				changed = true
+			}
+		}
+		if !changed {
 			continue
 		}
-		node.SubURL = newURL
 		if err := a.repo.UpdateNode(&node); err != nil {
-			log.Printf("ERROR: Failed to update sub_url for node %s: %v", node.ID, err)
+			log.Printf("ERROR: Failed to update sub_urls for node %s: %v", node.ID, err)
 			continue
 		}
 		updatedCount++

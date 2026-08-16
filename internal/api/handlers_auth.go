@@ -36,24 +36,30 @@ type PollRequest struct {
 	Hostname     string `json:"hostname"`
 	IPLan        string `json:"ip_lan"`
 	HardwareHash string `json:"hardware_hash"`
-	SubURL       string `json:"sub_url"`
-	Name         string `json:"name,omitempty"`
+	// SubURL is the legacy single-URL field kept for backwards compatibility
+	// with pre-v1.2.0 agents; new agents send SubURLs.
+	SubURL  string   `json:"sub_url"`
+	SubURLs []string `json:"sub_urls"`
+	Name    string   `json:"name,omitempty"`
 }
 
 type ReportRequest struct {
-	ID               string   `json:"id"`
-	ExternalIP       string   `json:"external_ip"`
-	Engine           string   `json:"engine"`
-	Protocol         string   `json:"protocol"`
-	OutboundJSON     string   `json:"outbound_json"`
-	Status           string   `json:"status,omitempty"`
-	Message          string   `json:"message,omitempty"`
-	ActiveServer     string   `json:"active_server,omitempty"`
-	AvailableServers []string `json:"available_servers,omitempty"`
-	SubURL           string   `json:"sub_url,omitempty"`
-	Name             string   `json:"name,omitempty"`
-	HardwareHash     string   `json:"hardware_hash,omitempty"`
-	Logs             string   `json:"logs,omitempty"`
+	ID               string            `json:"id"`
+	ExternalIP       string            `json:"external_ip"`
+	Engine           string            `json:"engine"`
+	Protocol         string            `json:"protocol"`
+	OutboundJSON     string            `json:"outbound_json"`
+	Status           string            `json:"status,omitempty"`
+	Message          string            `json:"message,omitempty"`
+	ActiveServer     string            `json:"active_server,omitempty"`
+	AvailableServers []string          `json:"available_servers,omitempty"`
+	SubURL           string            `json:"sub_url,omitempty"`
+	SubURLs          []string          `json:"sub_urls,omitempty"`
+	// ServerProviders maps server name -> provider name for UI grouping.
+	ServerProviders map[string]string `json:"server_providers,omitempty"`
+	Name             string            `json:"name,omitempty"`
+	HardwareHash     string            `json:"hardware_hash,omitempty"`
+	Logs             string            `json:"logs,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -105,8 +111,9 @@ type ResetPasswordRequest struct {
 }
 
 type UpdateNodeRequest struct {
-	Name   string `json:"name"`
-	SubURL string `json:"sub_url"`
+	Name    string   `json:"name"`
+	SubURL  string   `json:"sub_url"`
+	SubURLs []string `json:"sub_urls"`
 }
 
 // --- Auth Handlers ---
@@ -383,6 +390,25 @@ func (a *API) PollHandler(w http.ResponseWriter, r *http.Request) {
 		resp["node_id"] = canonicalID
 	}
 
+	// v1.2.0 multi-subscription: the master is the source of truth for the
+	// node's subscription URLs. Return them (plus the legacy single URL for
+	// old agents) together with the provider-name dictionary so the agent can
+	// tag every cached server with its provider.
+	node, err := a.repo.GetNodeByID(canonicalID)
+	if err == nil {
+		subURLs := node.SubURLs
+		if len(subURLs) == 0 && req.SubURL != "" {
+			subURLs = []string{req.SubURL}
+		}
+		resp["sub_urls"] = subURLs
+		if len(subURLs) > 0 {
+			resp["sub_url"] = subURLs[0]
+		}
+		if providerNames, err := a.repo.GetProviderNames(); err == nil {
+			resp["providers"] = providerNames
+		}
+	}
+
 	if cmd != "" {
 		log.Printf("Sending pending command to %s", canonicalID)
 		resp["command"] = cmd
@@ -418,7 +444,7 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON, req.SubURL)
+	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON, req.SubURLs, req.ServerProviders)
 	if err != nil {
 		log.Printf("ERROR: Failed to update node report for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -603,13 +629,18 @@ func (a *API) AgentTokenMiddleware(next http.Handler) http.Handler {
 // --- Helper Functions ---
 
 func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
+	subURLs := req.SubURLs
+	if len(subURLs) == 0 && req.SubURL != "" {
+		// Legacy pre-v1.2.0 agent: single-URL payload.
+		subURLs = []string{req.SubURL}
+	}
 	node := &domain.Node{
 		ID:           req.ID,
 		Name:         req.Name,
 		Hostname:     req.Hostname,
 		IPLan:        req.IPLan,
 		HardwareHash: req.HardwareHash,
-		SubURL:       req.SubURL,
+		SubURLs:      subURLs,
 	}
 	// The agent sends its custom node name; fall back to the OS hostname when
 	// no custom name has been configured.
@@ -622,10 +653,10 @@ func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 	}
 
 	// FIRST-TIME registration: fire an instant Telegram onboarding notification
-	// so the admin can approve (when the agent already reported a sub URL),
-	// set the subscription URL, or reject the device right from the chat.
+	// so the admin can approve (when the agent already reported sub URLs),
+	// set the subscription URLs, or reject the device right from the chat.
 	if isNew && a.botManager != nil {
-		a.botManager.NotifyNewNode(canonicalID, req.Hostname, req.IPLan, req.SubURL)
+		a.botManager.NotifyNewNode(canonicalID, req.Hostname, req.IPLan, subURLs)
 	}
 	return canonicalID, nil
 }

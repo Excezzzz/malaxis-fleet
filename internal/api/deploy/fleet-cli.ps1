@@ -98,7 +98,12 @@ function Is-Terminated {
 
 function Has-Sub {
     $u = Get-State "sub_url" ""
-    return (-not [string]::IsNullOrWhiteSpace($u)) -and ($u -ne "null")
+    if ((-not [string]::IsNullOrWhiteSpace($u)) -and ($u -ne "null")) { return $true }
+    try {
+        $state = Get-Content -LiteralPath $STATE_FILE -Raw | ConvertFrom-Json
+        if ($state.sub_urls -is [array] -and $state.sub_urls.Count -gt 0) { return $true }
+    } catch { }
+    return $false
 }
 
 function Show-Menu {
@@ -126,9 +131,9 @@ function Show-Menu {
 
     if (-not (Has-Sub)) {
         Write-Host " [SETUP] No subscription URL configured yet." -ForegroundColor Yellow
-        Write-Host " Set your 3x-ui subscription URL to start using the fleet."
+        Write-Host " Set your 3x-ui subscription URL(s) to start using the fleet."
         Write-Host ""
-        Write-Host " 1) Set Subscription URL"
+        Write-Host " 1) Set Subscription URL(s)"
         Write-Host " 2) Exit"
         Write-Host ""
         $choice = Read-Host "Select option [1-2]"
@@ -201,7 +206,7 @@ function Show-Menu {
     }
     Write-Host ""
     Write-Host "------------------------------------------"
-    Write-Host " 1) Set / Update Subscription URL"
+    Write-Host " 1) Set / Update Subscription URL(s)"
     Write-Host " 2) Update Client Files"
     Write-Host " 3) Switch Server"
     Write-Host " 4) Toggle Auto-Update"
@@ -256,12 +261,17 @@ function Update-Subscription {
 
     $current_url = Get-State "sub_url" ""
     if (-not [string]::IsNullOrWhiteSpace($current_url) -and $current_url -ne "null") {
-        Write-Host "Current URL: $current_url"
-        $sub_url = Read-Host "Enter new subscription URL (or press Enter to keep current)"
-        $sub_url = ($sub_url -replace "\s", "").Trim()
+        Write-Host "Current URL(s):"
+        try {
+            $state = Get-Content -LiteralPath $STATE_FILE -Raw | ConvertFrom-Json
+            if ($state.sub_urls -is [array]) { $state.sub_urls | ForEach-Object { Write-Host "  $_" } }
+            else { Write-Host "  $current_url" }
+        } catch { Write-Host "  $current_url" }
+        $sub_url = Read-Host "Enter subscription URL(s) (space separated, or press Enter to keep current)"
+        $sub_url = ($sub_url -replace "\s+", " ").Trim()
         if ([string]::IsNullOrWhiteSpace($sub_url)) { $sub_url = $current_url }
     } else {
-        $sub_url = (Read-Host "Enter your 3x-ui subscription URL").Trim()
+        $sub_url = (Read-Host "Enter your 3x-ui subscription URL(s), space separated").Trim()
     }
 
     if ([string]::IsNullOrWhiteSpace($sub_url)) {
@@ -272,14 +282,14 @@ function Update-Subscription {
     }
 
     Set-State "sub_url" $sub_url
-    Write-Host "Subscription URL saved. Fetching subscription now..." -ForegroundColor Green
+    Write-Host "Subscription URL(s) saved. Fetching subscription now..." -ForegroundColor Green
     & docker exec node-agent python3 -c "import agent_src.main; agent_src.main.update_subscription_cli('$sub_url')" 2>$null | Out-Null
-    Write-Host "Subscription URL synced to the web dashboard." -ForegroundColor Green
+    Write-Host "Subscription URL(s) synced to the web dashboard." -ForegroundColor Green
     Start-Sleep 2
 
     $count = Cache-Count
     if ($count -gt 0) {
-        Write-Host "Found $count servers in subscription!" -ForegroundColor Green
+        Write-Host "Found $count servers in subscriptions!" -ForegroundColor Green
         Write-Host "Use Option 3 to select a server."
     } else {
         Write-Host "No servers found yet. The agent will fetch in background." -ForegroundColor Yellow

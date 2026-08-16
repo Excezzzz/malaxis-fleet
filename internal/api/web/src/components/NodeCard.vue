@@ -38,11 +38,11 @@
             <span class="text-white font-medium truncate text-right">{{ node.active_server || t('common_none') }}<span v-if="node.active_engine" class="text-xs text-zinc-500"> ({{ node.active_engine }}{{ node.active_proto ? ' / ' + node.active_proto : '' }})</span></span>
         </div>
         <div class="flex justify-between items-center gap-2">
-            <span class="text-zinc-500 text-xs uppercase">{{ t('common_sub_url') }}</span>
-            <template v-if="node.sub_url">
-              <div class="flex items-center gap-2">
-                <span class="text-xs text-zinc-400 truncate max-w-[140px] sm:max-w-[180px] inline-block align-bottom" :title="node.sub_url">{{ node.sub_url }}</span>
-                <button @click="copySubUrl" :title="t('node_copy_sub_tt')"
+            <span class="text-zinc-500 text-xs uppercase">{{ t('common_sub_urls') }}</span>
+            <template v-if="nodeSubUrls.length">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="text-xs text-zinc-400 truncate max-w-[140px] sm:max-w-[180px] inline-block align-bottom" :title="nodeSubUrls.join('\n')">{{ nodeSubUrls[0] }}<template v-if="nodeSubUrls.length > 1"> +{{ nodeSubUrls.length - 1 }}</template></span>
+                <button @click="copySubUrls" :title="t('node_copy_sub_tt')"
                   class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors shrink-0">
                   <Copy class="w-3 h-3" />
                 </button>
@@ -78,7 +78,7 @@
         </div>
         <template v-if="canManage">
             <div class="flex flex-wrap gap-2">
-                <button v-if="canEditSubCard" @click="showSubModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                <button v-if="canEditSubCard" @click="openSubModal" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Link class="w-4 h-4 shrink-0" />
                   <span class="font-mono text-sm truncate min-w-0">[{{ t('node_manage_sub') }}]</span>
                 </button>
@@ -178,10 +178,28 @@
     <div v-if="showSubModal" :class="['fixed inset-0 z-[999] flex items-center justify-center p-4', modalBackdrop]" style="backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);" @click.self="showSubModal = false">
       <div class="bg-zinc-900/90 backdrop-blur-xl rounded-3xl border border-white/10 p-6 w-[95%] sm:w-full max-w-lg max-h-[85vh] overflow-y-auto shadow-2xl">
         <h2 class="text-2xl font-bold mb-6 tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('node_sub_title') }}<span class="font-mono text-indigo-400">]</span></h2>
-        <input v-model="newSubUrl" type="text" placeholder="https://example.com/subscription" class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+        <div v-if="subUrls.length" class="space-y-2 mb-4">
+          <div v-for="(url, idx) in subUrls" :key="idx" class="flex items-center gap-2">
+            <span class="flex-1 min-w-0 text-xs text-zinc-300 break-all bg-zinc-800 border border-white/10 rounded-lg px-3 py-2 font-mono">{{ url }}</span>
+            <button type="button" @click="removeSubUrl(idx)" :title="t('node_remove_url_tt')"
+              class="p-2 rounded-lg hover:bg-red-500/10 text-zinc-500 hover:text-red-400 transition-colors shrink-0">
+              <X class="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+        <div class="space-y-3">
+          <input v-model="newSubUrl" type="text" placeholder="https://example.com/subscription" @keyup.enter="addSubUrl"
+            class="mt-1 block w-full bg-zinc-800 border-white/10 rounded-xl shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50">
+          <button type="button" @click="addSubUrl"
+            class="w-full flex items-center justify-center space-x-2 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm text-zinc-300 transition-colors">
+            <Plus class="w-4 h-4" />
+            <span>{{ t('node_add_url') }}</span>
+          </button>
+          <p class="text-xs text-zinc-500">{{ t('node_sub_hint') }}</p>
+        </div>
         <div class="mt-8 flex justify-end space-x-4">
           <button type="button" @click="showSubModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('cancel') }}</button>
-          <button type="button" @click="updateSubUrl" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors">{{ t('node_update_url') }}</button>
+          <button type="button" @click="updateSubUrls" :disabled="!subUrls.length" class="px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/30 text-indigo-100 rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed">{{ t('node_update_url') }}</button>
         </div>
       </div>
     </div>
@@ -195,11 +213,16 @@
           <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-semibold text-zinc-200"><Scale class="w-4 h-4 text-indigo-400 shrink-0" /><span class="truncate min-w-0">{{ t('node_balanced') }}</span></button>
         </div>
         <p class="text-xs text-zinc-500 mb-2">{{ t('node_avail_configs', { n: (node.available_servers || []).length }) }}</p>
-        <div v-if="(node.available_servers || []).length" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto pr-1">
-          <button v-for="srv in node.available_servers" :key="srv" @click="switchTo(srv)"
-            :class="['px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl font-semibold truncate', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
-            {{ srv }}
-          </button>
+        <div v-if="serverGroups.length" class="max-h-56 overflow-y-auto pr-1 space-y-3">
+          <div v-for="group in serverGroups" :key="group.key">
+            <p v-if="group.provider" class="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1.5">{{ group.provider }}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button v-for="srv in group.servers" :key="srv" @click="switchTo(srv)"
+                :class="['px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl font-semibold truncate', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
+                {{ srv }}
+              </button>
+            </div>
+          </div>
         </div>
         <p v-else class="text-sm text-zinc-500">{{ t('node_no_configs') }}</p>
         <div class="mt-8 flex justify-end"><button type="button" @click="showSwitchModal = false" class="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors">{{ t('close') }}</button></div>
@@ -276,15 +299,15 @@
 </template>
 
 <script>
-import { ref, computed, inject, watch, onUnmounted, nextTick } from 'vue';
+import { ref, computed, inject, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale, Plus } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale, Plus },
   props: {
     node: {
       type: Object,
@@ -311,6 +334,14 @@ export default {
 
     const showSubModal = ref(false);
     const newSubUrl = ref('');
+    const subUrls = ref([]);
+    const nodeSubUrls = computed(() => props.node.sub_urls || (props.node.sub_url ? [props.node.sub_url] : []));
+
+    const openSubModal = () => {
+      subUrls.value = [...nodeSubUrls.value];
+      newSubUrl.value = '';
+      showSubModal.value = true;
+    };
     const showRenameModal = ref(false);
     const newNodeName = ref('');
     const showTerminateModal = ref(false);
@@ -408,18 +439,31 @@ export default {
       toastTimer = setTimeout(() => { toast.value = ''; }, duration);
     };
 
-    const updateSubUrl = async () => {
-      if (!newSubUrl.value) {
+    const addSubUrl = () => {
+      const raw = newSubUrl.value || '';
+      const parts = raw.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      if (!parts.length) return;
+      const known = new Set(subUrls.value);
+      parts.forEach(u => { if (!known.has(u)) { known.add(u); subUrls.value.push(u); } });
+      newSubUrl.value = '';
+    };
+
+    const removeSubUrl = (idx) => {
+      subUrls.value.splice(idx, 1);
+    };
+
+    const updateSubUrls = async () => {
+      if (!subUrls.value.length) {
         showToast(t('node_toast_sub_required'), 'error');
         return;
       }
       try {
-        await axios.put(`/api/web/nodes/${props.node.id}/sub`, { sub_url: newSubUrl.value });
+        await axios.put(`/api/web/nodes/${props.node.id}/sub`, { sub_urls: subUrls.value });
         showSubModal.value = false;
         emit('node-updated');
         showToast(t('node_toast_sub_updated'));
       } catch (e) {
-        console.error('Error updating sub URL:', e);
+        console.error('Error updating sub URLs:', e);
         if (e.response && e.response.status === 400 && e.response.data && e.response.data.error && e.response.data.error.startsWith('Invalid Subscription URL')) {
           showToast(t('node_sub_invalid_url'), 'error');
         } else {
@@ -462,6 +506,39 @@ export default {
 
     const showSwitchModal = ref(false);
 
+    const providerNames = ref({});
+    const fetchProviderNames = async () => {
+      try {
+        const response = await axios.get('/api/web/providers');
+        if (response.status === 200 && Array.isArray(response.data)) {
+          const map = {};
+          response.data.forEach(p => { if (p.domain) map[p.domain] = p.name || p.domain; });
+          providerNames.value = map;
+        }
+      } catch (e) {
+        console.error('Error fetching providers:', e);
+      }
+    };
+
+    const serverGroups = computed(() => {
+      const servers = props.node.available_servers || [];
+      const sp = props.node.server_providers || {};
+      const byProvider = {};
+      servers.forEach(srv => {
+        const dom = sp[srv] || '';
+        const key = dom || '__none__';
+        if (!byProvider[key]) {
+          byProvider[key] = {
+            key,
+            provider: key === '__none__' ? null : (providerNames.value[dom] || dom),
+            servers: [],
+          };
+        }
+        byProvider[key].servers.push(srv);
+      });
+      return Object.values(byProvider);
+    });
+
     const switchTo = async (target) => {
       try {
         await axios.post(`/api/web/nodes/${props.node.id}/command`, { command: `switch:${target}` });
@@ -474,13 +551,14 @@ export default {
       }
     };
 
-    const copySubUrl = async () => {
-      if (!props.node.sub_url) return;
+    const copySubUrls = async () => {
+      const urls = nodeSubUrls.value;
+      if (!urls.length) return;
       try {
-        await navigator.clipboard.writeText(props.node.sub_url);
+        await navigator.clipboard.writeText(urls.join('\n'));
         showToast(t('node_toast_sub_copied'));
       } catch (e) {
-        console.error('Failed to copy sub URL:', e);
+        console.error('Failed to copy sub URLs:', e);
       }
     };
 
@@ -608,19 +686,23 @@ export default {
       }
     };
 
+    onMounted(() => {
+      fetchProviderNames();
+    });
+
     onUnmounted(() => {
       stopAutoRefresh();
     });
 
     return {
       isOnline, isTerminated, nodeIcon, pipelineStatusIcon, timeSince, statusColorClass, statusBgClass, pendingTaskLabel, pendingCommandCount,
-      showSubModal, newSubUrl, updateSubUrl,
+      showSubModal, newSubUrl, subUrls, nodeSubUrls, openSubModal, addSubUrl, removeSubUrl, updateSubUrls,
       pushClientFiles,
-      copySubUrl, softDeleteNode, confirmDelete,
+      copySubUrls, softDeleteNode, confirmDelete,
       showDeleteModal, deleteChoice,
       showTaskQueueModal,
       activeModal,
-      showSwitchModal, switchTo,
+      showSwitchModal, switchTo, serverGroups,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,
       cancelPendingCommand,

@@ -97,11 +97,17 @@ func (s *AutoSyncService) RunSync() {
 }
 
 func (s *AutoSyncService) syncNode(n *domain.Node) {
-	log.Printf("Syncing subscription for %s", n.Name)
-	outbounds, err := fetchSubOutbounds(n.SubURL)
-	if err != nil {
-		log.Printf("Error fetching subscription for %s: %v", n.Name, err)
-		return
+	log.Printf("Syncing subscriptions for %s", n.Name)
+	// v1.2.0: a node can have multiple subscription URLs; merge outbounds from
+	// every one so the active server is found no matter which sub it came from.
+	var outbounds []domain.Outbound
+	for _, subURL := range n.SubURLs {
+		subOutbounds, err := fetchSubOutbounds(subURL)
+		if err != nil {
+			log.Printf("Error fetching subscription %s for %s: %v", subURL, n.Name, err)
+			continue
+		}
+		outbounds = append(outbounds, subOutbounds...)
 	}
 
 	for _, o := range outbounds {

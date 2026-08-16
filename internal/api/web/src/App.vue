@@ -37,6 +37,7 @@
             <svg v-else-if="item.view === 'AdminUsers'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
             <svg v-else-if="item.view === 'RoleManager'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
             <svg v-else-if="item.view === 'AuditLogs'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+            <svg v-else-if="item.view === 'Providers'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 21l-7-5-9 5V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
             <svg v-else-if="item.view === 'Settings'" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             <span v-if="currentView === item.view"
               class="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-indigo-400 shadow-[0_0_8px_2px_rgba(129,140,248,0.6)]"></span>
@@ -52,7 +53,7 @@
             </div>
             <div class="leading-tight">
               <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
-              <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v1.0.0</span>
+              <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v1.2.0</span>
             </div>
           </div>
         </div>
@@ -91,13 +92,14 @@
 
 <script>
 import { ref, computed, onMounted, provide } from 'vue';
-import { Globe, Server, Users, Shield, LogOut, FileCode, Terminal, Settings } from 'lucide-vue-next';
+import { Globe, Server, Users, Shield, LogOut, FileCode, Terminal, Settings, Bookmark } from 'lucide-vue-next';
 import Login from './components/Login.vue';
 import Nodes from './components/Nodes.vue';
 import ClientFiles from './components/ClientFiles.vue';
 import AdminUsers from './components/AdminUsers.vue';
 import RoleManager from './components/RoleManager.vue';
 import AuditLogs from './components/AuditLogs.vue';
+import Providers from './components/Providers.vue';
 import SettingsView from './components/Settings.vue';
 import messages from './i18n';
 
@@ -125,13 +127,14 @@ const mix = (hex, target, amt) => {
 export default {
   name: 'App',
   components: {
-    Globe, Server, Users, Shield, LogOut, FileCode, Terminal, Settings,
+    Globe, Server, Users, Shield, LogOut, FileCode, Terminal, Settings, Bookmark,
     Login,
     Nodes,
     ClientFiles,
     AdminUsers,
     RoleManager,
     AuditLogs,
+    Providers,
     SettingsView,
   },
   setup() {
@@ -222,6 +225,7 @@ export default {
     const canCreateUsers = computed(() => hasPermission('can_create_users'));
     const canEditUsers = computed(() => hasPermission('can_edit_users'));
     const canDeleteUsers = computed(() => hasPermission('can_delete_users'));
+    const canManageProviders = computed(() => hasPermission('can_manage_providers'));
     const canViewRoles = computed(() => hasPermission('can_view_roles'));
     const canManageRoles = computed(() => hasPermission('can_manage_roles'));
     const canViewAuditLogs = computed(() => hasPermission('can_view_audit_logs'));
@@ -236,6 +240,7 @@ export default {
       if (canViewUsers.value) items.push({ view: 'AdminUsers', label: t('nav_users'), icon: 'Users' });
       if (canViewRoles.value) items.push({ view: 'RoleManager', label: t('nav_roles'), icon: 'Shield' });
       if (canViewAuditLogs.value || canViewMasterLogs.value) items.push({ view: 'AuditLogs', label: t('nav_logs'), icon: 'Terminal' });
+      if (canManageProviders.value) items.push({ view: 'Providers', label: t('nav_providers'), icon: 'Bookmark' });
       items.push({ view: 'Settings', label: t('nav_settings'), icon: 'Settings' });
       return items;
     });
@@ -247,6 +252,7 @@ export default {
         case 'AdminUsers': return 'AdminUsers';
         case 'RoleManager': return 'RoleManager';
         case 'AuditLogs': return 'AuditLogs';
+        case 'Providers': return 'Providers';
         case 'Settings': return 'SettingsView';
         default: return 'Nodes';
       }
@@ -336,7 +342,7 @@ export default {
       canRenameNode, canTerminateNode, canPurgeNodes, canUpdateClient,
       canViewNodeLogs, canViewAuditLogs, canViewMasterLogs,
       canViewUsers, canCreateUsers, canEditUsers, canDeleteUsers,
-      canViewRoles, canManageRoles,
+      canViewRoles, canManageRoles, canManageProviders,
       isOwner,
     });
 

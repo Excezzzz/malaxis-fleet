@@ -90,9 +90,27 @@ def save_cache(servers: list) -> None:
             "host": s.get("hostname", ""),
             "port": s.get("port", 0),
             "url": s.get("full_link", ""),
+            # v1.2.0: provider tag (friendly name or URL host fallback) used
+            # for grouping in the web UI, bot and CLI.
+            "provider": s.get("provider", ""),
         })
     save_json(SUBCACHE, normalized)
     log(f"Saved {len(normalized)} servers to cache")
+
+
+def get_sub_urls(state: dict = None) -> list:
+    """Resolve the node's subscription URLs from state, preferring the
+    v1.2.0 sub_urls array and falling back to the legacy single sub_url."""
+    if state is None:
+        state = load_state()
+    urls = state.get("sub_urls") or []
+    if isinstance(urls, str):
+        urls = [urls]
+    urls = [u for u in urls if u and str(u).strip()]
+    legacy = str(state.get("sub_url", "") or "").strip()
+    if not urls and legacy:
+        urls = [legacy]
+    return urls
 
 
 def save_rollback(engine: str) -> None:

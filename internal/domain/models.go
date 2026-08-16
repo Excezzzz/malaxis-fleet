@@ -46,6 +46,7 @@ const (
 	PermTerminateNode = "can_terminate_node"
 	PermUpdateClient  = "can_update_client"
 	PermPurgeNodes    = "can_purge_nodes"
+	PermManageProviders = "can_manage_providers"
 	PermViewUsers     = "can_view_users"
 	PermCreateUsers   = "can_create_users"
 	PermEditUsers     = "can_edit_users"
@@ -71,7 +72,7 @@ const (
 // owner role only (see router.go / DownloadBackupHandler).
 var AllPermissions = []string{
 	PermViewNodes, PermSwitchVPN, PermEditSub, PermRenameNode,
-	PermTerminateNode, PermUpdateClient, PermPurgeNodes,
+	PermTerminateNode, PermUpdateClient, PermPurgeNodes, PermManageProviders,
 	PermViewUsers, PermCreateUsers, PermEditUsers, PermDeleteUsers,
 	PermViewRoles, PermManageRoles,
 	PermViewAudit, PermViewNodeLogs, PermViewMasterLogs, PermViewAuditLogs,
@@ -133,13 +134,17 @@ type Node struct {
 	Hostname           string    `json:"hostname" db:"hostname"`
 	DeviceType         string    `json:"device_type" db:"device_type"`
 	IPLan              string    `json:"ip_lan" db:"ip_lan"`
-	SubURL             string    `json:"sub_url" db:"sub_url"`
+	SubURLs            []string  `json:"sub_urls" db:"sub_urls"`
 	ActiveServer       string    `json:"active_server" db:"active_server"`
 	ActiveEngine       string    `json:"active_engine" db:"active_engine"`
 	ActiveProto        string    `json:"active_proto" db:"active_proto"`
 	ActiveIPExt        string    `json:"active_ip_ext" db:"active_ip_ext"`
 	ActiveOutboundJSON string    `json:"active_outbound_json" db:"active_outbound_json"`
 	AvailableServers   []string  `json:"available_servers" db:"available_servers"`
+	// ServerProviders maps a cached server name to its provider name (friendly
+	// name from subscription_providers, or the subscription URL host as
+	// fallback). Reported by the agent so UIs can group servers by provider.
+	ServerProviders map[string]string `json:"server_providers,omitempty" db:"server_providers"`
 	LastSeen           time.Time `json:"last_seen" db:"last_seen"`
 	PendingCommand     string    `json:"pending_command" db:"pending_command"`
 	PendingMsgID       int64     `json:"pending_msg_id" db:"pending_msg_id"`
@@ -147,6 +152,13 @@ type Node struct {
 	StatusMessage      string    `json:"status_message" db:"status_message"`
 	HardwareHash       string    `json:"hardware_hash" db:"hardware_hash"`
 	UserID             *int64    `json:"user_id,omitempty" db:"user_id"`
+}
+
+// SubscriptionProvider maps a subscription URL host (domain) to the friendly
+// provider name shown across the web UI, bot and CLI when grouping servers.
+type SubscriptionProvider struct {
+	Domain string `json:"domain" db:"domain"`
+	Name   string `json:"name" db:"name"`
 }
 
 type Outbound struct {

@@ -1307,10 +1307,11 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		nodeID := strings.TrimPrefix(data, "node:sub:")
 		b.setState(chatID, &userState{Step: "set_sub", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>🔗 %s</b>\n\n%s <b>%s</b>:",
+			fmt.Sprintf("<b>🔗 %s</b>\n\n%s <b>%s</b>:\n%s",
 				b.tr("Установить Sub URL", "Set Sub URL"),
-				b.tr("Отправьте новый URL подписки для узла", "Send the new subscription URL for node"),
-				b.nodeLabel(nodeID)),
+				b.tr("Отправьте URL подписки для", "Send the subscription URL(s) for"),
+				b.nodeLabel(nodeID),
+				b.tr("Можно отправить несколько URL через пробел.", "Multiple URLs separated by spaces are supported.")),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:set_sub:"):
 		// Onboarding quick-action: prompt for the subscription URL inside the
@@ -1318,10 +1319,11 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		nodeID := strings.TrimPrefix(data, "node:set_sub:")
 		b.setState(chatID, &userState{Step: "set_sub_url", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
-			fmt.Sprintf("<b>🔗 %s</b>\n\n%s <b>%s</b>:",
+			fmt.Sprintf("<b>🔗 %s</b>\n\n%s <b>%s</b>:\n%s",
 				b.tr("Установить Sub URL", "Set Sub URL"),
-				b.tr("Отправьте URL подписки для", "Please reply/send the Subscription URL for"),
-				b.nodeLabel(nodeID)),
+				b.tr("Отправьте URL подписки для", "Please reply/send the Subscription URL(s) for"),
+				b.nodeLabel(nodeID),
+				b.tr("Можно отправить несколько URL через пробел.", "Multiple URLs separated by spaces are supported.")),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:approve:"):
 		// Onboarding quick-action: the agent already reported a sub URL, so

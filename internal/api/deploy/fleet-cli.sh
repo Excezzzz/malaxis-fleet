@@ -135,9 +135,16 @@ is_terminated() {
 }
 
 has_sub() {
-    local u
+    local u count
     u=$(get_state "sub_url" "")
-    [ -n "$u" ] && [ "$u" != "null" ]
+    if [ -n "$u" ] && [ "$u" != "null" ]; then
+        return 0
+    fi
+    if command -v jq &>/dev/null && [ -f "$STATE_FILE" ]; then
+        count=$(jq -r '.sub_urls // [] | length' "$STATE_FILE" 2>/dev/null || echo "0")
+        [ "${count:-0}" -gt 0 ] 2>/dev/null && return 0
+    fi
+    return 1
 }
 
 show_menu() {
@@ -165,9 +172,9 @@ show_menu() {
 
     if ! has_sub; then
         echo " ${YELLOW}[SETUP]${NC} No subscription URL configured yet."
-        echo " Set your 3x-ui subscription URL to start using the fleet."
+        echo " Set your 3x-ui subscription URL(s) to start using the fleet."
         echo ""
-        echo " 1) Set Subscription URL"
+        echo " 1) Set Subscription URL(s)"
         echo " 2) Exit"
         echo ""
         cli_read choice -p "Select option [1-2]: "
@@ -263,7 +270,7 @@ show_menu() {
     fi
     echo ""
     echo "------------------------------------------"
-    echo " 1) Set / Update Subscription URL"
+    echo " 1) Set / Update Subscription URL(s)"
     echo " 2) Update Client Files"
     echo " 3) Switch Server"
     echo " 4) Toggle Auto-Update"
@@ -318,15 +325,20 @@ update_subscription() {
     local current_url
     current_url=$(get_state "sub_url" "")
     if [ -n "$current_url" ] && [ "$current_url" != "null" ]; then
-        echo "Current URL: ${current_url}"
-        cli_read SUB_URL -p "Enter new subscription URL (or press Enter to keep current): "
-        SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
+        echo "Current URL(s):"
+        if command -v jq &>/dev/null && [ -f "$STATE_FILE" ]; then
+            jq -r '.sub_urls // [] | .[]' "$STATE_FILE" 2>/dev/null | sed 's/^/  /'
+        else
+            echo "  $current_url"
+        fi
+        cli_read SUB_URL -p "Enter subscription URL(s) (space separated, or press Enter to keep current): "
+        SUB_URL=$(echo "$SUB_URL" | tr -s '[:space:]' ' ')
         if [ -z "$SUB_URL" ]; then
             SUB_URL="$current_url"
         fi
     else
-        cli_read SUB_URL -p "Enter 3x-ui Subscription URL: "
-        SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
+        cli_read SUB_URL -p "Enter 3x-ui Subscription URL(s) (space separated): "
+        SUB_URL=$(echo "$SUB_URL" | tr -s '[:space:]' ' ')
     fi
 
     if [ -z "$SUB_URL" ]; then
@@ -337,15 +349,15 @@ update_subscription() {
     fi
 
     set_state "sub_url" "$SUB_URL"
-    echo "${GREEN}Subscription URL saved.${NC} Fetching subscription now..."
+    echo "${GREEN}Subscription URL(s) saved.${NC} Fetching subscription now..."
     docker exec node-agent python3 -c "import agent_src.main; agent_src.main.update_subscription_cli('$SUB_URL')" 2>/dev/null || true
-    echo "${GREEN}Subscription URL synced to the web dashboard.${NC}"
+    echo "${GREEN}Subscription URL(s) synced to the web dashboard.${NC}"
     sleep 2
 
     local count
     count=$(cache_count)
     if [ "$count" -gt 0 ]; then
-        echo "${GREEN}Found ${count} servers in subscription!${NC}"
+        echo "${GREEN}Found ${count} servers in subscriptions!${NC}"
         echo "Use Option 3 to select a server."
     else
         echo "${YELLOW}No servers found yet. The agent will fetch in background.${NC}"

@@ -215,20 +215,45 @@ def restore_active_vpn() -> None:
 
 
 def update_subscription() -> bool:
-    """Fetch + apply the subscription. Returns True if a config was applied."""
+    """Fetch + apply every configured subscription. Returns True if a config
+    was applied. v1.2.0: supports multiple subscription URLs; every cached
+    server is tagged with its provider (friendly name from the master's
+    provider dictionary, or the URL host as fallback)."""
     state = agent.load_state()
-    sub_url = state.get("sub_url", "")
-    if not sub_url:
-        agent.log("No sub_url configured, skipping subscription fetch")
+    sub_urls = agent.get_sub_urls(state)
+    if not sub_urls:
+        agent.log("No sub_urls configured, skipping subscription fetch")
         return False
 
-    agent.log(f"Fetching subscription from {sub_url}")
-    servers = subscriptions.parse_subscription(sub_url)
-    if not servers:
-        agent.log("No servers found in subscription")
+    # Friendly provider names pushed by the master on poll (domain -> name).
+    provider_names = state.get("providers") or {}
+
+    all_servers = []
+    for sub_url in sub_urls:
+        agent.log(f"Fetching subscription from {sub_url}")
+        try:
+            servers = subscriptions.parse_subscription(sub_url)
+        except Exception as e:
+            agent.log(f"Subscription fetch failed for {sub_url}: {e}")
+            servers = []
+        if not servers:
+            agent.log(f"No servers found in subscription {sub_url}")
+            continue
+        # Provider tagging: friendly name from the master mapping, else the
+        # subscription URL host (www.example.com -> example.com).
+        host = sub_url.split("://")[-1].split("/")[0].lower()
+        provider = provider_names.get(host, "") or host
+        for s in servers:
+            s["provider"] = provider
+        all_servers.extend(servers)
+        agent.log(f"Parsed {len(servers)} servers from {host} ({provider})")
+
+    if not all_servers:
+        agent.log("No servers found in any subscription")
         agent.save_cache([])
         return False
 
+    servers = all_servers
     agent.save_cache(servers)
 
     xray_servers = [s for s in servers if s.get("engine") == "xray"]
@@ -323,13 +348,20 @@ def update_subscription() -> bool:
 def fetch_subscription_now(url: Optional[str] = None) -> int:
     if not url:
         state = agent.load_state()
-        url = state.get("sub_url")
+        sub_urls = agent.get_sub_urls(state)
+        if sub_urls:
+            url = sub_urls[0]
     if not url:
         agent.log("No sub_url configured, cannot fetch subscription")
         return 0
     state = agent.load_state()
+    if url not in agent.get_sub_urls(state):
+        state["sub_urls"] = agent.get_sub_urls(state) + [url]
     state["sub_url"] = url
     agent.save_state(state)
+    provider_names = state.get("providers") or {}
+    host = url.split("://")[-1].split("/")[0].lower()
+    provider = provider_names.get(host, "") or host
     agent.log(f"Fetching subscription from: {url}")
     try:
         resp = subscriptions.requests.get(url, headers={"User-Agent": subscriptions.SUB_USER_AGENT}, verify=False, timeout=15)
@@ -352,6 +384,7 @@ def fetch_subscription_now(url: Optional[str] = None) -> int:
             try:
                 srv = subscriptions._parse_link(line)
                 if srv:
+                    srv["provider"] = provider
                     servers.append(srv)
             except Exception:
                 continue
@@ -609,7 +642,12 @@ def print_server_list() -> None:
     print()
     print("Available VPN Servers:")
     print()
+    last_provider = None
     for idx, srv in enumerate(servers):
+        provider = srv.get("provider", "") or "Other"
+        if provider != last_provider:
+            print(f"  [{provider}]")
+            last_provider = provider
         name = srv.get("name", f"Server {idx + 1}")
         proto = srv.get("proto", "unknown")
         engine = srv.get("engine", "singbox")

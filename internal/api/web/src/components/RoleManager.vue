@@ -187,6 +187,7 @@ const PERMISSION_SECTIONS = [
       ['can_view_nodes', 'perm_view_nodes'],
       ['can_switch_vpn', 'perm_switch_vpn'],
       ['can_edit_sub', 'perm_edit_sub'],
+      ['can_manage_providers', 'perm_manage_providers'],
       ['can_rename_node', 'perm_rename_node'],
       ['can_terminate_node', 'perm_terminate_node'],
       ['can_view_node_logs', 'perm_view_node_logs'],

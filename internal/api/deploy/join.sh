@@ -131,7 +131,6 @@ if [ "$lang" = "en" ]; then
     T_INSTALL_DIR="Installation directory: "
     T_NAME_RETRY="Device name cannot be empty - please enter a name: "
     T_NAME_DEFAULT="Using default device name: "
-    T_SUB_PROMPT="Enter your 3x-ui Subscription URL (Press Enter to skip): "
     T_MODE_TITLE="Select default Smart Routing Mode:"
     T_MODE_1="[1] Balanced - Best stability & lowest jitter (Recommended)"
     T_MODE_2="[2] Fastest - Lowest ping"
@@ -181,7 +180,6 @@ else
     T_INSTALL_DIR="Папка установки: "
     T_NAME_RETRY="Имя устройства не может быть пустым - введите имя: "
     T_NAME_DEFAULT="Использую имя устройства по умолчанию: "
-    T_SUB_PROMPT="Введите ссылку подписки 3x-ui (Enter — пропустить): "
     T_MODE_TITLE="Режим балансировки по умолчанию:"
     T_MODE_1="[1] Балансировка — лучшая стабильность и минимальный джиттер (Рекомендуется)"
     T_MODE_2="[2] Самый быстрый — минимальный пинг"
@@ -346,9 +344,6 @@ if [ -z "$NODE_NAME" ]; then
 fi
 NODE_NAME=${NODE_NAME:-$HOSTNAME_CURRENT}
 
-safe_read "$T_SUB_PROMPT" "" SUB_URL
-SUB_URL=$(echo "$SUB_URL" | tr -d '[:space:]')
-
 echo ""
 echo "$T_MODE_TITLE"
 echo "$T_MODE_1"
@@ -496,7 +491,6 @@ json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 
 {
     echo "{"
-    echo "  \"sub_url\": \"$(json_escape "$SUB_URL")\","
     echo "  \"node_name\": \"$(json_escape "$NODE_NAME")\","
     echo "  \"active_mode\": \"$SMART_MODE\","
     echo "  \"compose_cmd\": \"$(json_escape "$COMPOSE_CMD")\""
@@ -567,6 +561,8 @@ echo "   $T_Q_STOP    cd \"$AGENT_DIR\" && $COMPOSE_CMD down"
 echo ""
 
 # Auto-launch the CLI so the subscription can be configured right away
+# (v1.2.0: the install is silent - sub URLs are set later via the dashboard,
+# bot, or this CLI)
 echo ""
 say "$T_LAUNCH_CLI"
 if [ -t 0 ]; then

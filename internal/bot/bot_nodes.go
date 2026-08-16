@@ -21,10 +21,10 @@ import (
 
 // NotifyNewNode sends an instant onboarding notification to the admin the
 // moment a brand-new device registers for the first time. When the agent
-// already reported a subscription URL on its first poll, the message carries
+// already reported subscription URL(s) on its first poll, the message carries
 // an "Approve & Fetch Config" quick action; otherwise it offers to set the
-// sub URL manually. Both variants include the reject (queues a terminate).
-func (b *Bot) NotifyNewNode(id, name, ipLan, subURL string) {
+// sub URLs manually. Both variants include the reject (queues a terminate).
+func (b *Bot) NotifyNewNode(id, name, ipLan string, subURLs []string) {
 	b.mu.Lock()
 	api := b.api
 	chatID := b.chatID
@@ -36,6 +36,14 @@ func (b *Bot) NotifyNewNode(id, name, ipLan, subURL string) {
 
 	name = emptyDash(name)
 	ipLan = emptyDash(ipLan)
+
+	hasSub := false
+	for _, u := range subURLs {
+		if strings.TrimSpace(u) != "" {
+			hasSub = true
+			break
+		}
+	}
 
 	_, emojis := b.botPrefs()
 	text := fmt.Sprintf("<b>🖥️ %s</b>\n\n"+
@@ -49,13 +57,18 @@ func (b *Bot) NotifyNewNode(id, name, ipLan, subURL string) {
 		b.tr("ID узла:", "Node ID:"), id,
 		b.tr("Статус:", "Status:"),
 		b.tr("Зарегистрировано и ожидает настройки.", "Registered &amp; Waiting for Configuration."))
-	if strings.TrimSpace(subURL) != "" {
-		text += "\n\n<b>Sub URL:</b> <code>" + xmlEscape(subURL) + "</code>\n" +
-			b.tr("Устройство зарегистрировано с указанным Sub URL.", "Device registered with provided Sub URL: <URL>")
+	if hasSub {
+		text += "\n\n<b>Sub URL(s):</b>\n"
+		for _, u := range subURLs {
+			if strings.TrimSpace(u) != "" {
+				text += "<code>" + xmlEscape(u) + "</code>\n"
+			}
+		}
+		text += b.tr("Устройство зарегистрировано с указанными Sub URL.", "Device registered with provided Sub URL(s).")
 	}
 
 	var markup tgbotapi.InlineKeyboardMarkup
-	if strings.TrimSpace(subURL) != "" {
+	if hasSub {
 		markup = tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
 				tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Принять и получить конфиг", "Approve & Fetch Config"), "✅", emojis), "node:approve:"+id),
@@ -83,8 +96,8 @@ func (b *Bot) NotifyNewNode(id, name, ipLan, subURL string) {
 }
 
 // handleApproveNode is the onboarding "Approve & Fetch Config" action: the
-// agent already reported a subscription URL on its first poll, so we simply
-// queue an update_sub command against it. Mirrors the tail of the manual
+// agent already reported subscription URL(s) on its first poll, so we simply
+// queue an update_sub command against them. Mirrors the tail of the manual
 // set-sub-URL flow.
 func (b *Bot) handleApproveNode(chatID int64, messageID int, nodeID string) {
 	node, err := b.repo.GetNodeByID(nodeID)
@@ -92,16 +105,18 @@ func (b *Bot) handleApproveNode(chatID int64, messageID int, nodeID string) {
 		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Узел не найден.", "Node not found.")+"</b>", b.cancelMarkup())
 		return
 	}
-	if strings.TrimSpace(node.SubURL) == "" {
+	if len(node.SubURLs) == 0 {
 		b.editMessage(chatID, messageID,
-			"<b>⚠️ "+b.tr("У узла нет Sub URL.", "Node has no Sub URL.")+"</b> "+b.tr("Установите его вручную:", "Set it manually:"),
+			"<b>⚠️ "+b.tr("У узла нет Sub URL.", "Node has no Sub URL.")+"</b> "+b.tr("Установите их вручную:", "Set them manually:"),
 			b.cancelMarkup())
 		return
 	}
 
-	command, _ := json.Marshal(map[string]string{"action": "update_sub", "sub_url": node.SubURL})
+	command := map[string]interface{}{"action": "update_sub", "sub_urls": node.SubURLs}
+	command["sub_url"] = node.SubURLs[0]
+	cmdJSON, _ := json.Marshal(command)
 	messageIDTs := time.Now().Unix()
-	if err := b.repo.SetPendingCommand(nodeID, string(command), messageIDTs); err != nil {
+	if err := b.repo.SetPendingCommand(nodeID, string(cmdJSON), messageIDTs); err != nil {
 		log.Printf("Bot: failed to queue update_sub for node %s: %v", nodeID, err)
 		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось поставить команду обновления подписки.", "Failed to queue subscription update.")+"</b>", b.cancelMarkup())
 		return
@@ -209,7 +224,14 @@ func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 	text.WriteString(fmt.Sprintf("🖥️ <b>%s</b> %s\n", b.tr("Узел:", "Node:"), xmlEscape(name)))
 	text.WriteString(fmt.Sprintf("<b>IP:</b> %s | <b>%s</b> %s\n", emptyDash(node.IPLan), b.tr("Хост:", "Host:"), emptyDash(node.Hostname)))
 	text.WriteString(fmt.Sprintf("<b>VPN:</b> %s\n", xmlEscape(vpn)))
-	text.WriteString(fmt.Sprintf("<b>Sub URL:</b> %s\n", emptyDash(node.SubURL)))
+	if len(node.SubURLs) > 0 {
+		text.WriteString(fmt.Sprintf("<b>%s:</b> %d\n", b.tr("Sub URL(s)", "Sub URL(s)"), len(node.SubURLs)))
+		for _, u := range node.SubURLs {
+			text.WriteString("<code>" + xmlEscape(u) + "</code>\n")
+		}
+	} else {
+		text.WriteString(fmt.Sprintf("<b>Sub URL:</b> %s\n", emptyDash("")))
+	}
 	text.WriteString(fmt.Sprintf("<b>%s</b> %s\n", b.tr("Статус:", "Status:"), emptyDash(node.StatusMessage)))
 	text.WriteString(fmt.Sprintf("<b>%s</b> %s\n", b.tr("Ожидаемая задача:", "Pending Task:"), pendingTask))
 	if note != "" {
@@ -383,11 +405,29 @@ func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Баланс", "Balanced"), "⚖️", emojis), "node:switch:"+nodeID+":balanced"),
 		),
 	)
+	// v1.2.0: servers are grouped by subscription provider. A non-clickable
+	// separator row "[ ➖ Provider Name ➖ ]" is rendered before the first
+	// server of each group (the agent tags every cached server with its
+	// provider; unknown ones fall back to the provider-less group).
+	var lastProvider string
+	separatorShown := map[string]bool{}
 	for _, srv := range node.AvailableServers {
 		srv = strings.TrimSpace(srv)
 		if srv == "" {
 			continue
 		}
+		provider := node.ServerProviders[srv]
+		if provider != lastProvider && provider != "" && !separatorShown[provider] {
+			separatorShown[provider] = true
+			sep := "[ " + provider + " ]"
+			if emojis {
+				sep = "[ ➖ " + provider + " ➖ ]"
+			}
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(sep, "sep:"+provider),
+			))
+		}
+		lastProvider = provider
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(srv, "🌐", emojis), "node:switch:"+nodeID+":"+srv),
 		))
@@ -428,19 +468,35 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	state := b.getState(chatID)
 	b.clearState(chatID)
 
-	subURL := strings.TrimSpace(text)
-	if subURL == "" {
+	// v1.2.0: accept one or MORE subscription URLs, separated by spaces,
+	// newlines or commas.
+	rawParts := strings.FieldsFunc(text, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ','
+	})
+	subURLs := []string{}
+	seen := map[string]bool{}
+	for _, part := range rawParts {
+		part = strings.TrimSpace(part)
+		if part == "" || seen[part] {
+			continue
+		}
+		seen[part] = true
+		subURLs = append(subURLs, part)
+	}
+	if len(subURLs) == 0 {
 		b.editMessage(chatID, b.getMainMenuID(chatID),
 			"<b>🔗 "+b.tr("Установить Sub URL", "Set Sub URL")+"</b>\n\n"+b.tr("URL не может быть пустым. Отправьте URL или нажмите «Отмена».", "URL cannot be empty. Send a URL or press Cancel."),
 			b.cancelMarkup())
 		return
 	}
 
-	if !subURLReachable(subURL) {
-		b.editMessage(chatID, b.getMainMenuID(chatID),
-			"<b>❌ "+b.tr("Неверный URL подписки!", "Invalid Subscription URL!")+"</b>\n\n"+b.tr("Не удалось подключиться к ссылке или сервер вернул ошибку. Проверьте, что адрес подписки работает, и попробуйте снова.", "Could not connect to the link or the server returned an error. Check that the subscription address is working and try again."),
-			b.cancelMarkup())
-		return
+	for _, subURL := range subURLs {
+		if !subURLReachable(subURL) {
+			b.editMessage(chatID, b.getMainMenuID(chatID),
+				"<b>❌ "+b.tr("Неверный URL подписки!", "Invalid Subscription URL!")+"</b>\n\n"+b.tr("Не удалось подключиться к ссылке или сервер вернул ошибку. Проверьте, что адрес подписки работает, и попробуйте снова.", "Could not connect to the link or the server returned an error. Check that the subscription address is working and try again."),
+				b.cancelMarkup())
+			return
+		}
 	}
 
 	if _, err := b.repo.GetNodeByID(state.NodeID); err != nil {
@@ -449,18 +505,19 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 		return
 	}
 
-	command := map[string]string{"action": "update_sub", "sub_url": subURL}
+	command := map[string]interface{}{"action": "update_sub", "sub_urls": subURLs}
+	command["sub_url"] = subURLs[0]
 	cmdJSON, _ := json.Marshal(command)
 	messageID := time.Now().Unix()
-	// Single atomic UPDATE: sub_url and the queued update_sub command are
+	// Single atomic UPDATE: sub_urls and the queued update_sub command are
 	// committed together, so the agent is always triggered to fetch servers.
-	if err := b.repo.UpdateNodeSubURLAndQueue(state.NodeID, subURL, string(cmdJSON), messageID); err != nil {
-		log.Printf("Bot: failed to update sub_url and queue update_sub for node %s: %v", state.NodeID, err)
-		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить URL подписки.", "Failed to update subscription URL.")+"</b>", b.cancelMarkup())
+	if err := b.repo.UpdateNodeSubURLsAndQueue(state.NodeID, subURLs, string(cmdJSON), messageID); err != nil {
+		log.Printf("Bot: failed to update sub_urls and queue update_sub for node %s: %v", state.NodeID, err)
+		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить URL подписки.", "Failed to update subscription URLs.")+"</b>", b.cancelMarkup())
 		return
 	}
 
-	b.audit.Log("telegram_bot", audit.ActionUpdateDevice, state.NodeID, "Updated subscription URL to "+subURL+" (via Telegram bot)")
+	b.audit.Log("telegram_bot", audit.ActionUpdateDevice, state.NodeID, "Updated subscription URLs to "+strings.Join(subURLs, ", ")+" (via Telegram bot)")
 
 	// Onboarding-style success: keep the message compact and offer a path back
 	// to the full node detail view.

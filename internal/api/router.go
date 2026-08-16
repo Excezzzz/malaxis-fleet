@@ -28,9 +28,9 @@ type BotManager interface {
 	SendAdminMessage(text string)
 	// NotifyNewNode pushes an instant onboarding notification for a freshly
 	// registered device with quick-setup inline action buttons. When the
-	// agent already reported a subscription URL on its first poll, the
+	// agent already reported subscription URLs on its first poll, the
 	// notification carries an "Approve & Fetch Config" button.
-	NotifyNewNode(id, name, ipLan, subURL string)
+	NotifyNewNode(id, name, ipLan string, subURLs []string)
 	// SetDefaultAvatar re-uploads the embedded default profile photo.
 	SetDefaultAvatar() error
 	// SetAvatarColor applies one of the five themed avatar colors and persists
@@ -154,8 +154,20 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// POST /api/web/nodes/{id}/terminate - queue self-destruct for a node (permission can_terminate_node)
 	webAPIRouter.Handle("/web/nodes/{id}/terminate", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermTerminateNode)(http.HandlerFunc(api.TerminateNodeHandler)))).Methods("POST")
 
-	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_url (permission can_edit_sub)
+	// POST /api/web/devices/mass-update-domain - mass update only the domain part of sub_urls (permission can_edit_sub)
 	webAPIRouter.Handle("/web/devices/mass-update-domain", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_edit_sub")(http.HandlerFunc(api.MassUpdateDomainHandler)))).Methods("POST")
+
+	// GET /api/web/providers - list subscription providers (permission can_view_nodes)
+	webAPIRouter.Handle("/web/providers", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewNodes)(http.HandlerFunc(api.GetProvidersHandler)))).Methods("GET")
+
+	// POST /api/web/providers - create/update a subscription provider (permission can_manage_providers)
+	webAPIRouter.Handle("/web/providers", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermManageProviders)(http.HandlerFunc(api.UpsertProviderHandler)))).Methods("POST")
+
+	// PUT /api/web/providers/{domain} - update a subscription provider (permission can_manage_providers)
+	webAPIRouter.Handle("/web/providers/{domain}", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermManageProviders)(http.HandlerFunc(api.UpsertProviderHandler)))).Methods("PUT")
+
+	// DELETE /api/web/providers/{domain} - delete a subscription provider (permission can_manage_providers)
+	webAPIRouter.Handle("/web/providers/{domain}", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermManageProviders)(http.HandlerFunc(api.DeleteProviderHandler)))).Methods("DELETE")
 
 	// GET /api/web/roles - list all roles (permission can_view_roles)
 	webAPIRouter.Handle("/web/roles", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewRoles)(http.HandlerFunc(api.GetRolesHandler)))).Methods("GET")

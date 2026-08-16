@@ -44,16 +44,26 @@ from agent_src.config_builder import parse_url_to_outbound  # noqa: F401
 
 def update_subscription_cli(sub_url: str) -> int:
     """CLI entry point (fleet-cli.sh / fleet-cli.ps1): persist the subscription
-    URL, trigger an immediate fetch/apply and report the result - mirrors the
-    onboarding 'update_sub' flow without requiring a pending command."""
-    sub_url = (sub_url or "").strip()
-    if not sub_url:
+    URL(s), trigger an immediate fetch/apply and report the result - mirrors the
+    onboarding 'update_sub' flow without requiring a pending command.
+    v1.2.0: accepts multiple URLs separated by spaces / newlines / commas."""
+    raw = (sub_url or "").strip()
+    if not raw:
         agent.log("update_subscription_cli: empty URL")
         return 1
+    parts = [p.strip() for p in raw.replace(",", " ").split() if p.strip()]
+    if not parts:
+        agent.log("update_subscription_cli: empty URL")
+        return 1
+    sub_urls = []
+    for p in parts:
+        if p not in sub_urls:
+            sub_urls.append(p)
     state = agent.load_state()
-    state["sub_url"] = sub_url
+    state["sub_urls"] = sub_urls
+    state["sub_url"] = sub_urls[0]
     agent.save_state(state)
-    agent.log(f"sub_url updated via CLI to {sub_url}")
+    agent.log(f"sub_urls updated via CLI to {len(sub_urls)} URL(s)")
     applied = engine.update_subscription()
     if applied:
         _reselect_after_update()
@@ -169,9 +179,19 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
             enqueue("switch", name=target)
         return True
     elif action == "update_sub":
+        sub_urls = cmd_data.get("sub_urls") or []
         sub_url = cmd_data.get("sub_url", "")
-        if sub_url:
+        if sub_urls:
             state = agent.load_state()
+            state["sub_urls"] = [u for u in sub_urls if u]
+            state["sub_url"] = state["sub_urls"][0] if state["sub_urls"] else ""
+            agent.save_state(state)
+            agent.log(f"sub_urls updated to {len(state['sub_urls'])} URL(s)")
+        elif sub_url:
+            state = agent.load_state()
+            state["sub_urls"] = agent.get_sub_urls(state)
+            if sub_url not in state["sub_urls"]:
+                state["sub_urls"].append(sub_url)
             state["sub_url"] = sub_url
             agent.save_state(state)
             agent.log(f"sub_url updated to {sub_url}")
