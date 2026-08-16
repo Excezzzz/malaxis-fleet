@@ -183,10 +183,10 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         sub_url = cmd_data.get("sub_url", "")
         if sub_urls:
             state = agent.load_state()
-            state["sub_urls"] = [u for u in sub_urls if u]
+            state["sub_urls"] = list(dict.fromkeys(u for u in sub_urls if u and str(u).strip()))
             state["sub_url"] = state["sub_urls"][0] if state["sub_urls"] else ""
             agent.save_state(state)
-            agent.log(f"sub_urls updated to {len(state['sub_urls'])} URL(s)")
+            agent.log(f"sub_urls updated to {len(state['sub_urls'])} URL(s): {state['sub_urls']}")
         elif sub_url:
             state = agent.load_state()
             state["sub_urls"] = agent.get_sub_urls(state)

@@ -228,8 +228,20 @@ def update_subscription() -> bool:
     # Friendly provider names pushed by the master on poll (domain -> name).
     provider_names = state.get("providers") or {}
 
+    # CRITICAL: iterate the ENTIRE sub_urls array and fetch EVERY URL. The
+    # master stores multiple subscriptions per node; fetching only the first
+    # entry would silently drop whole providers from the cache.
     all_servers = []
+    fetched_count = 0
+    seen_urls = set()
     for sub_url in sub_urls:
+        sub_url = str(sub_url or "").strip()
+        if not sub_url:
+            continue
+        if sub_url in seen_urls:
+            agent.log(f"Skipping duplicate subscription URL: {sub_url}")
+            continue
+        seen_urls.add(sub_url)
         agent.log(f"Fetching subscription from {sub_url}")
         try:
             servers = subscriptions.parse_subscription(sub_url)
@@ -246,7 +258,9 @@ def update_subscription() -> bool:
         for s in servers:
             s["provider"] = provider
         all_servers.extend(servers)
+        fetched_count += 1
         agent.log(f"Parsed {len(servers)} servers from {host} ({provider})")
+    agent.log(f"Fetched {len(all_servers)} servers in total from {fetched_count} subscription URL(s)")
 
     if not all_servers:
         agent.log("No servers found in any subscription")
