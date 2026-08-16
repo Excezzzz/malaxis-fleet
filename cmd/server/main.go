@@ -52,6 +52,12 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Auto-discovery on boot: reconcile subscription_providers with the URLs
+	// actually present on nodes (also runs after every sub_urls mutation).
+	if err := repo.SyncProviders(); err != nil {
+		log.Printf("ERROR: failed to sync subscription providers: %v", err)
+	}
+
 	// Persist auto-generated secrets to database for dynamic injection
 	if secretsGenerated {
 		if err := repo.SetSetting("fleet_secret", cfg.FleetSecret); err != nil {

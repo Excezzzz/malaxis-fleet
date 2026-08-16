@@ -52,6 +52,10 @@ type Repository interface {
 	GetProviderNames() (map[string]string, error)
 	UpsertSubscriptionProvider(p domain.SubscriptionProvider) error
 	DeleteSubscriptionProvider(domain string) error
+	// SyncProviders reconciles the subscription_providers table with the URLs
+	// actually referenced by nodes: missing domains are auto-added (name =
+	// domain) and rows whose domain is referenced by no node are deleted.
+	SyncProviders() error
 
 	// --- Command Methods ---
 	GetPendingCommand(nodeID string) (string, error)

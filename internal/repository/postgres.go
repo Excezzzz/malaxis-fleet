@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"time"
 
 	"malaxis-fleet/internal/config"
@@ -626,7 +628,14 @@ func (r *postgresRepository) AssignNodeToUser(nodeID string, userID int64) error
 // UpdateAllNodesSubURLs replaces the subscription URLs for ALL nodes.
 func (r *postgresRepository) UpdateAllNodesSubURLs(subURLs []string) error {
 	_, err := r.db.Exec(`UPDATE nodes SET sub_urls = $1::jsonb, sub_url = CASE WHEN jsonb_array_length($1::jsonb) > 0 THEN $1::jsonb->>0 ELSE '' END`, marshalSubURLs(subURLs))
-	return err
+	if err != nil {
+		return err
+	}
+	// Provider auto-discovery after the URLs actually changed.
+	if err := r.SyncProviders(); err != nil {
+		log.Printf("ERROR: provider sync after mass sub URL update failed: %v", err)
+	}
+	return nil
 }
 
 // --- Command Methods ---
@@ -678,6 +687,10 @@ func (r *postgresRepository) UpdateNodeSubURLsAndQueue(nodeID string, subURLs []
 	}
 	if affected == 0 {
 		return ErrNodeNotFound
+	}
+	// Provider auto-discovery after the node's URLs actually changed.
+	if err := r.SyncProviders(); err != nil {
+		log.Printf("ERROR: provider sync after sub URL update failed: %v", err)
 	}
 	return nil
 }
@@ -995,4 +1008,90 @@ func (r *postgresRepository) UpsertSubscriptionProvider(p domain.SubscriptionPro
 func (r *postgresRepository) DeleteSubscriptionProvider(domain string) error {
 	_, err := r.db.Exec(`DELETE FROM subscription_providers WHERE domain = $1`, domain)
 	return err
+}
+
+// SyncProviders reconciles the subscription_providers table with the URLs
+// actually referenced by nodes:
+//  1. Every hostname found in any node's sub_urls (or the legacy sub_url
+//     column) is guaranteed to exist as a provider row. Missing rows are
+//     auto-added with the domain itself as the default friendly name;
+//     ON CONFLICT DO NOTHING keeps manual renames intact.
+//  2. Provider rows whose domain is referenced by no node are deleted
+//     (garbage collection).
+func (r *postgresRepository) SyncProviders() error {
+	// 1. Extract the set of active domains across the whole fleet.
+	rows, err := r.db.Query(`SELECT sub_urls::text, COALESCE(sub_url, '') FROM nodes`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	active := map[string]struct{}{}
+	for rows.Next() {
+		var rawSubURLs sql.NullString
+		var legacyURL string
+		if err := rows.Scan(&rawSubURLs, &legacyURL); err != nil {
+			return err
+		}
+		var urls []string
+		if rawSubURLs.Valid && rawSubURLs.String != "" {
+			if err := json.Unmarshal([]byte(rawSubURLs.String), &urls); err != nil {
+				urls = nil
+			}
+		}
+		if legacyURL != "" {
+			urls = append(urls, legacyURL)
+		}
+		for _, u := range urls {
+			if dom := providerHost(u); dom != "" {
+				active[dom] = struct{}{}
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// 2. Auto-add every active domain that is missing from the table.
+	for dom := range active {
+		if _, err := r.db.Exec(`INSERT INTO subscription_providers (domain, name) VALUES ($1, $1) ON CONFLICT (domain) DO NOTHING`, dom); err != nil {
+			return err
+		}
+	}
+
+	// 3. Garbage collection: purge provider rows whose domain is no longer
+	// referenced by any node's subscription.
+	existing, err := r.GetProviderNames()
+	if err != nil {
+		return err
+	}
+	for dom := range existing {
+		if _, ok := active[dom]; !ok {
+			if _, err := r.db.Exec(`DELETE FROM subscription_providers WHERE domain = $1`, dom); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// providerHost extracts the lowercased hostname of a subscription URL, or ""
+// when the URL is malformed or carries no host. Scheme-less entries (e.g.
+// "sub.example.com/path") are retried with an https:// prefix.
+func providerHost(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if u.Hostname() == "" {
+		u, err = url.Parse("https://" + raw)
+		if err != nil || u.Hostname() == "" {
+			return ""
+		}
+	}
+	return strings.ToLower(u.Hostname())
 }
