@@ -540,7 +540,17 @@ export default {
           if (Array.isArray(servers) && servers.length) pushGroup(provider, servers);
         });
       } else if (Array.isArray(raw) && raw.length) {
-        pushGroup('', raw.slice());
+        const sp = props.node.server_providers || {};
+        const byProvider = {};
+        raw.forEach(srv => {
+          const dom = sp[srv] || '';
+          const key = dom || '__none__';
+          if (!byProvider[key]) byProvider[key] = [];
+          byProvider[key].push(srv);
+        });
+        Object.entries(byProvider).forEach(([key, servers]) => {
+          pushGroup(key === '__none__' ? '' : key, servers);
+        });
       }
       return groups;
     });
