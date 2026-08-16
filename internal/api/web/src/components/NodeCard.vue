@@ -57,7 +57,7 @@
       </div>
     </div>
     <div class="mt-auto pt-4">
-      <button v-if="node.pipeline_status || (node.available_servers && node.available_servers.length)" type="button" @click="activeModal = 'status'"
+      <button v-if="node.pipeline_status || totalServerCount" type="button" @click="activeModal = 'status'"
         class="mt-3 w-full h-10 flex items-center gap-2 px-3 rounded-xl bg-zinc-900/40 border border-white/10 hover:border-white/20 hover:bg-zinc-800/60 transition-colors cursor-pointer text-left group">
         <span class="shrink-0 flex items-center justify-center w-6 h-6 rounded-lg" :class="statusBgClass">
           <component :is="pipelineStatusIcon(node.pipeline_status)" class="w-3.5 h-3.5" :class="statusColorClass" />
@@ -65,8 +65,8 @@
         <span class="flex-1 min-w-0 truncate whitespace-nowrap leading-none">
           <strong class="font-semibold" :class="statusColorClass">{{ node.pipeline_status || t('node_idle') }}</strong>
         </span>
-        <span v-if="(node.available_servers || []).length" class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">
-          {{ node.available_servers.length }} {{ t('node_configs') }}
+        <span v-if="totalServerCount" class="shrink-0 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-wide bg-indigo-500/15 border border-indigo-500/30 text-indigo-300">
+          {{ totalServerCount }} {{ t('node_configs') }}
         </span>
         <ChevronRight class="w-4 h-4 shrink-0 text-zinc-600 group-hover:text-zinc-200 group-hover:translate-x-0.5 transition-all" />
       </button>
@@ -81,6 +81,10 @@
                 <button v-if="canEditSubCard" @click="openSubModal" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Link class="w-4 h-4 shrink-0" />
                   <span class="font-mono text-sm truncate min-w-0">[{{ t('node_manage_sub') }}]</span>
+                </button>
+                <button v-if="canEditSubCard" @click="refreshSubs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                  <RefreshCw class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_refresh_subs') }}]</span>
                 </button>
                 <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Shield class="w-4 h-4 shrink-0" />
@@ -212,16 +216,16 @@
           <button @click="switchTo('fastest')" class="flex items-center justify-center space-x-2 px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-semibold text-zinc-200"><Zap class="w-4 h-4 text-indigo-400 shrink-0" /><span class="truncate min-w-0">{{ t('node_fastest') }}</span></button>
           <button @click="switchTo('balanced')" class="flex items-center justify-center space-x-2 px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 font-semibold text-zinc-200"><Scale class="w-4 h-4 text-indigo-400 shrink-0" /><span class="truncate min-w-0">{{ t('node_balanced') }}</span></button>
         </div>
-        <p class="text-xs text-zinc-500 mb-2">{{ t('node_avail_configs', { n: (node.available_servers || []).length }) }}</p>
-        <div v-if="serverGroups.length" class="max-h-56 overflow-y-auto pr-1 space-y-3">
-          <div v-for="group in serverGroups" :key="group.key">
-            <p v-if="group.provider" class="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1.5">{{ group.provider }}</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <p class="text-xs text-zinc-500 mb-2">{{ t('node_avail_configs', { n: totalServerCount }) }}</p>
+        <div v-if="serverGroups.length" class="max-h-56 overflow-y-auto pr-1">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <template v-for="group in serverGroups" :key="group.key">
+              <p v-if="group.provider" class="col-span-full text-center text-xs font-semibold uppercase tracking-wider text-indigo-400 border-b border-white/5 pb-1.5 mb-1">{{ group.provider }}</p>
               <button v-for="srv in group.servers" :key="srv" @click="switchTo(srv)"
                 :class="['px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl font-semibold truncate', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
                 {{ srv }}
               </button>
-            </div>
+            </template>
           </div>
         </div>
         <p v-else class="text-sm text-zinc-500">{{ t('node_no_configs') }}</p>
@@ -521,23 +525,40 @@ export default {
     };
 
     const serverGroups = computed(() => {
-      const servers = props.node.available_servers || [];
-      const sp = props.node.server_providers || {};
-      const byProvider = {};
-      servers.forEach(srv => {
-        const dom = sp[srv] || '';
-        const key = dom || '__none__';
-        if (!byProvider[key]) {
-          byProvider[key] = {
-            key,
-            provider: key === '__none__' ? null : (providerNames.value[dom] || dom),
-            servers: [],
-          };
-        }
-        byProvider[key].servers.push(srv);
-      });
-      return Object.values(byProvider);
+      const raw = props.node.available_servers;
+      const groups = [];
+      const pushGroup = (provider, servers) => {
+        const key = provider || '__none__';
+        groups.push({
+          key,
+          provider: provider ? (providerNames.value[provider] || provider) : null,
+          servers,
+        });
+      };
+      if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+        Object.entries(raw).forEach(([provider, servers]) => {
+          if (Array.isArray(servers) && servers.length) pushGroup(provider, servers);
+        });
+      } else if (Array.isArray(raw) && raw.length) {
+        pushGroup('', raw.slice());
+      }
+      return groups;
     });
+
+    const totalServerCount = computed(() =>
+      serverGroups.value.reduce((sum, g) => sum + g.servers.length, 0)
+    );
+
+    const refreshSubs = async () => {
+      try {
+        await axios.post(`/api/web/nodes/${props.node.id}/command`, { action: 'update_sub' });
+        emit('node-updated');
+        showToast(t('node_toast_sub_refreshed'));
+      } catch (e) {
+        console.error('Error refreshing subs:', e);
+        showToast(t('node_toast_sub_refresh_failed'), 'error');
+      }
+    };
 
     const switchTo = async (target) => {
       try {
@@ -702,7 +723,7 @@ export default {
       showDeleteModal, deleteChoice,
       showTaskQueueModal,
       activeModal,
-      showSwitchModal, switchTo, serverGroups,
+      showSwitchModal, switchTo, serverGroups, totalServerCount, refreshSubs,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,
       cancelPendingCommand,

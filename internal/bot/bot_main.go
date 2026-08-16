@@ -1294,6 +1294,8 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.handleQueueMenu(chatID, messageID, strings.TrimPrefix(data, "node:queue:"))
 	case strings.HasPrefix(data, "node:queue_cancel:"):
 		b.handleQueueCancel(chatID, messageID, strings.TrimPrefix(data, "node:queue_cancel:"))
+	case strings.HasPrefix(data, "node:refresh_sub:"):
+		b.handleRefreshSub(chatID, messageID, strings.TrimPrefix(data, "node:refresh_sub:"))
 	case strings.HasPrefix(data, "node:rename:"):
 		nodeID := strings.TrimPrefix(data, "node:rename:")
 		b.setState(chatID, &userState{Step: "rename_node", NodeID: nodeID})

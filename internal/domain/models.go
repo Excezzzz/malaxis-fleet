@@ -139,8 +139,12 @@ type Node struct {
 	ActiveEngine       string    `json:"active_engine" db:"active_engine"`
 	ActiveProto        string    `json:"active_proto" db:"active_proto"`
 	ActiveIPExt        string    `json:"active_ip_ext" db:"active_ip_ext"`
-	ActiveOutboundJSON string    `json:"active_outbound_json" db:"active_outbound_json"`
-	AvailableServers   []string  `json:"available_servers" db:"available_servers"`
+	ActiveOutboundJSON string              `json:"active_outbound_json" db:"active_outbound_json"`
+	// AvailableServers groups cached server names by their provider tag
+	// (friendly provider name or the subscription URL host). Keyed by provider
+	// so the web UI and bot can render grouped server lists directly; legacy
+	// flat arrays are normalized to a single provider-less group on read.
+	AvailableServers map[string][]string `json:"available_servers" db:"available_servers"`
 	// ServerProviders maps a cached server name to its provider name (friendly
 	// name from subscription_providers, or the subscription URL host as
 	// fallback). Reported by the agent so UIs can group servers by provider.

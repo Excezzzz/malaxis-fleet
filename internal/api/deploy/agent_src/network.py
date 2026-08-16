@@ -112,13 +112,20 @@ def report(**kw: Any) -> None:
         payload.setdefault("protocol", state.get("active_proto", ""))
         payload.setdefault("name", state.get("node_name", ""))
         servers = agent.load_cache()
-        payload.setdefault("available_servers", [s.get("tag") or s.get("name") or f"Server {i + 1}" for i, s in enumerate(servers)])
-        # v1.2.0: server -> provider map so UIs can group by provider.
-        providers = {}
+        # v1.2.2: available_servers is reported as an object grouped by
+        # provider {provider: [server, ...]} so UIs can render grouped server
+        # lists directly. The provider-less group ("") holds servers whose
+        # subscription did not come from a known provider.
+        grouped: dict[str, list[str]] = {}
         for i, s in enumerate(servers):
             name = s.get("tag") or s.get("name") or f"Server {i + 1}"
-            p = s.get("provider", "")
-            if p:
+            p = s.get("provider", "") or ""
+            grouped.setdefault(p, []).append(name)
+        payload.setdefault("available_servers", grouped)
+        # v1.2.0: server -> provider map (legacy; UIs now use the grouped map).
+        providers = {}
+        for p, names in grouped.items():
+            for name in names:
                 providers[name] = p
         payload.setdefault("server_providers", providers)
     except Exception:

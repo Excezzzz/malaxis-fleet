@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -244,6 +245,7 @@ func (b *Bot) showNodeDetail(chatID int64, messageID int, nodeID, note string) {
 			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔗", "Установить Sub URL", "Set Sub URL"), "node:sub:"+node.ID),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.btn("🔄", "Обновить подписки", "Refresh Subs"), "node:refresh_sub:"+node.ID),
 			tgbotapi.NewInlineKeyboardButtonData(b.btn("📜", "Просмотр логов", "View Logs"), "node:logs:"+node.ID),
 			tgbotapi.NewInlineKeyboardButtonData(fmt.Sprintf(b.btn("⏳", "Очередь задач (%d)", "Task Queue (%d)"), taskCount), "node:queue:"+node.ID),
 		),
@@ -379,6 +381,33 @@ func (b *Bot) handleQueueCancel(chatID int64, messageID int, nodeID string) {
 	b.editMessage(chatID, messageID, "✅ <b>"+b.tr("Ожидаемая задача отменена.", "Pending task cancelled.")+"</b>", &markup)
 }
 
+// handleRefreshSub queues an update_sub command against the node's current
+// (master-synced) subscription URLs, forcing the agent to re-download and
+// re-parse its subscription on the next poll.
+func (b *Bot) handleRefreshSub(chatID int64, messageID int, nodeID string) {
+	command, _ := json.Marshal(map[string]interface{}{"action": "update_sub"})
+	messageIDTs := time.Now().Unix()
+	if err := b.repo.SetPendingCommand(nodeID, string(command), messageIDTs); err != nil {
+		log.Printf("Bot: failed to queue update_sub for node %s: %v", nodeID, err)
+		b.showNodeDetail(chatID, messageID, nodeID, "❌ "+b.tr("Не удалось поставить обновление подписок в очередь.", "Failed to queue the subscription refresh."))
+		return
+	}
+	b.repo.UpdateNodePipelineStatus(nodeID, "Queued", "update_sub")
+	b.audit.Log("telegram_bot", audit.ActionUpdateSettings, nodeID, "Queued update_sub (via Telegram bot)")
+	b.showNodeDetail(chatID, messageID, nodeID, "✅ "+b.tr("Обновление подписок поставлено в очередь.", "Subscription refresh queued."))
+}
+
+// sortedKeys returns the keys of m in a stable (sorted) order so VPN menus
+// render provider groups deterministically.
+func sortedKeys(m map[string][]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 	node, err := b.repo.GetNodeByID(nodeID)
 	if err != nil {
@@ -405,31 +434,35 @@ func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Баланс", "Balanced"), "⚖️", emojis), "node:switch:"+nodeID+":balanced"),
 		),
 	)
-	// v1.2.0: servers are grouped by subscription provider. A non-clickable
-	// separator row "[ ➖ Provider Name ➖ ]" is rendered before the first
-	// server of each group (the agent tags every cached server with its
-	// provider; unknown ones fall back to the provider-less group).
-	var lastProvider string
-	separatorShown := map[string]bool{}
-	for _, srv := range node.AvailableServers {
-		srv = strings.TrimSpace(srv)
-		if srv == "" {
-			continue
-		}
-		provider := node.ServerProviders[srv]
-		if provider != lastProvider && provider != "" && !separatorShown[provider] {
-			separatorShown[provider] = true
+	// v1.2.2: the agent reports available_servers as an object grouped by
+	// provider {provider: [server, ...]}, so the menu renders one non-clickable
+	// separator row "[ ➖ Provider Name ➖ ]" before each group (callback data
+	// "ignore" — silently acked, never matched). Provider-less legacy entries
+	// render without a separator.
+	for _, provider := range sortedKeys(node.AvailableServers) {
+		servers := node.AvailableServers[provider]
+		if provider != "" {
 			sep := "[ " + provider + " ]"
 			if emojis {
 				sep = "[ ➖ " + provider + " ➖ ]"
 			}
 			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData(sep, "sep:"+provider),
+				tgbotapi.NewInlineKeyboardButtonData(sep, "ignore"),
 			))
 		}
-		lastProvider = provider
+		for _, srv := range servers {
+			srv = strings.TrimSpace(srv)
+			if srv == "" {
+				continue
+			}
+			rows = append(rows, tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(srv, "🌐", emojis), "node:switch:"+nodeID+":"+srv),
+			))
+		}
+	}
+	if len(node.AvailableServers) == 0 {
 		rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(srv, "🌐", emojis), "node:switch:"+nodeID+":"+srv),
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Серверы не загружены", "No Servers Loaded"), "❌", emojis), "ignore"),
 		))
 	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(

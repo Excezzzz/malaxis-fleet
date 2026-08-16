@@ -325,14 +325,39 @@ func (r *postgresRepository) Close() error {
 
 // --- Node Methods ---
 
-// unmarshalAvailableServers parses the stored JSON array of available servers,
-// logging (never silently ignoring) a corrupted value.
-func unmarshalAvailableServers(raw string) []string {
-	var servers []string
-	if err := json.Unmarshal([]byte(raw), &servers); err != nil {
+// unmarshalAvailableServers parses the stored JSON value of available servers.
+// v1.2.2 reports a grouped object {provider: [server, ...]}; values written by
+// older agents are flat arrays and are normalized to a single provider-less
+// group. Logs (never silently ignores) a corrupted value.
+func unmarshalAvailableServers(raw string) map[string][]string {
+	out := map[string][]string{}
+	if raw == "" || raw == "null" {
+		return out
+	}
+	var grouped map[string][]string
+	if err := json.Unmarshal([]byte(raw), &grouped); err == nil {
+		return grouped
+	}
+	var flat []string
+	if err := json.Unmarshal([]byte(raw), &flat); err == nil && len(flat) > 0 {
+		out[""] = flat
+		return out
+	}
+	if err := json.Unmarshal([]byte(raw), &flat); err != nil {
 		log.Printf("ERROR: invalid available_servers JSON %q: %v", raw, err)
 	}
-	return servers
+	return out
+}
+
+func marshalAvailableServers(m map[string][]string) string {
+	if len(m) == 0 {
+		return "{}"
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 func unmarshalSubURLs(raw string) []string {
@@ -490,8 +515,8 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 		ON CONFLICT (id) DO UPDATE SET
 			last_seen = NOW(),
 			ip_lan = EXCLUDED.ip_lan,
-			sub_urls = CASE WHEN EXCLUDED.sub_urls = '[]'::jsonb THEN nodes.sub_urls ELSE EXCLUDED.sub_urls END,
-			sub_url = CASE WHEN jsonb_array_length(EXCLUDED.sub_urls) > 0 THEN EXCLUDED.sub_urls->>0 ELSE nodes.sub_url END,
+			sub_urls = nodes.sub_urls,
+			sub_url = nodes.sub_url,
 			name = CASE
 				WHEN nodes.name IS NULL OR nodes.name = '' OR nodes.name = nodes.hostname THEN EXCLUDED.name
 				ELSE nodes.name

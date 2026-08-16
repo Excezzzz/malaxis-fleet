@@ -52,7 +52,11 @@ type ReportRequest struct {
 	Status           string            `json:"status,omitempty"`
 	Message          string            `json:"message,omitempty"`
 	ActiveServer     string            `json:"active_server,omitempty"`
-	AvailableServers []string          `json:"available_servers,omitempty"`
+	// AvailableServers holds either the v1.2.2 grouped object
+	// {provider: [server, ...]} or the legacy flat array from older agents
+	// (normalized to a provider-less group on read). Kept as RawMessage so the
+	// stored bytes round-trip unchanged.
+	AvailableServers json.RawMessage `json:"available_servers,omitempty"`
 	SubURL           string            `json:"sub_url,omitempty"`
 	SubURLs          []string          `json:"sub_urls,omitempty"`
 	// ServerProviders maps server name -> provider name for UI grouping.
@@ -437,11 +441,9 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	availJSON := "[]"
+	availJSON := "{}"
 	if len(req.AvailableServers) > 0 {
-		if b, err := json.Marshal(req.AvailableServers); err == nil {
-			availJSON = string(b)
-		}
+		availJSON = string(req.AvailableServers)
 	}
 
 	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON, req.SubURLs, req.ServerProviders)
