@@ -1,19 +1,22 @@
 ﻿# ============================================================
-#  Malaxis Fleet - Zero-Touch Silent Client Installer (Windows)
+#  Malaxis Fleet - Lite-Touch Client Installer (Windows)
 #  Native Windows PowerShell (5.1+).
 #  Run with:  irm https://<join-domain>/join.ps1?t=<SECRET_TOKEN> | iex
 #
-#  Fully non-interactive: the node registers itself under the OS
-#  hostname and ALL configuration (subscription URLs, device name,
-#  VPN mode) is done afterwards from the Web UI / Telegram bot.
+#  Asks ONLY: language, installation directory, device name.
+#  Subscription URLs are configured later from the Web UI /
+#  Telegram bot / fleet-cli. The installer exits cleanly
+#  without launching the CLI.
 # ============================================================
 
 # Allow this user to run local PowerShell scripts (fleet-cli.ps1 etc.)
 # without execution-policy errors on fresh Windows machines.
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
 
-# Force UTF-8 so output renders correctly on any console codepage.
+# Force UTF-8 so localized (Russian) text renders correctly on any
+# console codepage (e.g. cp866 / cp437).
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+[Console]::InputEncoding = [System.Text.Encoding]::UTF8
 
 $ErrorActionPreference = "Continue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -38,15 +41,122 @@ function Invoke-Compose([string[]]$ComposeArgs) {
 }
 
 # ------------------------------------------------------------
-# Zero-touch defaults: no prompts anywhere in this installer.
+# 0. Language selector (first step, before any other output)
 # ------------------------------------------------------------
-$installDir = Join-Path $HOME "malaxis-fleet-client"
+Write-Host ""
+Write-Host "Select installer language / Выберите язык установки:"
+Write-Host "  [1] Русский (По умолчанию / Default)"
+Write-Host "  [2] English"
+$langChoice = Read-Host ">"
+if ([string]::IsNullOrWhiteSpace($langChoice)) { $langChoice = "1" }
+
+$lang = "ru"
+if ($langChoice -eq "2" -or $langChoice -eq "en" -or $langChoice -eq "EN") { $lang = "en" }
+
+# Values needed by localized prompts (computed before strings)
+$docs = [Environment]::GetFolderPath('MyDocuments')
+$desk = [Environment]::GetFolderPath('Desktop')
+if ([string]::IsNullOrWhiteSpace($docs)) { $docs = $HOME }
+if ([string]::IsNullOrWhiteSpace($desk)) { $desk = $HOME }
 $hostName = $env:COMPUTERNAME
 if ([string]::IsNullOrWhiteSpace($hostName)) { $hostName = "fleet-node" }
 
+# ------------------------------------------------------------
+# Localized strings
+# ------------------------------------------------------------
+if ($lang -eq "en") {
+    $T_PREFLIGHT            = "Running pre-flight checks..."
+    $T_DOCKER_NOT_INSTALLED = "Docker is not installed! Install Docker Desktop (https://www.docker.com/products/docker-desktop), then re-run this script."
+    $T_DOCKER_INSTALLED     = "Docker is installed."
+    $T_DOCKER_NOT_RUNNING   = "Docker is not running! Please start Docker Desktop or the Docker daemon before installing."
+    $T_DOCKER_RUNNING       = "Docker daemon is running."
+    $T_COMPOSE_MISSING      = "Neither 'docker compose' nor 'docker-compose' is installed! Please install Docker Compose, then re-run this script."
+    $T_COMPOSE_OK           = "Docker Compose is available."
+    $T_CHECK_MASTER         = "Checking master server connectivity (__API_DOMAIN__)..."
+    $T_MASTER_OK            = "Master server is reachable."
+    $T_MASTER_WARN          = "Master server did not respond. Check your network/firewall; the agent will retry automatically once started."
+    $T_DIR_TITLE            = "Select installation directory for Malaxis Fleet Client:"
+    $T_DIR_1                = "[1] Documents (Default: $docs\malaxis-fleet-client)"
+    $T_DIR_2                = "[2] Desktop ($desk\malaxis-fleet-client)"
+    $T_DIR_3                = "[3] User Home Directory ($HOME\malaxis-fleet-client)"
+    $T_DIR_4                = "[4] Custom Path"
+    $T_DIR_PROMPT           = "Select [1-4, default 1]"
+    $T_CUSTOM_PATH          = "Enter custom installation path"
+    $T_PATH_EMPTY           = "Custom path cannot be empty."
+    $T_INSTALL_DIR          = "Installation directory: "
+    $T_NODE_PROMPT          = "Enter a friendly name for this device [Default: $hostName]"
+    $T_NAME_RETRY           = "Device name cannot be empty - please enter a name: "
+    $T_NAME_DEFAULT         = "Using default device name: "
+    $T_REINSTALL            = "Existing installation detected. Performing clean re-install..."
+    $T_PRESERVE             = "Preserving existing configs directory..."
+    $T_OLD_CLEANED          = "Old installation cleaned."
+    $T_DL_FILES             = "Downloading client files..."
+    $T_DL_FILE              = "Downloading "
+    $T_CONFIGS_RESTORED     = "Previous configs restored."
+    $T_DL_CONFIGS           = "Downloading default proxy configs..."
+    $T_DL_CLI               = "Downloading fleet-cli utility..."
+    $T_STATE_WRITTEN        = "Configuration written to configs/agent_state.json (node: {0}, smart mode: balanced)."
+    $T_BUILD                = "Building agent image and starting services..."
+    $T_COMPOSE_FAILED       = "Docker Compose up failed. Check Docker Desktop settings and re-run this script."
+    $T_PREP_SING            = "Preparing singbox-node container..."
+    $T_DONE                 = "Malaxis Fleet Agent is running!"
+    $T_QUICK                = "Quick commands:"
+    $T_Q_LOGS               = "View logs:"
+    $T_Q_STOP               = "Stop agent:"
+    $T_Q_CLI                = "CLI:"
+    $T_GLOBAL_CMD           = "You can now run 'malaxis-fleet' from any new terminal!"
+    $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent installed successfully!"
+    $T_SUMMARY_SOCKS        = "SOCKS5 Proxy"
+    $T_SUMMARY_HTTP         = "HTTP Proxy"
+} else {
+    $T_PREFLIGHT            = "Проверка системных требований..."
+    $T_DOCKER_NOT_INSTALLED = "Docker не установлен! Установите Docker Desktop (https://www.docker.com/products/docker-desktop), затем запустите скрипт заново."
+    $T_DOCKER_INSTALLED     = "Docker установлен."
+    $T_DOCKER_NOT_RUNNING   = "Docker не запущен! Пожалуйста, запустите Docker Desktop или службу Docker перед установкой."
+    $T_DOCKER_RUNNING       = "Docker запущен."
+    $T_COMPOSE_MISSING      = "Ни одна из утилит Docker Compose не установлена! Установите Docker Compose, затем запустите скрипт заново."
+    $T_COMPOSE_OK           = "Docker Compose доступен."
+    $T_CHECK_MASTER         = "Проверка связи с мастер-сервером (__API_DOMAIN__)..."
+    $T_MASTER_OK            = "Мастер-сервер доступен."
+    $T_MASTER_WARN          = "Мастер-сервер не ответил. Проверьте сеть/файрвол; агент автоматически повторит попытку после запуска."
+    $T_DIR_TITLE            = "Выберите папку для установки Malaxis Fleet Client:"
+    $T_DIR_1                = "[1] Документы (По умолчанию: $docs\malaxis-fleet-client)"
+    $T_DIR_2                = "[2] Рабочий стол ($desk\malaxis-fleet-client)"
+    $T_DIR_3                = "[3] Домашняя папка ($HOME\malaxis-fleet-client)"
+    $T_DIR_4                = "[4] Ввести свой путь"
+    $T_DIR_PROMPT           = "Выберите [1-4, по умолчанию 1]"
+    $T_CUSTOM_PATH          = "Введите путь установки"
+    $T_PATH_EMPTY           = "Путь не может быть пустым."
+    $T_INSTALL_DIR          = "Папка установки: "
+    $T_NODE_PROMPT          = "Введите имя устройства [По умолчанию: $hostName]"
+    $T_NAME_RETRY           = "Имя устройства не может быть пустым - введите имя: "
+    $T_NAME_DEFAULT         = "Использую имя устройства по умолчанию: "
+    $T_REINSTALL            = "Обнаружена существующая установка. Выполняется чистая переустановка..."
+    $T_PRESERVE             = "Сохраняю существующие конфигурации..."
+    $T_OLD_CLEANED          = "Старая установка удалена."
+    $T_DL_FILES             = "Загрузка файлов клиента..."
+    $T_DL_FILE              = "Загрузка "
+    $T_CONFIGS_RESTORED     = "Предыдущие конфигурации восстановлены."
+    $T_DL_CONFIGS           = "Загрузка стандартных конфигураций прокси..."
+    $T_DL_CLI               = "Загрузка утилиты fleet-cli..."
+    $T_STATE_WRITTEN        = "Конфигурация сохранена в configs/agent_state.json (узел: {0}, режим: balanced)."
+    $T_BUILD                = "Сборка образа агента и запуск сервисов..."
+    $T_COMPOSE_FAILED       = "Не удалось выполнить Docker Compose up. Проверьте настройки Docker Desktop и запустите скрипт заново."
+    $T_PREP_SING            = "Подготовка контейнера singbox-node..."
+    $T_DONE                 = "Malaxis Fleet Agent запущен!"
+    $T_QUICK                = "Быстрые команды:"
+    $T_Q_LOGS               = "Логи:"
+    $T_Q_STOP               = "Остановить:"
+    $T_Q_CLI                = "CLI:"
+    $T_GLOBAL_CMD           = "Теперь команду 'malaxis-fleet' можно запускать из любого нового окна терминала!"
+    $T_SUMMARY_TITLE        = "✅ Malaxis Fleet Agent успешно установлен!"
+    $T_SUMMARY_SOCKS        = "SOCKS5 Прокси"
+    $T_SUMMARY_HTTP         = "HTTP Прокси"
+}
+
 Write-Host ""
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host "     Malaxis Fleet - Zero-Touch Client Installer" -ForegroundColor Cyan
+Write-Host "     Malaxis Fleet - Client Installer" -ForegroundColor Cyan
 Write-Host "     Native Windows PowerShell" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
 Write-Host ""
@@ -54,20 +164,20 @@ Write-Host ""
 # ------------------------------------------------------------
 # 1. Pre-flight dependency & resource checks
 # ------------------------------------------------------------
-Say "Running pre-flight checks..."
+Say $T_PREFLIGHT
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Fail "Docker is not installed! Install Docker Desktop (https://www.docker.com/products/docker-desktop), then re-run this script."
+    Fail $T_DOCKER_NOT_INSTALLED
 }
-Say "Docker is installed."
+Say $T_DOCKER_INSTALLED
 
 & docker info 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Fail "Docker is not running! Please start Docker Desktop or the Docker daemon before installing."
+    Fail $T_DOCKER_NOT_RUNNING
 }
-Say "Docker daemon is running."
+Say $T_DOCKER_RUNNING
 
-# Compose v2 plugin / v1 standalone detection (silent, zero-touch):
+# Compose v2 plugin / v1 standalone detection (silent):
 # v2 is preferred; v1 standalone is the automatic fallback.
 $script:composeCmd = ""
 $haveComposeV2 = $false
@@ -84,20 +194,64 @@ if ($haveComposeV2) {
 } elseif ($haveComposeV1) {
     $script:composeCmd = "docker-compose"
 } else {
-    Fail "Neither 'docker compose' nor 'docker-compose' is installed! Please install Docker Compose, then re-run this script."
+    Fail $T_COMPOSE_MISSING
 }
-Say "Docker Compose is available ($script:composeCmd)."
+Say "$T_COMPOSE_OK ($script:composeCmd)"
 
-Say "Checking master server connectivity (__API_DOMAIN__)..."
+Say $T_CHECK_MASTER
 $reachable = Test-NetConnection -ComputerName "__API_DOMAIN__" -Port 443 -InformationLevel Quiet -WarningAction SilentlyContinue
 if ($reachable) {
-    Say "Master server is reachable."
+    Say $T_MASTER_OK
 } else {
-    Warn "Master server did not respond. Check your network/firewall; the agent will retry automatically once started."
+    Warn $T_MASTER_WARN
 }
 
 # ------------------------------------------------------------
-# 2. Clean re-install detection
+# 2. Installation directory selector
+# ------------------------------------------------------------
+Write-Host ""
+Write-Host $T_DIR_TITLE
+Write-Host $T_DIR_1
+Write-Host $T_DIR_2
+Write-Host $T_DIR_3
+Write-Host $T_DIR_4
+$dirChoice = Read-Host $T_DIR_PROMPT
+if ([string]::IsNullOrWhiteSpace($dirChoice)) { $dirChoice = "1" }
+
+$baseDir = $docs
+switch ($dirChoice) {
+    "2" { $baseDir = $desk }
+    "3" { $baseDir = $HOME }
+    "4" {
+        $customDir = Read-Host $T_CUSTOM_PATH
+        if (-not [string]::IsNullOrWhiteSpace($customDir)) { $baseDir = $customDir }
+    }
+}
+if ([string]::IsNullOrWhiteSpace($baseDir)) { $baseDir = $HOME }
+$installDir = Join-Path $baseDir "malaxis-fleet-client"
+New-Item -ItemType Directory -Force -Path (Join-Path $installDir "configs") | Out-Null
+Say "$T_INSTALL_DIR$installDir"
+
+# ------------------------------------------------------------
+# 3. Device name prompt
+# ------------------------------------------------------------
+# Device name: asked on EVERY install and never silently discarded - an empty
+# answer (accidental Enter) triggers a second prompt while a console is
+# available; only a fully non-interactive run falls back to the hostname.
+$nodeName = Read-Host $T_NODE_PROMPT
+if ([string]::IsNullOrWhiteSpace($nodeName)) {
+    if (-not [Console]::IsInputRedirected) {
+        Warn $T_NAME_RETRY
+        $nodeName = Read-Host $T_NODE_PROMPT
+    }
+}
+if ([string]::IsNullOrWhiteSpace($nodeName)) {
+    $nodeName = $hostName
+    Say "$T_NAME_DEFAULT$hostName"
+}
+
+# ------------------------------------------------------------
+# 4. Clean re-install detection
 # ------------------------------------------------------------
 $existing = $false
 if (Test-Path (Join-Path $installDir "docker-compose.yml")) { $existing = $true }
@@ -106,7 +260,7 @@ if ($containerNames -match "node-agent") { $existing = $true }
 
 if ($existing) {
     Write-Host ""
-    Say "Existing installation detected. Performing clean re-install..."
+    Say $T_REINSTALL
     if (Test-Path $installDir) {
         Push-Location $installDir
         Invoke-Compose down --remove-orphans 2>&1 | Out-Null
@@ -114,18 +268,18 @@ if ($existing) {
         Pop-Location
     }
     if (Test-Path (Join-Path $installDir "configs")) {
-        Say "Preserving existing configs directory..."
+        Say $T_PRESERVE
         $backup = Join-Path $env:TEMP "fleet-config-backup"
         if (Test-Path $backup) { Remove-Item -Recurse -Force $backup }
         Copy-Item -Recurse -Force (Join-Path $installDir "configs") $backup
     }
     if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir }
-    Say "Old installation cleaned."
+    Say $T_OLD_CLEANED
 }
 New-Item -ItemType Directory -Force -Path (Join-Path $installDir "configs") | Out-Null
 
 # ------------------------------------------------------------
-# 3. Download client payloads
+# 5. Download client payloads
 # ------------------------------------------------------------
 $subBase = "https://__SUB_DOMAIN__"
 $apiBase = "https://__API_DOMAIN__"
@@ -133,12 +287,12 @@ $joinBase = "https://__JOIN_DOMAIN__"
 $token = "__SECRET_TOKEN__"
 
 function Download-File([string]$Url, [string]$Dest) {
-    Write-Host "Downloading $(Split-Path $Dest -Leaf)..."
+    Write-Host "$T_DL_FILE$(Split-Path $Dest -Leaf)..."
     Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Dest
 }
 
 Write-Host ""
-Say "Downloading client files..."
+Say $T_DL_FILES
 Download-File "$subBase/docker-compose.yml?t=$token" (Join-Path $installDir "docker-compose.yml")
 Download-File "$subBase/Dockerfile.client?t=$token" (Join-Path $installDir "Dockerfile")
 Download-File "$subBase/requirements.txt?t=$token" (Join-Path $installDir "requirements.txt")
@@ -158,12 +312,12 @@ $backup = Join-Path $env:TEMP "fleet-config-backup"
 if (Test-Path $backup) {
     Copy-Item -Recurse -Force (Join-Path $backup "*") (Join-Path $installDir "configs\") -ErrorAction SilentlyContinue
     Remove-Item -Recurse -Force $backup
-    Say "Previous configs restored."
+    Say $T_CONFIGS_RESTORED
 }
 
 # Download default configs so containers start cleanly
 Write-Host ""
-Say "Downloading default proxy configs..."
+Say $T_DL_CONFIGS
 try {
     Download-File "$subBase/configs/xray_config.json?t=$token" (Join-Path $installDir "configs\xray_config.json")
 } catch {
@@ -212,7 +366,7 @@ try {
 
 # Download fleet-cli utility
 Write-Host ""
-Say "Downloading fleet-cli utility..."
+Say $T_DL_CLI
 Download-File "$joinBase/fleet-cli.ps1?t=$token" (Join-Path $installDir "fleet-cli.ps1")
 
 # Create a global "malaxis-fleet" command: a .cmd wrapper in the install dir
@@ -230,45 +384,64 @@ if ($UserPath -notlike "*$installDir*") {
 }
 
 # ------------------------------------------------------------
-# 4. Persist zero-touch defaults BEFORE starting the stack:
-#    the node registers under the OS hostname; subscription URLs
-#    and VPN mode are configured later from the Web UI / bot.
+# 6. Persist onboarding choices BEFORE starting the stack.
+#    Subscription URLs are intentionally left EMPTY - they are
+#    set from the Web UI / Telegram bot / fleet-cli afterwards.
 # ------------------------------------------------------------
 $state = @{
-    node_name   = $hostName
+    node_name   = $nodeName
     active_mode = "balanced"
     compose_cmd = $script:composeCmd
     sub_url     = ""
     sub_urls    = @()
 } | ConvertTo-Json -Compress
 Write-Utf8 (Join-Path $installDir "configs\agent_state.json") $state
-Say "Configuration written to configs/agent_state.json (node: $hostName, smart mode: balanced)."
+Say ($T_STATE_WRITTEN -f $nodeName)
 
 # ------------------------------------------------------------
-# 5. Build & start
+# 7. Build & start
 # ------------------------------------------------------------
 Write-Host ""
-Say "Building agent image and starting services..."
+Say $T_BUILD
 Push-Location $installDir
 Invoke-Compose up -d --build
 if ($LASTEXITCODE -ne 0) {
     Pop-Location
-    Fail "Docker Compose up failed. Check Docker Desktop settings and re-run this script."
+    Fail $T_COMPOSE_FAILED
 }
 
 # Create singbox-node container so the agent can manage it later via docker start/stop
 Write-Host ""
-Say "Preparing singbox-node container..."
+Say $T_PREP_SING
 Invoke-Compose create singbox-node 2>&1 | Out-Null
 Pop-Location
 
 Write-Host ""
-Write-Host "✅ Malaxis Fleet Agent installed successfully!" -ForegroundColor Green
-Write-Host "   The node is registered as: $hostName"
-Write-Host "   Subscription URLs and VPN mode are configured from the Web UI / Telegram bot."
+Write-Host $T_DONE -ForegroundColor Green
 Write-Host ""
-Write-Host "Quick commands:"
-Write-Host "   Logs:    docker logs -f node-agent"
-Write-Host "   Stop:    cd `"$installDir`"; $script:composeCmd down"
-Write-Host "   CLI:     cd `"$installDir`"; .\fleet-cli.ps1"
+
+$summaryLines = @(
+    $T_SUMMARY_TITLE,
+    "",
+    "  $($T_SUMMARY_SOCKS) : 127.0.0.1:6357",
+    "  $($T_SUMMARY_HTTP)  : 127.0.0.1:6358",
+    "",
+    "  $T_GLOBAL_CMD"
+)
+$boxWidth = ($summaryLines | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum + 4
+Write-Host ("╔" + ("═" * $boxWidth) + "╗") -ForegroundColor Cyan
+foreach ($l in $summaryLines) {
+    $pad = $boxWidth - $l.Length + 2
+    Write-Host ("║  " + $l + (" " * $pad) + "║") -ForegroundColor Cyan
+}
+Write-Host ("╚" + ("═" * $boxWidth) + "╝") -ForegroundColor Cyan
 Write-Host ""
+Write-Host $T_QUICK
+Write-Host "   $T_Q_LOGS    docker logs -f node-agent"
+Write-Host "   $T_Q_STOP    cd `"$installDir`"; $script:composeCmd down"
+Write-Host "   $T_Q_CLI     cd `"$installDir`"; .\fleet-cli.ps1"
+Write-Host ""
+
+# NOTE: the installer intentionally exits WITHOUT launching the CLI. Set the
+# subscription URL from the Web UI, the Telegram bot, or by running
+# `.\fleet-cli.ps1` manually.
