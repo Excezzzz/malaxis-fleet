@@ -117,7 +117,13 @@ if [ "$lang" = "en" ]; then
     T_DOCKER_INSTALLED="Docker is installed."
     T_DOCKER_NOT_RUNNING="Docker is not running! Please start Docker Desktop or the Docker daemon before installing."
     T_DOCKER_RUNNING="Docker daemon is running."
-    T_COMPOSE_MISSING="Neither 'docker compose' nor 'docker-compose' is installed! Please install Docker Compose, then re-run this script."
+    T_COMPOSE_MISSING="Neither 'docker compose' nor 'docker-compose' is installed!"
+    T_COMPOSE_INSTALL_ASK="Docker Compose was not found. Install it automatically? [Y/n]: "
+    T_COMPOSE_INSTALLING="Installing Docker Compose (may require your password for sudo)..."
+    T_COMPOSE_INSTALL_OK="Docker Compose installed successfully."
+    T_COMPOSE_INSTALL_FAILED="Automatic installation failed. Please install Docker Compose manually (https://docs.docker.com/compose/install/), then re-run this script."
+    T_COMPOSE_DESKTOP_HINT="On this platform please install Docker Desktop from the official site: https://www.docker.com/products/docker-desktop/ , then re-run this script."
+    T_COMPOSE_DECLINED="Docker Compose is required. Install it and re-run this script."
     T_COMPOSE_OK="Docker Compose is available."
     T_CHECK_MASTER="Checking master server connectivity (__API_DOMAIN__)..."
     T_MASTER_OK="Master server is reachable."
@@ -157,7 +163,13 @@ else
     T_DOCKER_INSTALLED="Docker установлен."
     T_DOCKER_NOT_RUNNING="Docker не запущен! Пожалуйста, запустите Docker Desktop или службу Docker перед установкой."
     T_DOCKER_RUNNING="Docker запущен."
-    T_COMPOSE_MISSING="Ни одна из утилит Docker Compose не установлена! Установите Docker Compose, затем запустите скрипт заново."
+    T_COMPOSE_MISSING="Ни одна из утилит Docker Compose не установлена!"
+    T_COMPOSE_INSTALL_ASK="Docker Compose не найден. Установить автоматически? [Y/n]: "
+    T_COMPOSE_INSTALLING="Установка Docker Compose (может потребоваться пароль для sudo)..."
+    T_COMPOSE_INSTALL_OK="Docker Compose успешно установлен."
+    T_COMPOSE_INSTALL_FAILED="Автоматическая установка не удалась. Установите Docker Compose вручную (https://docs.docker.com/compose/install/), затем запустите скрипт заново."
+    T_COMPOSE_DESKTOP_HINT="На этой платформе установите Docker Desktop с официального сайта: https://www.docker.com/products/docker-desktop/ , затем запустите скрипт заново."
+    T_COMPOSE_DECLINED="Docker Compose обязателен. Установите его и запустите скрипт заново."
     T_COMPOSE_OK="Docker Compose доступен."
     T_CHECK_MASTER="Проверка связи с мастер-сервером (__API_DOMAIN__)..."
     T_MASTER_OK="Мастер-сервер доступен."
@@ -253,7 +265,59 @@ if [ "$HAVE_COMPOSE_V2" = true ]; then
 elif [ "$HAVE_COMPOSE_V1" = true ]; then
     COMPOSE_CMD="docker-compose"
 else
-    err "$T_COMPOSE_MISSING"
+    warn "$T_COMPOSE_MISSING"
+    case "$(uname -s)" in
+        Linux)
+            safe_read "$T_COMPOSE_INSTALL_ASK" "y" COMPOSE_INSTALL
+            COMPOSE_INSTALL=$(echo "$COMPOSE_INSTALL" | tr '[:upper:]' '[:lower:]')
+            if [ "$COMPOSE_INSTALL" != "y" ] && [ "$COMPOSE_INSTALL" != "yes" ]; then
+                err "$T_COMPOSE_DECLINED"
+            fi
+            say "$T_COMPOSE_INSTALLING"
+            if command -v apt-get >/dev/null 2>&1; then
+                sudo apt-get update -qq >/dev/null 2>&1 || true
+                if sudo apt-get install -y docker-compose-plugin >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V2=true
+                elif sudo apt-get install -y docker-compose >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V1=true
+                fi
+            elif command -v dnf >/dev/null 2>&1; then
+                if sudo dnf install -y docker-compose-plugin >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V2=true
+                elif sudo dnf install -y docker-compose >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V1=true
+                fi
+            elif command -v yum >/dev/null 2>&1; then
+                if sudo yum install -y docker-compose-plugin >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V2=true
+                elif sudo yum install -y docker-compose >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V1=true
+                fi
+            elif command -v zypper >/dev/null 2>&1; then
+                if sudo zypper --non-interactive install docker-compose-plugin >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V2=true
+                elif sudo zypper --non-interactive install docker-compose >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V1=true
+                fi
+            elif command -v apk >/dev/null 2>&1; then
+                if sudo apk add docker-compose >/dev/null 2>&1; then
+                    HAVE_COMPOSE_V1=true
+                fi
+            fi
+            if [ "$HAVE_COMPOSE_V2" = true ]; then
+                COMPOSE_CMD="docker compose"
+                say "$T_COMPOSE_INSTALL_OK ($COMPOSE_CMD)"
+            elif [ "$HAVE_COMPOSE_V1" = true ]; then
+                COMPOSE_CMD="docker-compose"
+                say "$T_COMPOSE_INSTALL_OK ($COMPOSE_CMD)"
+            else
+                err "$T_COMPOSE_INSTALL_FAILED"
+            fi
+            ;;
+        *)
+            err "$T_COMPOSE_DESKTOP_HINT"
+            ;;
+    esac
 fi
 say "${T_COMPOSE_OK} ($COMPOSE_CMD)"
 
