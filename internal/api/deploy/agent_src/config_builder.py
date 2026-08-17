@@ -13,7 +13,7 @@ from agent_src import agent
 DEFAULT_XRAY_CONFIG = {
     "log": {"loglevel": "warning"},
     "dns": {
-        "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
+        "servers": ["1.1.1.1", "8.8.8.8", "https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query"],
         "queryStrategy": "UseIPv4",
     },
     "inbounds": [
@@ -88,7 +88,7 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
     cfg = {
         "log": {"loglevel": "warning"},
         "dns": {
-            "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
+            "servers": ["1.1.1.1", "8.8.8.8", "https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query"],
             "queryStrategy": "UseIPv4",
         },
         "inbounds": [
@@ -358,7 +358,7 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
     cfg = {
         "log": {"loglevel": "warning"},
         "dns": {
-            "servers": ["https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query", "8.8.8.8", "1.1.1.1"],
+            "servers": ["1.1.1.1", "8.8.8.8", "https://dns.google/dns-query", "https://cloudflare-dns.com/dns-query"],
             "queryStrategy": "UseIPv4",
         },
         "inbounds": [
@@ -397,10 +397,11 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                # New (>= 1.12) DNS server format. The legacy `address` form is
-                # rejected by sing-box >= 1.14 outright, so configs must not use
-                # it (the ENABLE_DEPRECATED_* env vars were removed).
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
+                # Plain UDP first: DoH to 1.1.1.1 measures ~560ms on RU links
+                # (throttled), UDP ~85ms. Every new domain through the HTTP
+                # proxy paid that DoH latency once (fresh-cache), which
+                # Telegram's proxy ping showed as 500+ms vs ~100ms via SOCKS.
+                {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": "direct"},
                 {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
@@ -444,7 +445,11 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
+                # Plain UDP first: DoH to 1.1.1.1 measures ~560ms on RU links
+                # (throttled), UDP ~85ms. Every new domain through the HTTP
+                # proxy paid that DoH latency once (fresh-cache), which
+                # Telegram's proxy ping showed as 500+ms vs ~100ms via SOCKS.
+                {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": "direct"},
                 {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
