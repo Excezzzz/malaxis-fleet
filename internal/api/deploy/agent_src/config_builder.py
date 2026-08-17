@@ -71,11 +71,9 @@ DEFAULT_SINGBOX_CONFIG = {
     "route": {
         "final": "direct",
         "auto_detect_interface": True,
-        # sing-box >= 1.13: inbound sniff options were removed entirely;
-        # sniffing is expressed as a route rule action instead.
+        # sing-box >= 1.13: sniffing is a route rule action.
         "rules": [
-            # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
-            # so proxy-bound MTProto flows are never fingerprinted.
+            # Telegram IP ranges first, so MTProto never hits the sniff rule.
             {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": "direct"},
             {"action": "sniff", "inbound": ["socks-in", "http-in"]},
         ],
@@ -95,8 +93,7 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                # destOverride http/tls for routing decisions only; keep the
-                # block minimal - routeOnly is rejected by some Xray builds.
+                # destOverride http/tls only: routeOnly is rejected by some Xray builds.
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
                 "sockopt": {"tcpKeepAliveInterval": 15},
@@ -121,8 +118,7 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
-            # Telegram MTProto / QUIC: matched by IP FIRST so these flows are
-            # routed through the proxy without stalling on HTTP/TLS sniffing.
+            # Telegram IP ranges first, so MTProto bypasses sniffing.
             {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": tag},
             {"type": "field", "port": 53, "network": "udp", "outboundTag": tag},
             {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": tag},
@@ -164,11 +160,7 @@ def _sanitize_network(net: str) -> str:
 
 
 def _purge_route_only(obj) -> None:
-    """Failsafe: recursively strip `routeOnly` from every sniffing block.
-
-    Some Xray builds hard-reject the key at config load, so no generated
-    config may ever contain it, no matter where it was introduced.
-    """
+    """Recursively strip `routeOnly` from sniffing blocks (some builds reject it)."""
     if isinstance(obj, dict):
         for key, val in list(obj.items()):
             if key == "sniffing" and isinstance(val, dict):
@@ -266,16 +258,14 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             ob["streamSettings"]["tlsSettings"] = {"serverName": sni_str}
 
         if net_type == "xhttp":
-            # No xPaddingBytes: Xray 26.x accepts xhttp without padding, and
-            # padding adds latency to every small Telegram media packet.
+            # No xPaddingBytes: padding adds latency to small media packets.
             ob["streamSettings"]["xhttpSettings"] = {
                 "mode": "auto",
                 "path": path_str,
                 "extra": {
                     "mode": "auto",
                     "xmux": {
-                        # strictly maxConnections-only: Xray 26.x hard-errors on
-                        # maxConcurrency + maxConnections combined at startup.
+                        # maxConnections only: concurrency+connections errors out.
                         "maxConnections": 4,
                     },
                 },
@@ -365,8 +355,7 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             {
                 "port": 6357, "listen": "0.0.0.0", "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True, "ip": "127.0.0.1"},
-                # destOverride http/tls for routing decisions only; keep the
-                # block minimal - routeOnly is rejected by some Xray builds.
+                # destOverride http/tls only: routeOnly is rejected by some Xray builds.
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
                 "sockopt": {"tcpKeepAliveInterval": 15},
@@ -380,8 +369,7 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
         "routing": {
             "domainStrategy": "IPIfNonMatch",
             "rules": [
-                # Telegram MTProto / QUIC IP ranges: matched FIRST so these
-                # flows bypass sniffing fallbacks entirely.
+                # Telegram IP ranges first, so MTProto bypasses sniffing.
                 {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "port": 53, "network": "udp", "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": ob.get("tag", "proxy")},
@@ -397,12 +385,8 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                # Plain UDP direct, NOT DoH: DoH to 1.1.1.1 measures ~560ms on
-                # RU links (throttled) vs ~85ms for UDP - the HTTP-proxy ping
-                # gap. Keep DoH out entirely: it costs a TLS+HTTP2 setup per
-                # server plus the same throttled path. DNS must NOT detour
-                # through the proxy tunnel either: the tunnel outbound itself
-                # needs DNS for its hostname, creating a resolution loop.
+                # Plain UDP, not DoH: DoH to 1.1.1.1 is ~560ms on RU links, UDP ~85ms.
+                # No tunnel detour: the tunnel itself needs DNS for its hostname.
                 {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": "direct"},
                 {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
@@ -419,22 +403,18 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 "tcp_fast_open": True,
             },
         ],
-        # Deliberately NO tcp_fast_open on outbounds: TFO SYN+data is dropped by
-        # some middleboxes/DPI (typical for RU links), stalling the first
-        # packets of every new connection (photo uploads appear to "hang").
-        # xray outbounds don't use TFO either, so sing-box must match.
+        # No tcp_fast_open on outbounds: TFO SYN+data is dropped by some
+        # RU middleboxes, stalling every new connection.
         "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
         "route": {
             "final": ob.get("tag", "proxy"),
             "auto_detect_interface": True,
             "default_domain_resolver": "resolver",
             "rules": [
-                # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
-                # so proxy-bound MTProto flows are never fingerprinted.
-                {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": ob.get("tag", "proxy")},
-                # Resolve client-supplied domains to IPv4 (replaces the removed
-                # legacy outbound domain_strategy option).
-                {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},
+# Telegram IP ranges first, so MTProto never hits the sniff rule.
+            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": ob.get("tag", "proxy")},
+            # Resolve client domains to IPv4 (outbound domain_strategy is legacy).
+            {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},
                 {"action": "sniff", "inbound": ["socks-in", "http-in"]},
             ],
         },
@@ -447,12 +427,8 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                # Plain UDP direct, NOT DoH: DoH to 1.1.1.1 measures ~560ms on
-                # RU links (throttled) vs ~85ms for UDP - the HTTP-proxy ping
-                # gap. Keep DoH out entirely: it costs a TLS+HTTP2 setup per
-                # server plus the same throttled path. DNS must NOT detour
-                # through the proxy tunnel either: the tunnel outbound itself
-                # needs DNS for its hostname, creating a resolution loop.
+                # Plain UDP, not DoH: DoH to 1.1.1.1 is ~560ms on RU links, UDP ~85ms.
+                # No tunnel detour: the tunnel itself needs DNS for its hostname.
                 {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": "direct"},
                 {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
@@ -471,10 +447,8 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         ],
         "outbounds": [],
     }
-    # Server tags come from the subscription link fragment (#name) and are
-    # shared across providers (every provider has a "zoom", "mozilla", ...).
-    # sing-box FATALs on duplicate outbound tags, so dedupe with a numeric
-    # suffix and never allow a collision with the reserved "direct" tag.
+    # Server tags come from the sub link fragment (#name) and repeat across
+    # providers; sing-box FATALs on duplicates, so dedupe with a suffix.
     final_tag = "direct"
     seen_tags: set = set()
     appended: list = []
@@ -500,20 +474,16 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "final": final_tag,
         "auto_detect_interface": True,
         "default_domain_resolver": "resolver",
-        # sing-box >= 1.13: inbound sniff options were removed entirely;
-        # sniffing is expressed as a route rule action instead.
+        # sing-box >= 1.13: sniffing is a route rule action.
         "rules": [
-            # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
-            # so proxy-bound MTProto flows are never fingerprinted.
+            # Telegram IP ranges first, so MTProto never hits the sniff rule.
             {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": final_tag},
-            # Resolve client-supplied domains to IPv4 (replaces the removed
-            # legacy outbound domain_strategy option).
+            # Resolve client domains to IPv4 (outbound domain_strategy is legacy).
             {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},
             {"action": "sniff", "inbound": ["socks-in", "http-in"]},
         ],
     }
     cfg["experimental"] = {"cache_file": {"enabled": True}}
-    # Direct outbound: no tcp_fast_open (see _singbox_outbound), keepalive only.
     cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
     return cfg
 
@@ -531,14 +501,9 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         "type": proto,
         "server": host,
         "server_port": port,
-        # Socket hardening for all proxy outbounds: TCP keepalive keeps NAT
-        # mappings and idle tunnels alive through transient link dropouts.
-        # Deliberately NO tcp_fast_open: TFO SYN+data gets dropped by some
-        # middleboxes/DPI (typical on RU links), stalling the very first
-        # packets of every new connection - photo uploads appear to "hang".
-        # xray outbounds don't use TFO either, so sing-box must match.
-        # (sing-box >= 1.13 removes tcp_no_delay; Go enables TCP_NODELAY by
-        # default, and unknown fields are rejected with FATAL - do not add.)
+        # No tcp_fast_open (dropped by RU middleboxes); keepalive keeps NAT
+        # mappings alive. sing-box >= 1.13 removed tcp_no_delay (Go sets
+        # TCP_NODELAY by default) - unknown fields FATAL, do not add.
         "tcp_keep_alive": "5m",
         "tcp_keep_alive_interval": "15s",
     }
@@ -600,10 +565,6 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
     if net_type == "xhttp":
         agent.log(f"[singbox] {host} uses xhttp transport - sing-box cannot handle, xray fallback required")
         return None
-
-    # IPv4 resolution of client-supplied domains happens via the route rule
-    # {"action": "resolve", "strategy": "ipv4_only"} (outbound domain_strategy
-    # was removed as legacy in sing-box 1.12+ and rejected by 1.14+).
 
     flow_val = srv.get("flow", "")
     if proto == "vless":
@@ -767,8 +728,7 @@ def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, d
         ob["tag"] = tag
         return "singbox", ob
 
-    # Xray branch: share the unified server-descriptor pipeline so every
-    # protocol (vless/vmess/trojan/ss) produces a proper xray outbound.
+    # Xray branch: same unified server-descriptor pipeline as sing-box.
     if scheme in ("vmess", "trojan", "ss"):
         srv = _url_to_srv(scheme, user_info, host, port, params, tag)
         ob = _xray_outbound(srv)

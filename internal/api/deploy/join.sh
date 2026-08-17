@@ -22,47 +22,25 @@ say()  { printf "${GREEN}[+]${NC} %s\n" "$*"; }
 warn() { printf "${YELLOW}[!]${NC} %s\n" "$*"; }
 err()  { printf "${RED}[x]${NC} %s\n" "$*"; exit 1; }
 
-# Never die silently: under `set -e` ANY command returning non-zero (e.g. a
-# `read` hitting EOF without a TTY, or a failed mkdir) aborts the script. The
-# ERR trap reports the exact failing line so the user always knows why the
-# installer stopped instead of just dropping back to the shell prompt.
+# `set -e` + ERR trap: any failing command reports its line and continues.
 trap 'echo "[x] Installer encountered an error at line $LINENO. Continuing safely..."' ERR
 
-# Safe interactive prompt that can NEVER hang the installer. This script is
-# normally piped via `curl | bash`, so stdin carries the script itself rather
-# than terminal input. The controlling terminal /dev/tty may be missing,
-# non-interactive or blocked by the execution environment - in EVERY such case
-# a plain `read </dev/tty` blocks on the read syscall FOREVER. safe_read
-# therefore:
-#   1. verifies /dev/tty is a usable character device,
-#   2. times out after 15 seconds (`-t 15`),
-#   3. falls back to the given default on timeout / EOF / failure.
+# safe_read can never hang the installer: curl|bash pipes stdin into the
+# script, so plain `read </dev/tty` would block forever when /dev/tty is
+# missing or non-interactive. Instead: open /dev/tty once (fd4), drain stale
+# input, wait up to 15s, fall back to the default on timeout/EOF.
 safe_read() {
     local prompt="$1"
     local default_val="$2"
     local var_name="$3"
     local result=""
-    # The controlling terminal is opened ONCE at script start (see
-    # FLEET_TTY_OPEN below) and kept open: closing and re-opening /dev/tty
-    # between prompts makes bash 5.1 stop displaying `read -p` prompts on PTYs
-    # after the first close/reopen cycle (the read still blocks, but the user
-    # sees NO prompt and the installer looks frozen). The open itself fails
-    # cleanly (ENXIO) when there is no controlling terminal (piped runs).
+    # fd4 stays open: closing/reopening /dev/tty between prompts makes bash
+    # 5.1 stop showing `read -p` prompts (read still blocks, no prompt shown).
     if [ "${FLEET_TTY_OPEN:-0}" = "1" ]; then
-        # Drain stale input already buffered on the tty (typically a leftover
-        # newline from the previous prompt, or keystrokes the user typed while
-        # an earlier prompt was being displayed). Without this the next `read`
-        # instantly consumes that stale line as an EMPTY answer and the prompt
-        # is silently skipped. The drain is bounded (50ms of silence) and runs
-        # BEFORE the prompt is printed, so only a fresh, deliberate answer is
-        # ever accepted.
+        # Drop stale buffered input, so a leftover newline is never read as
+        # an empty answer. Bounded drain (50ms of silence) before the prompt.
         while read -t 0.05 -n 1 -r _ <&4 2>/dev/null; do :; done || true
-        # Strictly wait for real input, up to 15 seconds; timeout/EOF falls
-        # back to the default below. NOTE: `read -p` writes the prompt to
-        # STDERR - a `2>/dev/null` here would make every prompt invisible and
-        # the installer look frozen while waiting for input. The stderr of the
-        # fd-open failure is already silenced above by the `{ exec; } 2>/dev/null`
-        # group, so the prompt must stay visible to the user.
+        # `read -p` writes to STDERR, so the prompt must stay visible.
         read -t 15 -r -p "$prompt" result <&4 || result=""
     fi
     if [ -z "$result" ]; then
@@ -74,10 +52,9 @@ safe_read() {
     esac
 }
 
-# Open the controlling terminal ONCE on fd4, guarded by a flag. NOTE: the
-# `{ exec; } 2>/dev/null` group is required - a bare `exec 4</dev/tty 2>/dev/null`
-# still leaks the shell's redirection error, because bash processes redirections
-# left to right and aborts on the FIRST failure before applying `2>/dev/null`.
+# Open the controlling terminal ONCE on fd4. `{ exec; } 2>/dev/null` group is
+# required: a bare `exec 4</dev/tty 2>/dev/null` still aborts on the fd error
+# (bash processes redirections left to right, before applying 2>/dev/null).
 FLEET_TTY_OPEN=0
 if { exec 4</dev/tty; } 2>/dev/null; then
     FLEET_TTY_OPEN=1
@@ -462,11 +439,8 @@ if [ -d "$AGENT_DIR" ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -q 
         cp -r "$AGENT_DIR/configs"/* /tmp/fleet-config-backup/ 2>/dev/null || true
     fi
 
-    # The agent container runs as root, so configs/ and __pycache__ are
-    # root-owned and a plain rm -rf fails (and under `set -e` used to abort the
-    # reinstall). No sudo password is available on most hosts: instead reuse
-    # the previously built node-agent image (also root) via a throwaway
-    # container to purge the directory, then retry the plain rm.
+    # Root-owned files from a previous install block plain rm -rf; reuse the
+    # old node-agent image (also root) via a throwaway container to purge.
     if ! rm -rf "$AGENT_DIR" 2>/dev/null; then
         warn "Old install contains root-owned files - cleaning via docker..."
         agent_img="$(cd "$AGENT_DIR" 2>/dev/null && $COMPOSE_CMD config 2>/dev/null | awk -F': ' '/^  node-agent:/{f=1} f&&/^    image:/{print $2; exit}')" || true
@@ -489,10 +463,8 @@ cd "$AGENT_DIR" 2>/dev/null || err "Failed to enter $AGENT_DIR"
 # ------------------------------------------------------------
 echo ""
 say "$T_DL_FILES"
-# All payload downloads carry the fleet secret (?t=) which is injected into
-# this script by the server at serve time. Unauthenticated requests get a
-# generic 404, so the endpoints stay invisible to active probes. A failed
-# download must never kill the installer silently - report it clearly.
+# Payload downloads carry the fleet secret (?t=); unauthenticated requests
+# get a generic 404. A failed download is reported, never silent.
 curl -sSL "https://__SUB_DOMAIN__/docker-compose.yml?t=__SECRET_TOKEN__" -o docker-compose.yml || err "Failed to download docker-compose.yml (check network)"
 curl -sSL "https://__SUB_DOMAIN__/Dockerfile.client?t=__SECRET_TOKEN__" -o Dockerfile || err "Failed to download Dockerfile.client"
 curl -sSL "https://__SUB_DOMAIN__/requirements.txt?t=__SECRET_TOKEN__" -o requirements.txt || err "Failed to download requirements.txt"
@@ -590,24 +562,16 @@ json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
 } > configs/agent_state.json
 say "$(t_state_written)"
 
-# compose_up brings the whole stack up. docker-compose v1 (standalone) fails on
-# FIRST creation with "Service 'singbox-node' uses the network stack of
-# container 'xray-node' which does not exist": singbox-node shares xray-node's
-# network namespace (network_mode: container:) and v1 validates the WHOLE
-# project against existing containers before creating anything. Bootstrap
-# xray-node via a stripped compose file (singbox-node removed), then bring the
-# full stack up - harmless for compose v2 as well (skipped, first attempt works).
-# NOTE: singbox-node must remain the LAST service before `networks:` in
-# client-docker-compose.yml (downloaded as docker-compose.yml) for the awk
-# strip to produce a valid file.
+# compose v1 fails on FIRST up: singbox-node shares xray-node's netns
+# (network_mode: container:) and v1 validates the whole project before
+# creating anything. Bootstrap xray-node from a stripped compose file, then
+# bring the full stack up. singbox-node must stay the LAST service before
+# `networks:` for the awk strip to work.
 compose_up() {
     if ! $COMPOSE_CMD up -d --build; then
         warn "docker-compose v1 ordering detected - bootstrapping xray-node first..."
         awk '/^  singbox-node:/{skip=1} /^networks:/{skip=0} !skip{print}' docker-compose.yml > .compose-xray-only.yml
-        # Do NOT hide stderr here: a silent failure turns into the baffling
-        # "Docker Compose up failed" with zero output. The bootstrap is
-        # best-effort (`|| true` swallows only the exit code), but its stderr
-        # must stay visible so the user sees the real reason for a failure.
+        # Keep bootstrap stderr visible: it explains why "up" failed.
         $COMPOSE_CMD -f .compose-xray-only.yml up -d xray-node || true
         $COMPOSE_CMD up -d --build || err "Docker Compose up failed - review the output above and re-run this script"
     fi

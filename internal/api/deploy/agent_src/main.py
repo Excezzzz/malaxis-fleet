@@ -96,14 +96,9 @@ def health_loop() -> None:
             else:
                 fail_count += 1
                 if fail_count < agent.HEALTH_FAIL_THRESHOLD:
-                    # Transient blip: hold off on alarming/restarting until the
-                    # proxy has failed N CONSECUTIVE checks (N x interval = N
-                    # minutes of total silence). Never kill a working socket
-                    # over a single spike.
+                    # Hold off restarting until N consecutive checks fail.
                     agent.log(f"Health check warning ({fail_count}/{agent.HEALTH_FAIL_THRESHOLD}): transient probe miss, holding restart")
                 else:
-                    # Conservative recovery: only treat the proxy as dead and
-                    # attempt a restart after N consecutive failed checks.
                     state = agent.load_state()
                     container = "singbox-node" if state.get("active_engine", "singbox") == "singbox" else "xray-node"
                     agent.log(f"Health check failed ({fail_count}): {status}")
@@ -236,9 +231,7 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         if container not in allowed:
             agent.log(f"[get_logs] invalid container: {container}")
             return True
-        # NEVER fail silently: any exception while fetching logs is reported
-        # back to the master as the log output itself, so the dashboard shows
-        # the real reason instead of an empty screen.
+        # Report fetch failures as the log output itself, never silently.
         try:
             output = docker_utils._docker_logs(container, tail=200)
         except Exception as e:
