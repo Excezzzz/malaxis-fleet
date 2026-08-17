@@ -5,7 +5,7 @@
         <h1 class="text-4xl font-bold tracking-tight"><span class="font-mono text-indigo-400">[</span>{{ t('client_files_title') }}<span class="font-mono text-indigo-400">]</span></h1>
         <p class="text-zinc-500 mt-1 text-sm">{{ t('client_files_subtitle') }} <span class="text-indigo-300 font-mono">/node_agent.py</span>, <span class="text-indigo-300 font-mono">/fleet-cli.sh</span>.</p>
       </div>
-      <button @click="pushFiles" :disabled="pushing"
+      <button v-if="canUpdateClient" @click="pushFiles" :disabled="pushing"
         :class="['w-full sm:w-auto max-w-[calc(100vw-2rem)] truncate text-xs sm:text-sm px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl shadow-lg shadow-indigo-950/50 transition-all flex items-center justify-center gap-2 cursor-pointer', pushing ? 'opacity-60 cursor-wait' : '']">
         <Rocket v-if="!pushing" class="w-5 h-5 shrink-0" />
         <RefreshCw v-else class="w-5 h-5 shrink-0 animate-spin" />
@@ -18,7 +18,7 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div class="bg-zinc-900/40 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
+    <div v-if="canUpdateClient" class="bg-zinc-900/40 backdrop-blur-md border border-indigo-500/20 rounded-2xl p-5 mb-6">
       <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
         <div>
           <h2 class="text-lg font-bold text-white">{{ t('client_add_device') }}</h2>
@@ -61,7 +61,7 @@
       {{ toast }}
     </div>
 
-    <div v-if="files.length" class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+    <div v-if="canEditSub && files.length" class="grid grid-cols-1 lg:grid-cols-5 gap-4">
       <div class="lg:col-span-1 space-y-2 w-full">
         <button v-for="f in files" :key="f.name" @click="selectFile(f.name)"
           :class="['w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all duration-300 text-left', selected === f.name ? 'bg-zinc-800/60 border-indigo-500/40 text-white' : 'bg-zinc-900/40 border-white/5 text-zinc-400 hover:border-indigo-500/30 hover:text-white']">
@@ -93,7 +93,7 @@
       </div>
     </div>
 
-    <div v-else-if="!error" class="text-center py-16">
+    <div v-else-if="!error && canEditSub" class="text-center py-16">
       <p class="text-zinc-500 text-lg">{{ t('client_no_templates') }}</p>
     </div>
   </div>
@@ -110,6 +110,9 @@ export default {
   setup() {
     const t = inject('t') || ((k) => k);
     const prefs = inject('prefs', ref({ theme_mode: 'obsidian' }));
+    const authCtx = inject('authCtx', {});
+    const canEditSub = computed(() => authCtx.canEditSub || false);
+    const canUpdateClient = computed(() => authCtx.canUpdateClient || false);
     const files = ref([]);
     const selected = ref('');
     const content = ref('');
@@ -225,8 +228,8 @@ export default {
     };
 
     onMounted(() => {
-      fetchInstallCommand();
-      fetchTemplates();
+      if (canUpdateClient.value) fetchInstallCommand();
+      if (canEditSub.value) fetchTemplates();
     });
 
     return {
@@ -252,6 +255,8 @@ export default {
       pushFiles,
       prefs,
       t,
+      canEditSub,
+      canUpdateClient,
     };
   },
 };

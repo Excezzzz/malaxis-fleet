@@ -1108,10 +1108,34 @@ func (b *Bot) showAvatarMenu(chatID int64, messageID int) {
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn("Cyan", "🔵", emojis), "bot:avatar:cyan"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Стандартный аватар", "Set Standard Avatar"), "🎨", emojis), "bot:avatar:default"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("В главное меню", "Back to Main Menu"), "🔙", emojis), "menu:main"),
 		),
 	)
 
+	b.editMessage(chatID, messageID, text, &markup)
+}
+
+// handleAvatarDefault resets the bot's profile photo to the embedded standard
+// avatar (clearing any stored color preference so it is not re-applied on the
+// next bot start).
+func (b *Bot) handleAvatarDefault(q *tgbotapi.CallbackQuery, chatID int64, messageID int) {
+	if err := b.SetDefaultAvatar(); err != nil {
+		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось установить стандартный аватар", "Could not set standard avatar")))
+		log.Printf("Bot: failed to set default avatar: %v", err)
+		return
+	}
+	b.api.Request(tgbotapi.NewCallback(q.ID, "✅ "+b.tr("Стандартный аватар установлен", "Standard avatar set")))
+
+	text := "<b>✅ " + b.tr("Стандартный аватар установлен", "Standard Avatar Set") + "</b>"
+	_, emojis := b.botPrefs()
+	markup := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("К выбору цвета", "Back to Menu"), "🔙", emojis), "bot:avatar_menu"),
+		),
+	)
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
@@ -1194,6 +1218,8 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.handleJoinCommand(chatID, messageID)
 	case data == "bot:avatar_menu":
 		b.showAvatarMenu(chatID, messageID)
+	case data == "bot:avatar:default":
+		b.handleAvatarDefault(q, chatID, messageID)
 	case strings.HasPrefix(data, "bot:avatar:"):
 		b.handleAvatarColorSelection(q, strings.TrimPrefix(data, "bot:avatar:"))
 	case data == "nodes:list":
