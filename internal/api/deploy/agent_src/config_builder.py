@@ -397,8 +397,11 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "ipv4_only"},
-                {"tag": "block", "address": "rcode://success"},
+                # New (>= 1.12) DNS server format. The legacy `address` form is
+                # rejected by sing-box >= 1.14 outright, so configs must not use
+                # it (the ENABLE_DEPRECATED_* env vars were removed).
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
+                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
             "independent_cache": True,
@@ -413,14 +416,22 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 "tcp_fast_open": True,
             },
         ],
-        "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_fast_open": True, "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
+        # Deliberately NO tcp_fast_open on outbounds: TFO SYN+data is dropped by
+        # some middleboxes/DPI (typical for RU links), stalling the first
+        # packets of every new connection (photo uploads appear to "hang").
+        # xray outbounds don't use TFO either, so sing-box must match.
+        "outbounds": [ob, {"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"}],
         "route": {
             "final": ob.get("tag", "proxy"),
             "auto_detect_interface": True,
+            "default_domain_resolver": "resolver",
             "rules": [
                 # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
                 # so proxy-bound MTProto flows are never fingerprinted.
                 {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": ob.get("tag", "proxy")},
+                # Resolve client-supplied domains to IPv4 (replaces the removed
+                # legacy outbound domain_strategy option).
+                {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},
                 {"action": "sniff", "inbound": ["socks-in", "http-in"]},
             ],
         },
@@ -433,8 +444,8 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                {"tag": "resolver", "address": "https://1.1.1.1/dns-query", "detour": "direct", "strategy": "ipv4_only"},
-                {"tag": "block", "address": "rcode://success"},
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
+                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
             "independent_cache": True,
@@ -451,29 +462,50 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         ],
         "outbounds": [],
     }
+    # Server tags come from the subscription link fragment (#name) and are
+    # shared across providers (every provider has a "zoom", "mozilla", ...).
+    # sing-box FATALs on duplicate outbound tags, so dedupe with a numeric
+    # suffix and never allow a collision with the reserved "direct" tag.
+    final_tag = "direct"
+    seen_tags: set = set()
+    appended: list = []
     for i, srv in enumerate(servers):
         ob = _singbox_outbound(srv)
         if ob:
-            ob["tag"] = srv.get("tag", f"server-{i}")
+            tag = srv.get("tag", f"server-{i}")
+            if tag == "direct" or tag in seen_tags:
+                tag = f"{tag}-{i}"
+            seen_tags.add(tag)
+            ob["tag"] = tag
             cfg["outbounds"].append(ob)
-    tag = "direct"
-    if servers:
-        idx = active_idx if 0 <= active_idx < len(servers) else 0
-        tag = servers[idx].get("tag", f"server-{idx}")
+            appended.append((i, tag))
+    if appended:
+        idx = active_idx if 0 <= active_idx < len(appended) else 0
+        for oi, tag in appended:
+            if oi == idx:
+                final_tag = tag
+                break
+        else:
+            final_tag = appended[0][1]
     cfg["route"] = {
-        "final": tag,
+        "final": final_tag,
         "auto_detect_interface": True,
+        "default_domain_resolver": "resolver",
         # sing-box >= 1.13: inbound sniff options were removed entirely;
         # sniffing is expressed as a route rule action instead.
         "rules": [
             # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
             # so proxy-bound MTProto flows are never fingerprinted.
-            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": tag},
+            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": final_tag},
+            # Resolve client-supplied domains to IPv4 (replaces the removed
+            # legacy outbound domain_strategy option).
+            {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},
             {"action": "sniff", "inbound": ["socks-in", "http-in"]},
         ],
     }
     cfg["experimental"] = {"cache_file": {"enabled": True}}
-    cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_fast_open": True, "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
+    # Direct outbound: no tcp_fast_open (see _singbox_outbound), keepalive only.
+    cfg["outbounds"].append({"type": "direct", "tag": "direct", "tcp_keep_alive": "5m", "tcp_keep_alive_interval": "15s"})
     return cfg
 
 
@@ -492,17 +524,18 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         "server_port": port,
         # Socket hardening for all proxy outbounds: TCP keepalive keeps NAT
         # mappings and idle tunnels alive through transient link dropouts.
-        # (sing-box >= 1.13; tcp_no_delay is removed there - Go enables
-        # TCP_NODELAY by default. tcp_fast_open reduces connection-setup
-        # latency for the frequent small connections Telegram opens.)
-        "tcp_fast_open": True,
+        # Deliberately NO tcp_fast_open: TFO SYN+data gets dropped by some
+        # middleboxes/DPI (typical on RU links), stalling the very first
+        # packets of every new connection - photo uploads appear to "hang".
+        # xray outbounds don't use TFO either, so sing-box must match.
+        # (sing-box >= 1.13 removes tcp_no_delay; Go enables TCP_NODELAY by
+        # default, and unknown fields are rejected with FATAL - do not add.)
         "tcp_keep_alive": "5m",
         "tcp_keep_alive_interval": "15s",
     }
 
     if proto == "hysteria2":
         ob["password"] = srv.get("password", "")
-        ob["domain_strategy"] = "ipv4_only"
         ob["tls"] = {
             "enabled": True,
             "server_name": srv.get("sni", "") or host,
@@ -519,7 +552,6 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         ob["password"] = srv.get("password", "")
         ob["congestion_control"] = srv.get("congestion_control", "bbr")
         ob["udp_relay_mode"] = srv.get("udp_relay_mode", "native")
-        ob["domain_strategy"] = "ipv4_only"
         ob["tls"] = {
             "enabled": True,
             "server_name": srv.get("sni", "") or host,
@@ -531,7 +563,6 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         return ob
 
     if proto == "wireguard":
-        ob["domain_strategy"] = "ipv4_only"
         ob["private_key"] = srv.get("private_key", "")
         ob["server_port"] = port
         local_addr = srv.get("allowed_ips", "") or "10.0.0.1/32"
@@ -561,7 +592,9 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
         agent.log(f"[singbox] {host} uses xhttp transport - sing-box cannot handle, xray fallback required")
         return None
 
-    ob["domain_strategy"] = "ipv4_only"
+    # IPv4 resolution of client-supplied domains happens via the route rule
+    # {"action": "resolve", "strategy": "ipv4_only"} (outbound domain_strategy
+    # was removed as legacy in sing-box 1.12+ and rejected by 1.14+).
 
     flow_val = srv.get("flow", "")
     if proto == "vless":
@@ -758,7 +791,6 @@ def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, d
             "server": host,
             "server_port": port,
             "password": password,
-            "domain_strategy": "ipv4_only",
             "tls": {
                 "enabled": True,
                 "server_name": sni,

@@ -55,10 +55,6 @@ services:
     network_mode: "container:xray-node"
     depends_on:
       - xray-node
-    environment:
-      - ENABLE_DEPRECATED_LEGACY_DNS_SERVERS=true
-      - ENABLE_DEPRECATED_MISSING_DOMAIN_RESOLVER=true
-      - ENABLE_DEPRECATED_LEGACY_DOMAIN_STRATEGY_OPTIONS=true
     logging:
       driver: "json-file"
       options:
