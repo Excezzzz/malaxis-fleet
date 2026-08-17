@@ -113,17 +113,21 @@ HOSTNAME_CURRENT=$(hostname 2>/dev/null || uname -n 2>/dev/null || echo "fleet-n
 # ------------------------------------------------------------
 if [ "$lang" = "en" ]; then
     T_PREFLIGHT="Running pre-flight checks..."
-    T_DOCKER_NOT_INSTALLED="Docker is not installed! Install Docker first (https://docs.docker.com/get-docker/), then re-run this script."
+    T_DOCKER_NOT_INSTALLED="Docker is not installed!"
+    T_DOCKER_DESKTOP_HINT="On this platform please install Docker Desktop from the official site: https://www.docker.com/products/docker-desktop/ , then re-run this script."
+    T_DOCKER_CHOICE_TITLE="Choose the Docker variant to install:"
+    T_DOCKER_CHOICE_1="[1] Docker + docker compose (v2 plugin, recommended)"
+    T_DOCKER_CHOICE_2="[2] Docker + docker-compose (legacy v1)"
+    T_DOCKER_CHOICE_PROMPT="Select [1-2, default 1]: "
+    T_DOCKER_INSTALLING="Installing Docker (may require your password for sudo)..."
+    T_DOCKER_SCRIPT_FAILED="Failed to install Docker via the official script (https://get.docker.com). Please install Docker manually and re-run this script."
+    T_DOCKER_OK_GROUP="Docker is installed and ready."
+    T_DOCKER_RELOGIN="Docker was installed, but the current user cannot access the daemon yet. Log out and back in (or run 'newgrp docker'), then re-run this script."
     T_DOCKER_INSTALLED="Docker is installed."
     T_DOCKER_NOT_RUNNING="Docker is not running! Please start Docker Desktop or the Docker daemon before installing."
     T_DOCKER_RUNNING="Docker daemon is running."
     T_COMPOSE_MISSING="Neither 'docker compose' nor 'docker-compose' is installed!"
-    T_COMPOSE_INSTALL_ASK="Docker Compose was not found. Install it automatically? [Y/n]: "
-    T_COMPOSE_INSTALLING="Installing Docker Compose (may require your password for sudo)..."
-    T_COMPOSE_INSTALL_OK="Docker Compose installed successfully."
-    T_COMPOSE_INSTALL_FAILED="Automatic installation failed. Please install Docker Compose manually (https://docs.docker.com/compose/install/), then re-run this script."
-    T_COMPOSE_DESKTOP_HINT="On this platform please install Docker Desktop from the official site: https://www.docker.com/products/docker-desktop/ , then re-run this script."
-    T_COMPOSE_DECLINED="Docker Compose is required. Install it and re-run this script."
+    T_COMPOSE_STILL_MISSING="Docker Compose is still unavailable after the installation attempt. Please install it manually (https://docs.docker.com/compose/install/), then re-run this script."
     T_COMPOSE_OK="Docker Compose is available."
     T_CHECK_MASTER="Checking master server connectivity (__API_DOMAIN__)..."
     T_MASTER_OK="Master server is reachable."
@@ -159,17 +163,21 @@ if [ "$lang" = "en" ]; then
     T_SUMMARY_HTTP="HTTP Proxy"
 else
     T_PREFLIGHT="Проверка системных требований..."
-    T_DOCKER_NOT_INSTALLED="Docker не установлен! Установите Docker (https://docs.docker.com/get-docker/), затем запустите скрипт заново."
+    T_DOCKER_NOT_INSTALLED="Docker не установлен!"
+    T_DOCKER_DESKTOP_HINT="На этой платформе установите Docker Desktop с официального сайта: https://www.docker.com/products/docker-desktop/ , затем запустите скрипт заново."
+    T_DOCKER_CHOICE_TITLE="Выберите вариант Docker для установки:"
+    T_DOCKER_CHOICE_1="[1] Docker + docker compose (плагин v2, рекомендуется)"
+    T_DOCKER_CHOICE_2="[2] Docker + docker-compose (старая версия v1)"
+    T_DOCKER_CHOICE_PROMPT="Выберите [1-2, по умолчанию 1]: "
+    T_DOCKER_INSTALLING="Установка Docker (может потребоваться пароль для sudo)..."
+    T_DOCKER_SCRIPT_FAILED="Не удалось установить Docker через официальный скрипт (https://get.docker.com). Установите Docker вручную и запустите скрипт заново."
+    T_DOCKER_OK_GROUP="Docker установлен и готов к работе."
+    T_DOCKER_RELOGIN="Docker установлен, но текущий пользователь пока не имеет доступа к демону. Выйдите из системы и войдите снова (или выполните 'newgrp docker'), затем запустите скрипт заново."
     T_DOCKER_INSTALLED="Docker установлен."
     T_DOCKER_NOT_RUNNING="Docker не запущен! Пожалуйста, запустите Docker Desktop или службу Docker перед установкой."
     T_DOCKER_RUNNING="Docker запущен."
     T_COMPOSE_MISSING="Ни одна из утилит Docker Compose не установлена!"
-    T_COMPOSE_INSTALL_ASK="Docker Compose не найден. Установить автоматически? [Y/n]: "
-    T_COMPOSE_INSTALLING="Установка Docker Compose (может потребоваться пароль для sudo)..."
-    T_COMPOSE_INSTALL_OK="Docker Compose успешно установлен."
-    T_COMPOSE_INSTALL_FAILED="Автоматическая установка не удалась. Установите Docker Compose вручную (https://docs.docker.com/compose/install/), затем запустите скрипт заново."
-    T_COMPOSE_DESKTOP_HINT="На этой платформе установите Docker Desktop с официального сайта: https://www.docker.com/products/docker-desktop/ , затем запустите скрипт заново."
-    T_COMPOSE_DECLINED="Docker Compose обязателен. Установите его и запустите скрипт заново."
+    T_COMPOSE_STILL_MISSING="Docker Compose всё ещё недоступен после попытки установки. Установите его вручную (https://docs.docker.com/compose/install/), затем запустите скрипт заново."
     T_COMPOSE_OK="Docker Compose доступен."
     T_CHECK_MASTER="Проверка связи с мастер-сервером (__API_DOMAIN__)..."
     T_MASTER_OK="Мастер-сервер доступен."
@@ -228,6 +236,92 @@ t_state_written() {
     fi
 }
 
+# ------------------------------------------------------------
+# linux_install_docker - full Docker installation on Linux.
+# Asks which flavor to install (v2 "docker compose" plugin or
+# legacy v1 "docker-compose"), installs the engine via the
+# official convenience script, then the chosen compose flavor.
+# Re-detects availability and exits with an error if the daemon
+# is still not usable by the current user.
+# ------------------------------------------------------------
+as_root() {
+    if [ "$(id -u)" = "0" ]; then
+        "$@"
+    else
+        sudo "$@"
+    fi
+}
+
+linux_install_docker() {
+    echo ""
+    echo "$T_DOCKER_CHOICE_TITLE"
+    echo "$T_DOCKER_CHOICE_1"
+    echo "$T_DOCKER_CHOICE_2"
+    safe_read "$T_DOCKER_CHOICE_PROMPT" "1" DOCKER_CHOICE
+    DOCKER_CHOICE=${DOCKER_CHOICE:-1}
+    case "$DOCKER_CHOICE" in
+        1|2) ;;
+        *) err "${T_INVALID_CHOICE}$DOCKER_CHOICE" ;;
+    esac
+    say "$T_DOCKER_INSTALLING"
+    if ! command -v docker >/dev/null 2>&1; then
+        if ! curl -fsSL https://get.docker.com -o /tmp/get-docker.sh 2>/dev/null; then
+            err "$T_DOCKER_SCRIPT_FAILED"
+        fi
+        if ! as_root sh /tmp/get-docker.sh >/dev/null 2>&1; then
+            rm -f /tmp/get-docker.sh
+            err "$T_DOCKER_SCRIPT_FAILED"
+        fi
+        rm -f /tmp/get-docker.sh
+    fi
+    if [ "$DOCKER_CHOICE" = "1" ]; then
+        if ! docker compose version >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+                as_root apt-get update -qq >/dev/null 2>&1 || true
+                as_root apt-get install -y docker-compose-plugin >/dev/null 2>&1 || true
+            elif command -v dnf >/dev/null 2>&1; then
+                as_root dnf install -y docker-compose-plugin >/dev/null 2>&1 || true
+            elif command -v yum >/dev/null 2>&1; then
+                as_root yum install -y docker-compose-plugin >/dev/null 2>&1 || true
+            elif command -v zypper >/dev/null 2>&1; then
+                as_root zypper --non-interactive install docker-compose-plugin >/dev/null 2>&1 || true
+            fi
+        fi
+    else
+        if ! command -v docker-compose >/dev/null 2>&1; then
+            if command -v apt-get >/dev/null 2>&1; then
+                as_root apt-get update -qq >/dev/null 2>&1 || true
+                as_root apt-get install -y docker-compose >/dev/null 2>&1 || true
+            elif command -v dnf >/dev/null 2>&1; then
+                as_root dnf install -y docker-compose >/dev/null 2>&1 || true
+            elif command -v yum >/dev/null 2>&1; then
+                as_root yum install -y docker-compose >/dev/null 2>&1 || true
+            elif command -v zypper >/dev/null 2>&1; then
+                as_root zypper --non-interactive install docker-compose >/dev/null 2>&1 || true
+            elif command -v apk >/dev/null 2>&1; then
+                as_root apk add docker-compose >/dev/null 2>&1 || true
+            fi
+            if ! command -v docker-compose >/dev/null 2>&1 && command -v pip3 >/dev/null 2>&1; then
+                as_root pip3 install docker-compose >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+    HAVE_COMPOSE_V2=false
+    HAVE_COMPOSE_V1=false
+    if docker compose version >/dev/null 2>&1; then
+        HAVE_COMPOSE_V2=true
+    fi
+    if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        HAVE_COMPOSE_V1=true
+    fi
+    as_root usermod -aG docker "$USER" 2>/dev/null || true
+    if docker info >/dev/null 2>&1; then
+        say "$T_DOCKER_OK_GROUP"
+    else
+        err "$T_DOCKER_RELOGIN"
+    fi
+}
+
 echo -e "\n${CYAN}================================================${NC}"
 echo -e "${CYAN}     Malaxis Fleet - Client Installer${NC}"
 echo -e "${CYAN}     Linux / macOS / Git Bash${NC}"
@@ -239,7 +333,15 @@ echo -e "${CYAN}================================================${NC}\n"
 say "$T_PREFLIGHT"
 
 if ! command -v docker >/dev/null 2>&1; then
-    err "$T_DOCKER_NOT_INSTALLED"
+    if [ "$(uname -s)" = "Linux" ]; then
+        warn "$T_DOCKER_NOT_INSTALLED"
+        linux_install_docker
+        if ! docker compose version >/dev/null 2>&1 && ! { command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; }; then
+            err "$T_COMPOSE_STILL_MISSING"
+        fi
+    else
+        err "$T_DOCKER_DESKTOP_HINT"
+    fi
 fi
 say "$T_DOCKER_INSTALLED"
 
@@ -266,58 +368,18 @@ elif [ "$HAVE_COMPOSE_V1" = true ]; then
     COMPOSE_CMD="docker-compose"
 else
     warn "$T_COMPOSE_MISSING"
-    case "$(uname -s)" in
-        Linux)
-            safe_read "$T_COMPOSE_INSTALL_ASK" "y" COMPOSE_INSTALL
-            COMPOSE_INSTALL=$(echo "$COMPOSE_INSTALL" | tr '[:upper:]' '[:lower:]')
-            if [ "$COMPOSE_INSTALL" != "y" ] && [ "$COMPOSE_INSTALL" != "yes" ]; then
-                err "$T_COMPOSE_DECLINED"
-            fi
-            say "$T_COMPOSE_INSTALLING"
-            if command -v apt-get >/dev/null 2>&1; then
-                sudo apt-get update -qq >/dev/null 2>&1 || true
-                if sudo apt-get install -y docker-compose-plugin >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V2=true
-                elif sudo apt-get install -y docker-compose >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V1=true
-                fi
-            elif command -v dnf >/dev/null 2>&1; then
-                if sudo dnf install -y docker-compose-plugin >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V2=true
-                elif sudo dnf install -y docker-compose >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V1=true
-                fi
-            elif command -v yum >/dev/null 2>&1; then
-                if sudo yum install -y docker-compose-plugin >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V2=true
-                elif sudo yum install -y docker-compose >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V1=true
-                fi
-            elif command -v zypper >/dev/null 2>&1; then
-                if sudo zypper --non-interactive install docker-compose-plugin >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V2=true
-                elif sudo zypper --non-interactive install docker-compose >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V1=true
-                fi
-            elif command -v apk >/dev/null 2>&1; then
-                if sudo apk add docker-compose >/dev/null 2>&1; then
-                    HAVE_COMPOSE_V1=true
-                fi
-            fi
-            if [ "$HAVE_COMPOSE_V2" = true ]; then
-                COMPOSE_CMD="docker compose"
-                say "$T_COMPOSE_INSTALL_OK ($COMPOSE_CMD)"
-            elif [ "$HAVE_COMPOSE_V1" = true ]; then
-                COMPOSE_CMD="docker-compose"
-                say "$T_COMPOSE_INSTALL_OK ($COMPOSE_CMD)"
-            else
-                err "$T_COMPOSE_INSTALL_FAILED"
-            fi
-            ;;
-        *)
-            err "$T_COMPOSE_DESKTOP_HINT"
-            ;;
-    esac
+    if [ "$(uname -s)" = "Linux" ]; then
+        linux_install_docker
+        if [ "$HAVE_COMPOSE_V2" = true ]; then
+            COMPOSE_CMD="docker compose"
+        elif [ "$HAVE_COMPOSE_V1" = true ]; then
+            COMPOSE_CMD="docker-compose"
+        else
+            err "$T_COMPOSE_STILL_MISSING"
+        fi
+    else
+        err "$T_COMPOSE_DESKTOP_HINT"
+    fi
 fi
 say "${T_COMPOSE_OK} ($COMPOSE_CMD)"
 
