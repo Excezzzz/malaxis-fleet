@@ -393,19 +393,18 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
 
 
 def _singbox_cfg_with_outbound(ob: dict) -> dict:
-    tunnel_tag = ob.get("tag", "proxy")
     return {
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                # DNS runs THROUGH the active proxy tunnel (detour set below):
-                # RU links throttle/blackhole foreign DNS (DoH 1.1.1.1 took
-                # ~560ms, plain UDP was intermittently dropped -> 3s stalls),
-                # while the tunnel egresses in Germany where both are fast.
-                # The 500+ms Telegram HTTP-proxy ping was this DNS cost;
-                # SOCKS apps resolve locally, hence the ~100ms gap.
-                {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": tunnel_tag},
-                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": tunnel_tag},
+                # Plain UDP direct, NOT DoH: DoH to 1.1.1.1 measures ~560ms on
+                # RU links (throttled) vs ~85ms for UDP - the HTTP-proxy ping
+                # gap. Keep DoH out entirely: it costs a TLS+HTTP2 setup per
+                # server plus the same throttled path. DNS must NOT detour
+                # through the proxy tunnel either: the tunnel outbound itself
+                # needs DNS for its hostname, creating a resolution loop.
+                {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": "direct"},
+                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
             "independent_cache": True,
@@ -448,14 +447,14 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         "log": {"level": "warn"},
         "dns": {
             "servers": [
-                # DNS runs THROUGH the active proxy tunnel (detour set below):
-                # RU links throttle/blackhole foreign DNS (DoH 1.1.1.1 took
-                # ~560ms, plain UDP was intermittently dropped -> 3s stalls),
-                # while the tunnel egresses in Germany where both are fast.
-                # The 500+ms Telegram HTTP-proxy ping was this DNS cost;
-                # SOCKS apps resolve locally, hence the ~100ms gap.
-                {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53},
-                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53},
+                # Plain UDP direct, NOT DoH: DoH to 1.1.1.1 measures ~560ms on
+                # RU links (throttled) vs ~85ms for UDP - the HTTP-proxy ping
+                # gap. Keep DoH out entirely: it costs a TLS+HTTP2 setup per
+                # server plus the same throttled path. DNS must NOT detour
+                # through the proxy tunnel either: the tunnel outbound itself
+                # needs DNS for its hostname, creating a resolution loop.
+                {"type": "udp", "tag": "resolver", "server": "1.1.1.1", "server_port": 53, "detour": "direct"},
+                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
             "independent_cache": True,
@@ -497,8 +496,6 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
                 break
         else:
             final_tag = appended[0][1]
-    for srv in cfg["dns"]["servers"]:
-        srv["detour"] = final_tag
     cfg["route"] = {
         "final": final_tag,
         "auto_detect_interface": True,
