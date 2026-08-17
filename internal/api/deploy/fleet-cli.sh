@@ -67,23 +67,24 @@ with open('$STATE_FILE', 'w') as f:
     fi
 }
 
-# Resolve the docker compose command to use: the choice saved by the installer
-# in agent_state.json wins, otherwise auto-detect (v2 plugin first, then v1
-# standalone). Falls back to the v2 plugin so callers never get an empty word.
+# Resolve the docker compose command: prefer the v2 plugin when it works
+# (even if the installer saved v1), then the saved choice, then v1 standalone.
 compose_cmd() {
-    local saved
-    saved=$(get_state "compose_cmd" "")
-    if [ "$saved" = "docker compose" ] || [ "$saved" = "docker-compose" ]; then
-        echo "$saved"
+    if docker compose version 2>/dev/null | grep -q "Docker Compose version v2"; then
+        echo "docker compose"
         return
     fi
-    if docker compose version >/dev/null 2>&1; then
-        echo "docker compose"
-    elif command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+    local saved
+    saved=$(get_state "compose_cmd" "")
+    if [ "$saved" = "docker-compose" ] && command -v docker-compose >/dev/null 2>&1; then
         echo "docker-compose"
-    else
-        echo "docker compose"
+        return
     fi
+    if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+        echo "docker-compose"
+        return
+    fi
+    echo "docker compose"
 }
 
 cache_count() {

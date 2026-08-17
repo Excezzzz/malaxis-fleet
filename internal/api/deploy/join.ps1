@@ -182,11 +182,21 @@ Say $T_DOCKER_RUNNING
 $script:composeCmd = ""
 $haveComposeV2 = $false
 $haveComposeV1 = $false
-& docker compose version 2>&1 | Out-Null
-if ($LASTEXITCODE -eq 0) { $haveComposeV2 = $true }
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    # Docker Desktop may still be warming up; retry once after 3s. Require the
+    # actual v2 string: when a legacy docker-compose.exe is on PATH, `docker
+    # compose` loads IT as the plugin and would report a v1 version.
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        $LASTEXITCODE = 0
+        $v2ver = (& docker compose version 2>&1 | Out-String)
+        if ($LASTEXITCODE -eq 0 -and $v2ver -match "Docker Compose version v2") { $haveComposeV2 = $true; break }
+        if ($attempt -eq 0) { Start-Sleep -Seconds 3 }
+    }
+}
 if (Get-Command docker-compose -ErrorAction SilentlyContinue) {
-    & docker-compose version 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) { $haveComposeV1 = $true }
+    $LASTEXITCODE = 0
+    $v1ver = (& docker-compose version 2>&1 | Out-String)
+    if ($LASTEXITCODE -eq 0 -and ($v1ver -match "docker-compose version" -or $v1ver -match "Docker Compose version v2")) { $haveComposeV1 = $true }
 }
 
 if ($haveComposeV2) {

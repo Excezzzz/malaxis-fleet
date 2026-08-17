@@ -48,19 +48,18 @@ def _compose_available(cmd: list) -> bool:
 def _compose_cmd() -> list:
     """Resolve the docker compose command as a tokenized argv list.
 
-    Prefers the command the installer saved in agent_state.json ("compose_cmd"
-    is either "docker compose" or "docker-compose"), validates it, then falls
-    back to auto-detection (v2 plugin first, then v1 standalone), finally
-    defaulting to the v2 plugin so callers always get a usable command.
+    The v2 plugin wins whenever it works (a v1-only machine saved
+    "docker-compose" must keep working, but a v2 machine must never run v1).
+    Falls back to the saved installer choice, then to v1 standalone.
     """
     state = agent.load_state()
     saved = state.get("compose_cmd", "")
+    if _compose_available(["docker", "compose"]):
+        return ["docker", "compose"]
     if isinstance(saved, str) and saved.strip():
         parts = saved.strip().split()
         if _compose_available(parts):
             return parts
-    if _compose_available(["docker", "compose"]):
-        return ["docker", "compose"]
     if _compose_available(["docker-compose"]):
         return ["docker-compose"]
     return ["docker", "compose"]

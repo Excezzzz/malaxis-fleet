@@ -44,20 +44,18 @@ function Set-State([string]$Key, [string]$Value) {
     Write-Utf8 $STATE_FILE ($h | ConvertTo-Json -Compress)
 }
 
-# Resolve the docker compose command to use: the choice saved by the installer
-# in agent_state.json wins, otherwise auto-detect (v2 plugin first, then v1
-# standalone). Falls back to the v2 plugin.
+# Resolve the docker compose command: prefer the v2 plugin when it works
+# (even if the installer saved v1), then the saved choice, then v1 standalone.
+# Falls back to the v2 plugin.
 $script:composeCmd = $null
 function Get-ComposeCmd {
     if ($null -eq $script:composeCmd) {
-        $saved = Get-State "compose_cmd" ""
-        if ($saved -eq "docker compose" -or $saved -eq "docker-compose") {
-            $script:composeCmd = $saved
+        & docker compose version 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $script:composeCmd = "docker compose"
         } else {
-            & docker compose version 2>$null | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                $script:composeCmd = "docker compose"
-            } elseif (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+            $saved = Get-State "compose_cmd" ""
+            if ($saved -eq "docker-compose" -and (Get-Command docker-compose -ErrorAction SilentlyContinue)) {
                 $script:composeCmd = "docker-compose"
             } else {
                 $script:composeCmd = "docker compose"

@@ -331,7 +331,9 @@ say "$T_DOCKER_RUNNING"
 # v2 is preferred; v1 standalone is the automatic fallback.
 HAVE_COMPOSE_V2=false
 HAVE_COMPOSE_V1=false
-if docker compose version >/dev/null 2>&1; then
+# Require the v2 version string: with a legacy docker-compose on PATH, the
+# docker CLI loads it as the compose plugin and reports a v1 version.
+if command -v docker >/dev/null 2>&1 && docker compose version 2>/dev/null | grep -q "Docker Compose version v2"; then
     HAVE_COMPOSE_V2=true
 fi
 if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
