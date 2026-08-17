@@ -225,6 +225,7 @@ func (a *API) GetOwnNodesHandler(w http.ResponseWriter, r *http.Request) {
 		ActiveProto    string `json:"active_proto"`
 		ActiveIPExt    string `json:"active_ip_ext"`
 		ActiveServer   string `json:"active_server"`
+		ActiveProvider string `json:"active_provider"`
 		LastSeen       string `json:"last_seen"`
 		PipelineStatus string `json:"pipeline_status"`
 		StatusMessage  string `json:"status_message"`
@@ -241,6 +242,7 @@ func (a *API) GetOwnNodesHandler(w http.ResponseWriter, r *http.Request) {
 			ActiveProto:    n.ActiveProto,
 			ActiveIPExt:    n.ActiveIPExt,
 			ActiveServer:   n.ActiveServer,
+			ActiveProvider: n.ActiveProvider,
 			LastSeen:       n.LastSeen.Format(time.RFC3339),
 			PipelineStatus: n.PipelineStatus,
 			StatusMessage:  n.StatusMessage,

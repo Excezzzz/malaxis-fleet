@@ -37,7 +37,7 @@ type Repository interface {
 	DeleteNode(id string) error
 	DeleteOfflineNodes(thresholdDays int) (int64, error)
 	UpdateNodeStatus(id, ipLan string) error
-	UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers string, subURLs []string, serverProviders map[string]string) error
+	UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, activeProvider, availableServers string, subURLs []string, serverProviders map[string]string) error
 	UpdateNodePipelineStatus(nodeID, status, message string) error
 	GetNodesWithSubURL() ([]domain.Node, error)
 	AssignNodeToUser(nodeID string, userID int64) error

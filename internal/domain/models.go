@@ -136,6 +136,7 @@ type Node struct {
 	IPLan              string    `json:"ip_lan" db:"ip_lan"`
 	SubURLs            []string  `json:"sub_urls" db:"sub_urls"`
 	ActiveServer       string    `json:"active_server" db:"active_server"`
+	ActiveProvider     string    `json:"active_provider" db:"active_provider"`
 	ActiveEngine       string    `json:"active_engine" db:"active_engine"`
 	ActiveProto        string    `json:"active_proto" db:"active_proto"`
 	ActiveIPExt        string    `json:"active_ip_ext" db:"active_ip_ext"`

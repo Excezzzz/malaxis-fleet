@@ -134,9 +134,9 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
     if isinstance(cmd_data, str):
         raw = cmd_data.strip()
         if raw.startswith("switch:"):
-            target = raw.split(":", 1)[1].strip().lower()
-            if target in ("fastest", "balanced"):
-                enqueue("smart_mode", mode=target)
+            target = raw.split(":", 1)[1].strip()
+            if target.lower() in ("fastest", "balanced"):
+                enqueue("smart_mode", mode=target.lower())
             elif target:
                 enqueue("switch", name=target)
             return True
@@ -152,9 +152,9 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
     if not action and isinstance(cmd_data.get("command"), str):
         raw = cmd_data["command"].strip()
         if raw.startswith("switch:"):
-            target = raw.split(":", 1)[1].strip().lower()
-            if target in ("fastest", "balanced"):
-                enqueue("smart_mode", mode=target)
+            target = raw.split(":", 1)[1].strip()
+            if target.lower() in ("fastest", "balanced"):
+                enqueue("smart_mode", mode=target.lower())
             elif target:
                 enqueue("switch", name=target)
             return True
@@ -172,11 +172,12 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         enqueue("restart")
         return True
     elif action == "switch":
-        target = (cmd_data.get("outbound", {}).get("tag", "") or cmd_data.get("outbound_tag", "") or "").strip().lower()
-        if target in ("fastest", "balanced"):
-            enqueue("smart_mode", mode=target)
+        target = (cmd_data.get("name") or cmd_data.get("outbound", {}).get("tag", "") or cmd_data.get("outbound_tag", "") or "").strip()
+        provider = (cmd_data.get("provider") or "").strip()
+        if target.lower() in ("fastest", "balanced"):
+            enqueue("smart_mode", mode=target.lower())
         elif target:
-            enqueue("switch", name=target)
+            enqueue("switch", name=target, provider=provider)
         return True
     elif action == "update_sub":
         sub_urls = cmd_data.get("sub_urls") or []
@@ -321,15 +322,28 @@ def _smart_switch(mode: str) -> None:
 def _do_switch(action: dict) -> None:
     idx = action.get("idx")
     if idx is None:
-        name = action.get("name", "")
-        if name in ("fastest", "balanced"):
-            _smart_switch(name)
+        name = (action.get("name", "") or "").strip()
+        provider = (action.get("provider", "") or "").strip()
+        if name.lower() in ("fastest", "balanced"):
+            _smart_switch(name.lower())
             return
         servers = agent.load_cache()
+        name_l = name.lower()
+        provider_l = provider.lower()
         for i, s in enumerate(servers):
-            if name and (s.get("tag") == name or s.get("name") == name or s.get("id") == name):
-                idx = i
+            if not name:
                 break
+            match = (
+                str(s.get("tag") or "").lower() == name_l
+                or str(s.get("name") or "").lower() == name_l
+                or str(s.get("id") or "").lower() == name_l
+            )
+            if not match:
+                continue
+            if provider_l and str(s.get("provider") or "").lower() != provider_l:
+                continue
+            idx = i
+            break
     if idx is None:
         network.report(status="Error", message="Switch failed: server not found in cache")
         return

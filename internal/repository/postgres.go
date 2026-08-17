@@ -159,6 +159,7 @@ func (r *postgresRepository) Init() error {
 		// -> provider name used for grouping in the web UI, bot and CLI.
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS server_providers TEXT`},
 		// Migrate: Add node_logs column (JSON map of container -> last log tail)
+		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS active_provider TEXT DEFAULT ''`},
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS node_logs TEXT`},
 		// Migrate: Set default value for device_type and update existing NULL values
 		{query: `ALTER TABLE nodes ALTER COLUMN device_type SET DEFAULT 'node'`},
@@ -418,8 +419,8 @@ func firstSubURL(subURLs []string) string {
 func (r *postgresRepository) GetNodeByID(id string) (*domain.Node, error) {
 	var n domain.Node
 	var availRaw, subURLsRaw, providersRaw string
-	query := `SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE id = $1`
-	err := r.db.QueryRow(query, id).Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID)
+	query := `SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_provider, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE id = $1`
+	err := r.db.QueryRow(query, id).Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveProvider, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +431,7 @@ func (r *postgresRepository) GetNodeByID(id string) (*domain.Node, error) {
 }
 
 func (r *postgresRepository) GetAllNodes() ([]domain.Node, error) {
-	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes`)
+	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_provider, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes`)
 	if err != nil {
 		return nil, err
 	}
@@ -440,7 +441,7 @@ func (r *postgresRepository) GetAllNodes() ([]domain.Node, error) {
 	for rows.Next() {
 		var n domain.Node
 		var availRaw, subURLsRaw, providersRaw string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveProvider, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
 			return nil, err
 		}
 		n.AvailableServers = unmarshalAvailableServers(availRaw)
@@ -452,7 +453,7 @@ func (r *postgresRepository) GetAllNodes() ([]domain.Node, error) {
 }
 
 func (r *postgresRepository) GetNodesByUserID(userID int64) ([]domain.Node, error) {
-	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE user_id = $1`, userID)
+	rows, err := r.db.Query(`SELECT id, name, hostname, COALESCE(device_type, 'node'), COALESCE(ip_lan, ''), COALESCE(sub_urls::text, '[]'), COALESCE(active_server, ''), COALESCE(active_provider, ''), COALESCE(active_engine, ''), COALESCE(active_proto, ''), COALESCE(active_ip_ext, ''), COALESCE(active_outbound_json, ''), COALESCE(available_servers, '[]'), COALESCE(server_providers, '{}'), COALESCE(last_seen, '1970-01-01 00:00:00'), COALESCE(pending_command, ''), COALESCE(pending_msg_id, 0), COALESCE(pipeline_status, ''), COALESCE(status_message, ''), user_id FROM nodes WHERE user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +463,7 @@ func (r *postgresRepository) GetNodesByUserID(userID int64) ([]domain.Node, erro
 	for rows.Next() {
 		var n domain.Node
 		var availRaw, subURLsRaw, providersRaw string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Hostname, &n.DeviceType, &n.IPLan, &subURLsRaw, &n.ActiveServer, &n.ActiveProvider, &n.ActiveEngine, &n.ActiveProto, &n.ActiveIPExt, &n.ActiveOutboundJSON, &availRaw, &providersRaw, &n.LastSeen, &n.PendingCommand, &n.PendingMsgID, &n.PipelineStatus, &n.StatusMessage, &n.UserID); err != nil {
 			return nil, err
 		}
 		n.AvailableServers = unmarshalAvailableServers(availRaw)
@@ -609,13 +610,13 @@ func (r *postgresRepository) GetNodeLogs(id string) (string, error) {
 	return raw, nil
 }
 
-func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, availableServers string, subURLs []string, serverProviders map[string]string) error {
-	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5, available_servers = $6,
-		sub_urls = COALESCE(NULLIF($8::jsonb, '[]'::jsonb), sub_urls),
-		server_providers = COALESCE(NULLIF($9::text, ''), server_providers),
+func (r *postgresRepository) UpdateNodeReport(id, ipExt, engine, proto, outboundJSON, activeServer, activeProvider, availableServers string, subURLs []string, serverProviders map[string]string) error {
+	query := `UPDATE nodes SET active_ip_ext = $1, active_engine = $2, active_proto = $3, active_outbound_json = $4, active_server = $5, active_provider = $8, available_servers = $6,
+		sub_urls = COALESCE(NULLIF($9::jsonb, '[]'::jsonb), sub_urls),
+		server_providers = COALESCE(NULLIF($10::text, ''), server_providers),
 		sub_url = CASE WHEN jsonb_array_length(sub_urls) > 0 THEN sub_urls->>0 ELSE sub_url END
 		WHERE id = $7`
-	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, availableServers, id, marshalSubURLs(subURLs), marshalServerProviders(serverProviders))
+	_, err := r.db.Exec(query, ipExt, engine, proto, outboundJSON, activeServer, availableServers, id, activeProvider, marshalSubURLs(subURLs), marshalServerProviders(serverProviders))
 	return err
 }
 

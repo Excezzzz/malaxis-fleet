@@ -290,6 +290,7 @@ def update_subscription() -> bool:
         fallback_name = fallback.get("tag") or fallback.get("name") or ""
         agent.log(f"Active server '{active_name}' no longer in subscription, falling back to '{fallback_name}'")
         state["active_server"] = fallback_name
+        state["active_provider"] = fallback.get("provider", "")
         if fallback.get("full_link"):
             state["active_url"] = fallback["full_link"]
         agent.save_state(state)
@@ -298,6 +299,12 @@ def update_subscription() -> bool:
     def _resolve_idx(subset: list) -> int:
         if not active_name:
             return 0
+        active_provider = state.get("active_provider", "")
+        for i, s in enumerate(subset):
+            if (s.get("tag") == active_name or s.get("name") == active_name) and (
+                not active_provider or s.get("provider", "") == active_provider
+            ):
+                return i
         for i, s in enumerate(subset):
             if s.get("tag") == active_name or s.get("name") == active_name:
                 return i
@@ -312,6 +319,7 @@ def update_subscription() -> bool:
             fallback_name = fallback.get("tag") or fallback.get("name") or ""
             agent.log(f"Active server '{active_name}' not in {engine} subset, applying fallback '{fallback_name}'")
             state["active_server"] = fallback_name
+            state["active_provider"] = fallback.get("provider", "")
             if fallback.get("full_link"):
                 state["active_url"] = fallback["full_link"]
             agent.save_state(state)
@@ -348,6 +356,7 @@ def update_subscription() -> bool:
     if servers:
         if not state.get("active_server"):
             state["active_server"] = servers[0].get("tag", "")
+            state["active_provider"] = servers[0].get("provider", "")
         if not state.get("active_url"):
             for s in servers:
                 if s.get("tag") == state.get("active_server"):
@@ -443,6 +452,7 @@ def select_server(idx: int, mode: str = "manual") -> int:
 
     state = agent.load_state()
     state["active_server"] = name
+    state["active_provider"] = srv.get("provider", "")
     state["active_engine"] = engine
     state["active_proto"] = srv.get("proto", "")
     state["active_url"] = url

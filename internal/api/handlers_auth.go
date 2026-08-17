@@ -52,6 +52,7 @@ type ReportRequest struct {
 	Status           string            `json:"status,omitempty"`
 	Message          string            `json:"message,omitempty"`
 	ActiveServer     string            `json:"active_server,omitempty"`
+	ActiveProvider   string            `json:"active_provider,omitempty"`
 	// AvailableServers holds either the v1.2.2 grouped object
 	// {provider: [server, ...]} or the legacy flat array from older agents
 	// (normalized to a provider-less group on read). Kept as RawMessage so the
@@ -446,7 +447,7 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		availJSON = string(req.AvailableServers)
 	}
 
-	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, availJSON, req.SubURLs, req.ServerProviders)
+	err := a.repo.UpdateNodeReport(req.ID, req.ExternalIP, req.Engine, req.Protocol, req.OutboundJSON, req.ActiveServer, req.ActiveProvider, availJSON, req.SubURLs, req.ServerProviders)
 	if err != nil {
 		log.Printf("ERROR: Failed to update node report for %s: %v", req.ID, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)

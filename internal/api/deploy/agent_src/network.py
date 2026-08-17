@@ -104,6 +104,7 @@ def report(**kw: Any) -> None:
     try:
         state = agent.load_state()
         payload.setdefault("active_server", state.get("active_server", ""))
+        payload.setdefault("active_provider", state.get("active_provider", ""))
         sub_urls = agent.get_sub_urls(state)
         payload.setdefault("sub_urls", sub_urls)
         if sub_urls:

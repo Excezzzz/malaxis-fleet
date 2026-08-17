@@ -221,8 +221,8 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <template v-for="group in serverGroups" :key="group.key">
               <p v-if="group.provider" class="col-span-full text-center text-xs font-semibold uppercase tracking-wider text-indigo-400 border-b border-white/5 pb-1.5 mb-1">{{ group.provider }}</p>
-              <button v-for="srv in group.servers" :key="srv" @click="switchTo(srv)"
-                :class="['px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl font-semibold truncate', srv === node.active_server ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
+              <button v-for="srv in group.servers" :key="srv" @click="switchTo(srv, group.provider)"
+                :class="['px-3 py-2.5 text-xs text-center leading-tight transition-all rounded-xl font-semibold truncate', srv === node.active_server && (!node.active_provider || group.provider === node.active_provider) ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100' : 'bg-white/5 hover:bg-white/10 border border-white/10']">
                 {{ srv }}
               </button>
             </template>
@@ -570,9 +570,11 @@ export default {
       }
     };
 
-    const switchTo = async (target) => {
+    const switchTo = async (target, provider) => {
       try {
-        await axios.post(`/api/web/nodes/${props.node.id}/command`, { command: `switch:${target}` });
+        const payload = { action: 'switch', name: target };
+        if (provider) payload.provider = provider;
+        await axios.post(`/api/web/nodes/${props.node.id}/command`, payload);
         showSwitchModal.value = false;
         emit('node-updated');
         showToast(t('node_toast_switch_queued', { target }));
