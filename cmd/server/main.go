@@ -104,25 +104,6 @@ func main() {
 		}
 	}()
 
-	// Auto-cleanup: delete nodes that have been offline for 14+ days
-	// (including self-destructed "Terminated" nodes) so stale rows never pile
-	// up, while long vacations (or a temporarily unreachable network) never
-	// wipe a node from the fleet.
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			deleted, err := repo.DeleteOfflineNodes(14)
-			if err != nil {
-				log.Printf("ERROR: Auto-cleanup of stale nodes failed: %v", err)
-				continue
-			}
-			if deleted > 0 {
-				log.Printf("Auto-cleanup: removed %d stale node(s) (offline > 14 days)", deleted)
-			}
-		}
-	}()
-
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

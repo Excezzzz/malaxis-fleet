@@ -1,7 +1,9 @@
 package repository
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -482,23 +484,80 @@ func (r *postgresRepository) AddNode(node *domain.Node) error {
 }
 
 func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error) {
-	// Dedup ghost nodes: if another node with the same hostname exists under a
-	// different id (reinstall creates a fresh node_id), remove the stale one —
-	// but only if it has been offline for a while, so a live duplicate is kept.
-	if node.Hostname != "" {
-		if _, err := r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID); err != nil {
-			log.Printf("ERROR: ghost-node cleanup failed for hostname %q: %v", node.Hostname, err)
+	// TERMINATION GUARD: a self-destructed device must never resurrect. If the
+	// presented node_id still maps to a Terminated row, mint a brand-new id so
+	// the device registers as a completely fresh install.
+	if node.ID != "" {
+		var terminated bool
+		err := r.db.QueryRow(
+			`SELECT EXISTS (SELECT 1 FROM nodes WHERE id = $1
+			   AND (COALESCE(pipeline_status, '') = 'Terminated' OR COALESCE(status_message, '') = 'Terminated'))`,
+			node.ID,
+		).Scan(&terminated)
+		if err != nil {
+			return node.ID, false, err
+		}
+		if terminated {
+			log.Printf("Node %s is Terminated, minting a fresh node_id for this device", node.ID)
+			node.ID = newNodeID()
 		}
 	}
 
+	// RESURRECTION: an id that does not exist in the DB (soft-deleted or
+	// purged by the admin) is recreated below by the INSERT with that exact id.
+	// Only Terminated rows are refused the resurrection path (handled above).
+
 	// Hardware fingerprint dedup: a reinstalled node (fresh node_id.txt) whose
 	// id no longer exists in the DB is adopted back to its original row via the
-	// immutable hardware_hash, so the device keeps its name/history.
+	// immutable hardware_hash, so the device keeps its name/history. Terminated
+	// rows are explicitly excluded: a killed device registers as brand-new.
+	adopted := false
 	if node.HardwareHash != "" {
 		var existingID string
-		err := r.db.QueryRow(`SELECT id FROM nodes WHERE hardware_hash = $1 AND id != $2 LIMIT 1`, node.HardwareHash, node.ID).Scan(&existingID)
+		err := r.db.QueryRow(
+			`SELECT id FROM nodes
+			  WHERE hardware_hash = $1 AND id != $2
+			    AND COALESCE(pipeline_status, '') != 'Terminated'
+			    AND COALESCE(status_message, '') != 'Terminated'
+			  LIMIT 1`,
+			node.HardwareHash, node.ID,
+		).Scan(&existingID)
 		if err == nil && existingID != "" {
 			node.ID = existingID
+			adopted = true
+		} else if err != nil && err != sql.ErrNoRows {
+			log.Printf("ERROR: hardware-hash dedup lookup failed for %s: %v", node.HardwareHash, err)
+		}
+	}
+
+	// Secondary dedup fallback: if the hardware hash is a new value (e.g. the
+	// agent's fingerprint changed after the virtual-MAC fix) but hostname + LAN
+	// IP still match an existing active node, adopt that row instead of
+	// creating a duplicate. Terminated rows are excluded here too.
+	if !adopted && node.Hostname != "" && node.IPLan != "" {
+		var existingID string
+		err := r.db.QueryRow(
+			`SELECT id FROM nodes
+			  WHERE hostname = $1 AND ip_lan = $2 AND id != $3
+			    AND COALESCE(pipeline_status, '') != 'Terminated'
+			    AND COALESCE(status_message, '') != 'Terminated'
+			    AND last_seen > NOW() - interval '30 days'
+			  ORDER BY last_seen DESC LIMIT 1`,
+			node.Hostname, node.IPLan, node.ID,
+		).Scan(&existingID)
+		if err == nil && existingID != "" {
+			node.ID = existingID
+		} else if err != nil && err != sql.ErrNoRows {
+			log.Printf("ERROR: hostname/IP dedup lookup failed for %s: %v", node.Hostname, err)
+		}
+	}
+
+	// Ghost-node cleanup: remove stale duplicate rows for the same hostname.
+	// Runs AFTER dedup adoption so the canonical row (now carrying node.ID) is
+	// never the victim; only offline lookalikes older than 10 minutes go.
+	if node.Hostname != "" {
+		if _, err := r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID); err != nil {
+			log.Printf("ERROR: ghost-node cleanup failed for hostname %q: %v", node.Hostname, err)
 		}
 	}
 
@@ -526,6 +585,17 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 			hardware_hash = COALESCE(EXCLUDED.hardware_hash, nodes.hardware_hash)`
 	_, err = r.db.Exec(query, node.ID, node.Name, node.Hostname, node.IPLan, firstSubURL(node.SubURLs), marshalSubURLs(node.SubURLs), node.HardwareHash)
 	return node.ID, isNew, err
+}
+
+// newNodeID mints a fresh 12-hex-char node id in the same format the agent
+// generates (uuid.uuid4().hex[:12]), used to refuse resurrection of a
+// Terminated device.
+func newNodeID() string {
+	b := make([]byte, 6)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%012x", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
 }
 
 func (r *postgresRepository) RenameNode(id, name string) error {

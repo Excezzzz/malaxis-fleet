@@ -164,9 +164,27 @@ def _adopt_node_id(new_id: str) -> None:
         f.write(new_id)
 
 
+_VIRTUAL_NIC_KEYWORDS = (
+    "docker", "veth", "br-", "virbr", "podman", "tailscale", "tun", "tap",
+    "vEthernet", "hyper-v", "virtual", "loopback", "wsl", "bluetooth",
+)
+
+
+def _is_virtual_nic(name: str) -> bool:
+    """True for Docker/veth/bridge/loopback/virtual adapters whose MAC
+    addresses are unstable across reinstalls (the source of duplicate nodes)."""
+    low = (name or "").lower()
+    if low in ("lo", "lo0", "loopback"):
+        return True
+    return any(kw in low for kw in _VIRTUAL_NIC_KEYWORDS)
+
+
 def get_hardware_hash() -> str:
-    """Immutable device fingerprint: sha256 of hostname + primary MAC + system
-    UUID. Used by the server to dedupe re-registered nodes."""
+    """Immutable device fingerprint: sha256 of hostname + primary physical MAC
+    + system UUID. Virtual interfaces (docker0, veth*, br-*, vEthernet, ...)
+    are explicitly ignored because their MACs change between installs and
+    broke hardware-hash deduplication. The system UUID is the primary stable
+    component when available."""
     try:
         host = platform.node() or ""
         mac = ""
@@ -176,25 +194,24 @@ def get_hardware_hash() -> str:
                 out = _sp.run(["getmac", "/FO", "CSV", "/NH"], capture_output=True, timeout=10)
                 text = out.stdout.decode(errors="replace")
                 for line in text.splitlines():
-                    parts = line.strip().strip('"').split('","')
-                    for p in parts:
-                        p = p.strip().strip('"')
-                        if "-" in p or ":" in p:
-                            mac = p
-                            break
-                    if mac:
+                    parts = [p.strip().strip('"') for p in line.strip().strip('"').split('","')]
+                    name = parts[0] if parts else ""
+                    addr = next((p for p in parts[1:] if "-" in p or ":" in p), "")
+                    if addr and not _is_virtual_nic(name):
+                        mac = addr
                         break
             except Exception:
                 pass
             if not mac:
                 mac = str(uuid.getnode())
         else:
-            mac = ""
             for nic in sorted(os.listdir("/sys/class/net/")):
+                if _is_virtual_nic(nic):
+                    continue
                 try:
                     with open(f"/sys/class/net/{nic}/address") as f:
                         addr = f.read().strip()
-                    if addr and addr != "00:00:00:00:00:00" and nic != "lo":
+                    if addr and addr != "00:00:00:00:00:00":
                         mac = addr
                         break
                 except OSError:
