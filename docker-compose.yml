@@ -20,18 +20,26 @@ services:
     environment:
       SERVER_PORT: "8000"
       WEB_PORT: "8000"
+      # The docker CLI talks to the read-restricted docker-socket-proxy sidecar
+      # instead of the raw host socket (the "Logs & Audit" tab runs `docker logs`).
+      DOCKER_HOST: tcp://docker-proxy:2375
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups
-      - /var/run/docker.sock:/var/run/docker.sock
     env_file:
       - .env
     depends_on:
       postgres:
         condition: service_healthy
+      docker-proxy:
+        condition: service_started
     networks:
       - default
       - caddy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     logging:
       driver: "json-file"
       options:
@@ -58,11 +66,36 @@ services:
       timeout: 5s
       retries: 10
       start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     logging:
       driver: "json-file"
       options:
         max-size: "5m"
         max-file: "2"
+
+  # Read-only Docker socket proxy: lets fleet-master run `docker logs` for the
+  # "Logs & Audit" tab without granting it root-equivalent host access. Only
+  # the container-log section is whitelisted (GET/HEAD only; POST denied).
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: fleet-docker-proxy
+    restart: always
+    environment:
+      CONTAINERS: 1
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "2m"
+        max-file: "1"
 
 networks:
   caddy:
