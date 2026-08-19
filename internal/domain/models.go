@@ -18,6 +18,11 @@ const (
 	RoleRankViewer = 10
 )
 
+// BcryptCost is the bcrypt work factor used for every password hash. Cost 12
+// (~250 ms per hash) is slow enough to resist offline brute force while still
+// being acceptable for interactive logins.
+const BcryptCost = 12
+
 // RoleRank returns the numeric hierarchy rank of a role. Custom roles and unknown roles default to the client rank (30).
 func RoleRank(role string) int {
 	switch role {
