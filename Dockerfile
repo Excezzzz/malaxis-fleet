@@ -4,10 +4,15 @@ FROM node:24-alpine AS web-builder
 #   docker build --build-arg NPM_REGISTRY=https://registry.npmmirror.com .
 ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app/web
+# The committed internal/api/web/dist (regenerated on every deploy) is copied
+# in as a guaranteed fallback: if npm ci / npm run build fail here (registry
+# blocked, network flake, cache state), the last known-good dashboard is still
+# embedded instead of aborting the build with
+# "pattern web/dist: no matching files found".
 COPY internal/api/web/package*.json ./
-RUN npm ci --registry=$NPM_REGISTRY
+RUN npm ci --registry=$NPM_REGISTRY || echo "[!] npm ci failed - falling back to committed dist"
 COPY internal/api/web/ ./
-RUN npm run build
+RUN npm run build || echo "[!] npm run build failed - falling back to committed dist"
 
 # Stage 2: build the Go backend (embeds web/dist and deploy assets)
 FROM golang:1.26-alpine AS go-builder

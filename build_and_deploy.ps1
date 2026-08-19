@@ -64,7 +64,7 @@ Write-Host ">>> Staging source tree..."
 $Staging = Join-Path $env:TEMP "fleet-deploy-$PID"
 if (Test-Path $Staging) { Remove-Item -Recurse -Force $Staging }
 New-Item -ItemType Directory -Path $Staging | Out-Null
-robocopy . $Staging /E /XD .git data backups node_modules dist /XF .env master_server | Out-Null
+robocopy . $Staging /E /XD .git data backups node_modules /XF .env master_server | Out-Null
 if ($LASTEXITCODE -ge 8) {
     Write-Host "Staging failed." -ForegroundColor Red
     exit 1
