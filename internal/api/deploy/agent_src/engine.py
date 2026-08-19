@@ -119,6 +119,55 @@ def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
         release_apply_lock()
 
 
+def _socks5_probe(ip: str, port: int, timeout: float = 5.0) -> Tuple[bool, str]:
+    """Full SOCKS5 handshake against a local inbound.
+
+    A bare connect+close leaves the inbound with an aborted request and logs
+    'use of closed network connection' noise on the proxy. A complete
+    handshake (NO-AUTH greeting + CONNECT, reply fully read) proves the proxy
+    stack responds and closes cleanly after the full reply is consumed.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(timeout)
+        s.connect((ip, port))
+        s.sendall(b"\x05\x01\x00")  # SOCKS5, one method: no-auth
+        if s.recv(2) != b"\x05\x00":
+            s.close()
+            return False, "SOCKS5 greeting rejected"
+        # CONNECT 127.0.0.1:1 - guaranteed-refused local target, so the
+        # inbound always completes the handshake with a protocol reply.
+        s.sendall(b"\x05\x01\x00\x01\x7f\x00\x00\x01\x00\x01")
+        reply = s.recv(4)
+        s.close()
+        if len(reply) < 4 or reply[0] != 0x05:
+            return False, "Invalid SOCKS5 reply"
+        return True, "Healthy (socks5 handshake ok)"
+    except Exception as e:
+        return False, f"SOCKS5 probe failed: {e}"
+
+
+def _http_probe(ip: str, port: int, timeout: float = 5.0) -> Tuple[bool, str]:
+    """Clean minimal HTTP request against the local http-in.
+
+    Sends a valid absolute-form HEAD request and reads the proxy's full
+    response, so the inbound never sees an aborted connection (the source of
+    'read http request: use of closed network connection' log spam).
+    """
+    import http.client
+    try:
+        conn = http.client.HTTPConnection(ip, port, timeout=timeout)
+        # Absolute-form request to a refused local target: the proxy replies
+        # (e.g. 502) after fully reading the request - a clean round-trip.
+        conn.request("HEAD", "http://127.0.0.1:9/", headers={"Connection": "close"})
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return True, f"Healthy (http {resp.status})"
+    except Exception as e:
+        return False, f"HTTP probe failed: {e}"
+
+
 def test_proxy() -> Tuple[bool, str]:
     state = agent.load_agent_state()
     engine = state.get("active_engine", "singbox") if state else "singbox"
@@ -128,15 +177,17 @@ def test_proxy() -> Tuple[bool, str]:
         return False, f"Container not running (status: {status or 'unknown'})"
     try:
         # singbox-node shares xray-node's network namespace and has no own
-        # DNS entry, so probe the shared netns (xray-node) for port 6357.
+        # DNS entry, so probe the shared netns (xray-node) for ports 6357/6358.
         ip = socket.gethostbyname("xray-node")
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(5.0)
-        s.connect((ip, 6357))
-        s.close()
-        return True, "Healthy"
-    except Exception:
-        return False, "Socket dead"
+    except Exception as e:
+        return False, f"Cannot resolve xray-node: {e}"
+    ok, msg = _socks5_probe(ip, 6357)
+    if not ok:
+        return False, msg
+    ok, msg = _http_probe(ip, 6358)
+    if not ok:
+        return False, msg
+    return True, msg
 
 
 def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
