@@ -16,7 +16,30 @@ import (
 var (
 	// Store the cookie store as a package-level variable
 	Store *sessions.CookieStore
+
+	// sessionVersion is the current global session version. Sessions stamped
+	// with an older version are rejected, giving the owner a fleet-wide
+	// force-logout lever (POST /api/web/settings/revoke-sessions).
+	sessionVersion string
 )
+
+// InitSessionVersion sets the global session version at startup (loaded from
+// the database). Sessions stamped with a different version are rejected.
+func InitSessionVersion(v string) {
+	sessionVersion = v
+}
+
+// CurrentSessionVersion returns the active session version, stamped into
+// every new session at login.
+func CurrentSessionVersion() string {
+	return sessionVersion
+}
+
+// SetSessionVersion rotates the session version, instantly invalidating every
+// previously issued session.
+func SetSessionVersion(v string) {
+	sessionVersion = v
+}
 
 type contextKey string
 
@@ -36,8 +59,19 @@ func InitStore(cfg *config.Config) {
 		MaxAge:   86400 * 7, // 7 days
 		HttpOnly: true,
 		Secure:   isSecure,
-		SameSite: http.SameSiteLaxMode,
+		SameSite: http.SameSiteStrictMode,
 	}
+}
+
+// originScheme returns the scheme of the dashboard origin. Browsers compare
+// the FULL origin (scheme + host) against Access-Control-Allow-Origin, so a
+// bare hostname would be ignored. Local development on localhost stays HTTP,
+// everything else is HTTPS.
+func originScheme(domain string) string {
+	if strings.HasPrefix(domain, "localhost") {
+		return "http://"
+	}
+	return "https://"
 }
 
 // Middleware verifies the user session and handles CORS.
@@ -45,7 +79,7 @@ func Middleware(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// CORS Headers
-			w.Header().Set("Access-Control-Allow-Origin", cfg.DashboardDomain)
+			w.Header().Set("Access-Control-Allow-Origin", originScheme(cfg.DashboardDomain)+cfg.DashboardDomain)
 			w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 			w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
@@ -66,6 +100,15 @@ func Middleware(cfg *config.Config) func(http.Handler) http.Handler {
 			userID, ok := session.Values["user_id"].(int64)
 			if !ok || userID == 0 {
 				http.Error(w, "Unauthorized: Not logged in", http.StatusUnauthorized)
+				return
+			}
+
+			// Global session revocation: reject sessions stamped with an
+			// outdated session_version. The owner bumps the version (via
+			// POST /api/web/settings/revoke-sessions) to force-logout
+			// every active session fleet-wide.
+			if ver, ok := session.Values["session_version"].(string); !ok || ver == "" || ver != sessionVersion {
+				http.Error(w, "Unauthorized: Session expired", http.StatusUnauthorized)
 				return
 			}
 
