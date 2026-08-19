@@ -1,9 +1,9 @@
 # Malaxis Fleet Manager
 
-![Release](https://img.shields.io/badge/Release-v1.4.0-brightgreen)
-![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
-![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
-![Vue](https://img.shields.io/badge/Vue-3-42b883)
+[![Release](https://img.shields.io/badge/Release-v1.4.0-brightgreen)](https://github.com/Excezzzz/malaxis-fleet/releases)
+[![License](https://img.shields.io/badge/License-AGPL--3.0-blue)](LICENSE)
+[![Go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev)
+[![Vue](https://img.shields.io/badge/Vue-3-42b883)](https://vuejs.org)
 
 A self-hosted control plane for orchestrating VPN nodes across remote hosts to
 bypass DPI and network censorship. A single Go master server manages an

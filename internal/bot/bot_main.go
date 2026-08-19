@@ -65,6 +65,7 @@ type Bot struct {
 	audit        *audit.Logger
 	userStates   map[int64]*userState
 	mainMenuID   map[int64]int
+	mainMenuText map[int64]string
 	stop         chan bool
 	mu           sync.Mutex
 	token        string
@@ -81,6 +82,7 @@ func NewBot(cfg *config.Config, repo repository.Repository, autoSync *service.Au
 		audit:        audit.NewLogger(repo),
 		userStates:   make(map[int64]*userState),
 		mainMenuID:   make(map[int64]int),
+		mainMenuText: make(map[int64]string),
 		stop:         make(chan bool),
 		token:        cfg.BotToken,
 		chatID:       cfg.AdminChatID,
@@ -162,6 +164,7 @@ func (b *Bot) Start() error {
 	b.registerCommands()
 
 	go b.runBackupScheduler()
+	go b.runMenuStatusRefresher()
 
 	updates := make(chan tgbotapi.Update, 100)
 	go b.fetchUpdates(updates)
@@ -514,6 +517,61 @@ func (b *Bot) runBackupScheduler() {
 			timer.Stop()
 			return
 		}
+	}
+}
+
+// runMenuStatusRefresher periodically re-renders the main control menu in the background so the node online/offline counters stay fresh without any user interaction. The 5-minute tick keeps Telegram edits and database polls light.
+func (b *Bot) runMenuStatusRefresher() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		b.mu.Lock()
+		stopCh := b.stop
+		b.mu.Unlock()
+
+		if stopCh == nil {
+			return
+		}
+
+		select {
+		case <-ticker.C:
+			b.refreshMainMenus()
+		case <-stopCh:
+			return
+		}
+	}
+}
+
+// refreshMainMenus rebuilds the main menu content once and edits the live menu message of every chat that currently has one, but only when the rendered text actually changed — Telegram rejects identical edits, so unchanged statuses are left untouched.
+func (b *Bot) refreshMainMenus() {
+	b.mu.Lock()
+	chats := make([]int64, 0, len(b.mainMenuID))
+	for chatID, mid := range b.mainMenuID {
+		if mid > 0 {
+			chats = append(chats, chatID)
+		}
+	}
+	b.mu.Unlock()
+
+	if len(chats) == 0 {
+		return
+	}
+
+	text, markup := b.getMainMenuContent()
+
+	for _, chatID := range chats {
+		b.mu.Lock()
+		mid := b.mainMenuID[chatID]
+		last := b.mainMenuText[chatID]
+		if mid <= 0 || last == text {
+			b.mu.Unlock()
+			continue
+		}
+		b.mainMenuText[chatID] = text
+		b.mu.Unlock()
+
+		b.editMessage(chatID, mid, text, &markup)
 	}
 }
 
