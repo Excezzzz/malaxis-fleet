@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -14,6 +16,43 @@ import (
 	"malaxis-fleet/internal/auth"
 	"malaxis-fleet/internal/domain"
 )
+
+// generateRandomHex returns n random bytes encoded as hex. Used to rotate the
+// global session version.
+func generateRandomHex(n int) string {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
+	return hex.EncodeToString(b)
+}
+
+// RevokeSessionsHandler force-logs-out every user by rotating the global
+// session_version in the database and in memory. All existing cookies become
+// invalid immediately; everyone (including the caller) must log in again.
+func (a *API) RevokeSessionsHandler(w http.ResponseWriter, r *http.Request) {
+	if !a.requireOwner(w, r) {
+		return
+	}
+
+	newVersion := generateRandomHex(16)
+	if newVersion == "" {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if err := a.repo.SetSetting("session_version", newVersion); err != nil {
+		log.Printf("ERROR: failed to persist new session_version: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	auth.SetSessionVersion(newVersion)
+
+	actorUser := a.actor(r)
+	a.auditLogger.LogFromRequest(r, a.actorName(actorUser), audit.ActionUpdateSettings, "sessions", "All sessions revoked (global session version rotated)")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
 
 // --- Bot Settings Handlers ---
 

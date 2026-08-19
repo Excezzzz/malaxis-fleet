@@ -245,6 +245,8 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	webAPIRouter.Handle("/web/settings/bot/test", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.TestTelegramBotHandler)))).Methods("POST")
 	webAPIRouter.Handle("/web/settings/bot/reset-avatar", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.ResetBotAvatarHandler)))).Methods("POST")
 	webAPIRouter.Handle("/web/settings/bot/avatar", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.SetBotAvatarHandler)))).Methods("POST")
+	// POST /api/web/settings/revoke-sessions - force-logout every active session (owner only)
+	webAPIRouter.Handle("/web/settings/revoke-sessions", auth.Middleware(cfg)(auth.RequireOwner(repo)(http.HandlerFunc(api.RevokeSessionsHandler)))).Methods("POST")
 	webAPIRouter.Handle("/web/user/preferences", auth.Middleware(cfg)(http.HandlerFunc(api.GetUserPreferencesHandler))).Methods("GET")
 	webAPIRouter.Handle("/web/user/preferences", auth.Middleware(cfg)(http.HandlerFunc(api.UpdateUserPreferencesHandler))).Methods("PUT")
 

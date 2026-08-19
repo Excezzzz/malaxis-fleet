@@ -281,6 +281,7 @@ func (a *API) LoginHandler(w http.ResponseWriter, r *http.Request) {
 	session, _ := auth.Store.Get(r, "fleet-session")
 	session.Values["user_id"] = user.ID
 	session.Values["role"] = user.Role
+	session.Values["session_version"] = auth.CurrentSessionVersion()
 	if err := session.Save(r, w); err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
