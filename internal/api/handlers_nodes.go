@@ -24,10 +24,7 @@ import (
 
 // --- Client Onboarding & Subscription Validation ---
 
-// isOwnSubscriptionURL reports whether raw points at one of the fleet's own
-// domains, used by the public onboarding endpoint to prove the subscription
-// belongs to this server. IP-literals (loopback, metadata, private ranges) are
-// rejected outright to keep the onboarding path SSRF-free.
+// isOwnSubscriptionURL reports whether raw points at one of the fleet's own domains, used by the public onboarding endpoint to prove the subscription belongs to this server. IP-literals (loopback, metadata, private ranges) are rejected outright to keep the onboarding path SSRF-free.
 func (a *API) isOwnSubscriptionURL(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
@@ -53,10 +50,7 @@ func (a *API) isOwnSubscriptionURL(raw string) bool {
 	return false
 }
 
-// validSubscriptionURL enforces scheme + no-userinfo rules on subscription
-// URLs supplied by authenticated admins (web / Telegram). URLs with embedded
-// credentials (user:pass@host) are rejected because tokens in the path/query
-// are the intended pattern and any accidental password-in-URL is refused.
+// validSubscriptionURL enforces scheme + no-userinfo rules on subscription URLs supplied by authenticated admins (web / Telegram). URLs with embedded credentials (user:pass@host) are rejected because tokens in the path/query are the intended pattern and any accidental password-in-URL is refused.
 func validSubscriptionURL(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
@@ -66,8 +60,7 @@ func validSubscriptionURL(raw string) bool {
 	return true
 }
 
-// normalizeSubURLs trims whitespace, drops empty entries and exact duplicates
-// while preserving order.
+// normalizeSubURLs trims whitespace, drops empty entries and exact duplicates while preserving order.
 func normalizeSubURLs(subURLs []string) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -82,8 +75,7 @@ func normalizeSubURLs(subURLs []string) []string {
 	return out
 }
 
-// mergeSubURLs appends a single URL to the node's list unless it is already
-// present (order-preserving dedup).
+// mergeSubURLs appends a single URL to the node's list unless it is already present (order-preserving dedup).
 func mergeSubURLs(subURLs []string, u string) []string {
 	u = strings.TrimSpace(u)
 	if u == "" {
@@ -97,10 +89,7 @@ func mergeSubURLs(subURLs []string, u string) []string {
 	return append(subURLs, u)
 }
 
-// verifySubscriptionURLReachable performs a fast HTTP GET (3s timeout) to
-// confirm the subscription URL actually exists and serves a valid response
-// before it is saved. Any transport error (DNS, connection refused, timeout)
-// or an HTTP status >= 400 rejects the URL.
+// verifySubscriptionURLReachable performs a fast HTTP GET (3s timeout) to confirm the subscription URL actually exists and serves a valid response before it is saved. Any transport error (DNS, connection refused, timeout) or an HTTP status >= 400 rejects the URL.
 func verifySubscriptionURLReachable(raw string) error {
 	raw = strings.TrimSpace(raw)
 	client := &http.Client{Timeout: 3 * time.Second}
@@ -116,8 +105,7 @@ func verifySubscriptionURLReachable(raw string) error {
 	return nil
 }
 
-// writeInvalidSubURLError rejects an unreachable subscription URL with a
-// fixed 400 payload (the web UI matches this message for its error toast).
+// writeInvalidSubURLError rejects an unreachable subscription URL with a fixed 400 payload (the web UI matches this message for its error toast).
 func writeInvalidSubURLError(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
@@ -138,11 +126,7 @@ func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Validate that the subscription URL points at this server's own domain.
-	// The previous substring check could be tricked by embedding our domain
-	// inside an attacker-controlled host (e.g. api.yourdomain.com.evil.com),
-	// which is exactly the SSRF (server-side autosync http.Get) vector we
-	// block here: parse the real host and require an exact/suffix match.
+	// Validate that the subscription URL points at this server's own domain. The previous substring check could be tricked by embedding our domain inside an attacker-controlled host (e.g. api.yourdomain.com.evil.com), which is exactly the SSRF (server-side autosync http.Get) vector we block here: parse the real host and require an exact/suffix match.
 	if !a.isOwnSubscriptionURL(req.SubscriptionURL) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -160,8 +144,7 @@ func (a *API) ValidateSubscriptionHandler(w http.ResponseWriter, r *http.Request
 	existingNode, err := a.repo.GetNodeByID(req.NodeID)
 	if err == nil && existingNode != nil {
 		existingNode.SubURLs = mergeSubURLs(existingNode.SubURLs, req.SubscriptionURL)
-		// Never clobber an existing custom name with the OS hostname; only
-		// apply a name when the caller explicitly provides one.
+		// Never clobber an existing custom name with the OS hostname; only apply a name when the caller explicitly provides one.
 		if req.Name != "" {
 			existingNode.Name = req.Name
 		}
@@ -371,9 +354,7 @@ func (a *API) UpdateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(node)
 }
 
-// UpdateNodeSubHandler updates only the sub_url field for a node. Fixes PostgreSQL UPDATE.
-// Anti-spam: each node gets a per-node rate limiter (3 updates per minute), so a
-// compromised admin token cannot hammer the master with live URL probes.
+// UpdateNodeSubHandler updates only the sub_url field for a node. Fixes PostgreSQL UPDATE. Anti-spam: each node gets a per-node rate limiter (3 updates per minute), so a compromised admin token cannot hammer the master with live URL probes.
 func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -440,9 +421,7 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Queue an update_sub command so the node fetches the new subscriptions.
-	// Single atomic UPDATE: sub_urls and the queued update_sub command are
-	// committed together, so the agent is always triggered to fetch servers.
+	// Queue an update_sub command so the node fetches the new subscriptions. Single atomic UPDATE: sub_urls and the queued update_sub command are committed together, so the agent is always triggered to fetch servers.
 	command := map[string]interface{}{"action": "update_sub", "sub_urls": subURLs}
 	if len(subURLs) > 0 {
 		command["sub_url"] = subURLs[0]
@@ -466,8 +445,7 @@ func (a *API) UpdateNodeSubHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// MassUpdateSubHandler updates the subscription URL for ALL nodes at once and
-// queues update commands for every node (online and offline).
+// MassUpdateSubHandler updates the subscription URL for ALL nodes at once and queues update commands for every node (online and offline).
 func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -550,8 +528,7 @@ func (a *API) MassUpdateSubHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// MassUpdateDomainHandler updates only the domain portion of sub_url for ALL nodes.
-// Each node keeps its existing path/token and query parameters; only the host changes.
+// MassUpdateDomainHandler updates only the domain portion of sub_url for ALL nodes. Each node keeps its existing path/token and query parameters; only the host changes.
 func (a *API) MassUpdateDomainHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -643,9 +620,7 @@ func (a *API) DeleteNodeHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// PurgeOfflineNodesHandler deletes nodes that have been offline for more than
-// the given number of days (default 7). Used to clean up ghost rows from
-// reinstalled/removed machines.
+// PurgeOfflineNodesHandler deletes nodes that have been offline for more than the given number of days (default 7). Used to clean up ghost rows from reinstalled/removed machines.
 func (a *API) PurgeOfflineNodesHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermPurgeNodes) {
 		return
@@ -703,9 +678,7 @@ func (a *API) AssignNodeToUserHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// UpdateClientFilesHandler queues an "update_client_files" command for all
-// nodes (or a single node when node_id is provided). The agent downloads the
-// latest client files from the sub-domain and performs a graceful restart.
+// UpdateClientFilesHandler queues an "update_client_files" command for all nodes (or a single node when node_id is provided). The agent downloads the latest client files from the sub-domain and performs a graceful restart.
 func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermUpdateClient) {
 		return
@@ -774,9 +747,7 @@ func (a *API) UpdateClientFilesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// MassUpdateSubscriptionsHandler queues an "update_sub" command for ALL nodes
-// (their existing sub_url is kept; each agent just re-fetches + re-applies the
-// latest subscription). Used by the "Refresh All Subscriptions" dashboard button.
+// MassUpdateSubscriptionsHandler queues an "update_sub" command for ALL nodes (their existing sub_url is kept; each agent just re-fetches + re-applies the latest subscription). Used by the "Refresh All Subscriptions" dashboard button.
 func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -816,8 +787,7 @@ func (a *API) MassUpdateSubscriptionsHandler(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// RenameNodeHandler renames a node from the web dashboard.
-// Body: {"name": "new-name"} (permission can_rename_node)
+// RenameNodeHandler renames a node from the web dashboard. Body: {"name": "new-name"} (permission can_rename_node)
 func (a *API) RenameNodeHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermRenameNode) {
 		return
@@ -855,8 +825,7 @@ func (a *API) RenameNodeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AgentRenameNodeHandler renames a node using agent-token auth (used by the
-// local fleet-cli). Body: {"id": "...", "name": "..."}
+// AgentRenameNodeHandler renames a node using agent-token auth (used by the local fleet-cli). Body: {"id": "...", "name": "..."}
 func (a *API) AgentRenameNodeHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ID   string `json:"id"`
@@ -886,9 +855,7 @@ func (a *API) AgentRenameNodeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// TerminateNodeHandler queues a "terminate" command for a node. The agent
-// reports status "Terminated", tears down its engine containers, wipes its
-// local state and exits (self-destruct).
+// TerminateNodeHandler queues a "terminate" command for a node. The agent reports status "Terminated", tears down its engine containers, wipes its local state and exits (self-destruct).
 func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermTerminateNode) {
 		return
@@ -923,8 +890,7 @@ func (a *API) TerminateNodeHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ClearCommandHandler removes a queued (not yet fetched) pending command for a
-// node, so a task can be cancelled from the web UI before the agent picks it up.
+// ClearCommandHandler removes a queued (not yet fetched) pending command for a node, so a task can be cancelled from the web UI before the agent picks it up.
 func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermSwitchVPN) {
 		return
@@ -955,11 +921,7 @@ func (a *API) ClearCommandHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Log Fetching Handlers ---
 
-// GetNodeLogsHandler returns the latest docker log tail for a node's
-// container. It queues a fresh "get_logs" command so the agent runs
-// `docker logs --tail 100 <container>` on its next poll, then returns the
-// most recent stored logs for that container.
-// Query param: container=node-agent|xray-node|singbox-node (default node-agent)
+// GetNodeLogsHandler returns the latest docker log tail for a node's container. It queues a fresh "get_logs" command so the agent runs `docker logs --tail 100 <container>` on its next poll, then returns the most recent stored logs for that container. Query param: container=node-agent|xray-node|singbox-node (default node-agent)
 func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermViewNodeLogs) {
 		return
@@ -985,9 +947,7 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	messageID := time.Now().Unix()
 
-	// Only queue a fresh get_logs command when no other command is already
-	// pending. Otherwise the frontend's logs polling (every few seconds) would
-	// clobber queued switch/terminate/etc. commands with its own request.
+	// Only queue a fresh get_logs command when no other command is already pending. Otherwise the frontend's logs polling (every few seconds) would clobber queued switch/terminate/etc. commands with its own request.
 	if existing, err := a.repo.GetPendingCommand(nodeID); err == nil && existing == "" {
 		if err := a.repo.SetPendingCommand(nodeID, string(command), messageID); err != nil {
 			log.Printf("ERROR: Failed to queue get_logs for node %s: %v", nodeID, err)
@@ -997,9 +957,7 @@ func (a *API) GetNodeLogsHandler(w http.ResponseWriter, r *http.Request) {
 	logsMap := map[string]string{}
 	if raw, err := a.repo.GetNodeLogs(nodeID); err == nil && raw != "" {
 		if err := json.Unmarshal([]byte(raw), &logsMap); err != nil {
-			// Never serve an empty screen on corrupt/legacy data: surface the
-			// raw stored text as the requested container's log so the operator
-			// sees the real content instead of a silent "no logs".
+			// Never serve an empty screen on corrupt/legacy data: surface the raw stored text as the requested container's log so the operator sees the real content instead of a silent "no logs".
 			log.Printf("WARN: node_logs for %s is not a JSON map (%v); serving raw", nodeID, err)
 			logsMap[container] = raw
 		}

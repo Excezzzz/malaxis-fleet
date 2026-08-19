@@ -20,11 +20,7 @@ import (
 
 // --- Public API: node onboarding (BotManager interface) ---
 
-// NotifyNewNode sends an instant onboarding notification to the admin the
-// moment a brand-new device registers for the first time. When the agent
-// already reported subscription URL(s) on its first poll, the message carries
-// an "Approve & Fetch Config" quick action; otherwise it offers to set the
-// sub URLs manually. Both variants include the reject (queues a terminate).
+// NotifyNewNode sends an instant onboarding notification to the admin the moment a brand-new device registers for the first time. When the agent already reported subscription URL(s) on its first poll, the message carries an "Approve & Fetch Config" quick action; otherwise it offers to set the sub URLs manually. Both variants include the reject (queues a terminate).
 func (b *Bot) NotifyNewNode(id, name, ipLan string, subURLs []string) {
 	b.mu.Lock()
 	api := b.api
@@ -96,10 +92,7 @@ func (b *Bot) NotifyNewNode(id, name, ipLan string, subURLs []string) {
 	}
 }
 
-// handleApproveNode is the onboarding "Approve & Fetch Config" action: the
-// agent already reported subscription URL(s) on its first poll, so we simply
-// queue an update_sub command against them. Mirrors the tail of the manual
-// set-sub-URL flow.
+// handleApproveNode is the onboarding "Approve & Fetch Config" action: the agent already reported subscription URL(s) on its first poll, so we simply queue an update_sub command against them. Mirrors the tail of the manual set-sub-URL flow.
 func (b *Bot) handleApproveNode(chatID int64, messageID int, nodeID string) {
 	node, err := b.repo.GetNodeByID(nodeID)
 	if err != nil {
@@ -185,9 +178,7 @@ func (b *Bot) handleNodeList(chatID int64, messageID int) {
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// showNodeListFresh sends a brand new node list menu (used by the /nodes slash
-// command): the old menu message is deleted and a fresh one is placed at the
-// bottom of the chat.
+// showNodeListFresh sends a brand new node list menu (used by the /nodes slash command): the old menu message is deleted and a fresh one is placed at the bottom of the chat.
 func (b *Bot) showNodeListFresh(chatID int64) {
 	text, markup := b.buildNodeListContent()
 	b.sendFreshMenu(chatID, text, &markup)
@@ -279,10 +270,7 @@ func (b *Bot) handleLogsMenu(chatID int64, messageID int, nodeID string) {
 // allowedLogContainers are the node containers selectable in the log viewer.
 var allowedLogContainers = map[string]bool{"node-agent": true, "xray-node": true, "singbox-node": true}
 
-// showContainerLogs displays the stored log tail for a node container. It
-// queues a fresh get_logs command (only when nothing else is pending) so the
-// agent uploads the newest tail on its next poll, then renders the most recent
-// stored output. Mirrors the web dashboard's log viewer.
+// showContainerLogs displays the stored log tail for a node container. It queues a fresh get_logs command (only when nothing else is pending) so the agent uploads the newest tail on its next poll, then renders the most recent stored output. Mirrors the web dashboard's log viewer.
 func (b *Bot) showContainerLogs(chatID int64, messageID int, nodeID, container string) {
 	if !allowedLogContainers[container] {
 		b.handleLogsMenu(chatID, messageID, nodeID)
@@ -330,8 +318,7 @@ func (b *Bot) showContainerLogs(chatID int64, messageID int, nodeID, container s
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// handleQueueMenu shows the node's pending task with a cancel action, or the
-// "no pending tasks" state when the queue is empty.
+// handleQueueMenu shows the node's pending task with a cancel action, or the "no pending tasks" state when the queue is empty.
 func (b *Bot) handleQueueMenu(chatID int64, messageID int, nodeID string) {
 	pending, err := b.repo.GetPendingCommand(nodeID)
 	if err != nil {
@@ -362,8 +349,7 @@ func (b *Bot) handleQueueMenu(chatID int64, messageID int, nodeID string) {
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// handleQueueCancel clears the node's pending command (executes clear-command
-// in PostgreSQL) and confirms the result on the message.
+// handleQueueCancel clears the node's pending command (executes clear-command in PostgreSQL) and confirms the result on the message.
 func (b *Bot) handleQueueCancel(chatID int64, messageID int, nodeID string) {
 	if err := b.repo.ClearPendingCommand(nodeID); err != nil {
 		log.Printf("Bot: failed to clear pending command for node %s: %v", nodeID, err)
@@ -381,9 +367,7 @@ func (b *Bot) handleQueueCancel(chatID int64, messageID int, nodeID string) {
 	b.editMessage(chatID, messageID, "✅ <b>"+b.tr("Ожидаемая задача отменена.", "Pending task cancelled.")+"</b>", &markup)
 }
 
-// handleRefreshSub queues an update_sub command against the node's current
-// (master-synced) subscription URLs, forcing the agent to re-download and
-// re-parse its subscription on the next poll.
+// handleRefreshSub queues an update_sub command against the node's current (master-synced) subscription URLs, forcing the agent to re-download and re-parse its subscription on the next poll.
 func (b *Bot) handleRefreshSub(chatID int64, messageID int, nodeID string) {
 	command, _ := json.Marshal(map[string]interface{}{"action": "update_sub"})
 	messageIDTs := time.Now().Unix()
@@ -397,8 +381,7 @@ func (b *Bot) handleRefreshSub(chatID int64, messageID int, nodeID string) {
 	b.showNodeDetail(chatID, messageID, nodeID, "✅ "+b.tr("Обновление подписок поставлено в очередь.", "Subscription refresh queued."))
 }
 
-// sortedKeys returns the keys of m in a stable (sorted) order so VPN menus
-// render provider groups deterministically.
+// sortedKeys returns the keys of m in a stable (sorted) order so VPN menus render provider groups deterministically.
 func sortedKeys(m map[string][]string) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
@@ -434,11 +417,7 @@ func (b *Bot) handleVpnMenu(chatID int64, messageID int, nodeID string) {
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Баланс", "Balanced"), "⚖️", emojis), "node:switch:"+nodeID+":balanced"),
 		),
 	)
-	// v1.2.2: the agent reports available_servers as an object grouped by
-	// provider {provider: [server, ...]}, so the menu renders one non-clickable
-	// separator row "[ ➖ Provider Name ➖ ]" before each group (callback data
-	// "ignore" — silently acked, never matched). Provider-less legacy entries
-	// render without a separator.
+	// v1.2.2: the agent reports available_servers as an object grouped by provider {provider: [server, ...]}, so the menu renders one non-clickable separator row "[ ➖ Provider Name ➖ ]" before each group (callback data "ignore" — silently acked, never matched). Provider-less legacy entries render without a separator.
 	for _, provider := range sortedKeys(node.AvailableServers) {
 		servers := node.AvailableServers[provider]
 		if provider != "" {
@@ -501,8 +480,7 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	state := b.getState(chatID)
 	b.clearState(chatID)
 
-	// v1.2.0: accept one or MORE subscription URLs, separated by spaces,
-	// newlines or commas.
+	// v1.2.0: accept one or MORE subscription URLs, separated by spaces, newlines or commas.
 	rawParts := strings.FieldsFunc(text, func(r rune) bool {
 		return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == ','
 	})
@@ -542,8 +520,7 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 	command["sub_url"] = subURLs[0]
 	cmdJSON, _ := json.Marshal(command)
 	messageID := time.Now().Unix()
-	// Single atomic UPDATE: sub_urls and the queued update_sub command are
-	// committed together, so the agent is always triggered to fetch servers.
+	// Single atomic UPDATE: sub_urls and the queued update_sub command are committed together, so the agent is always triggered to fetch servers.
 	if err := b.repo.UpdateNodeSubURLsAndQueue(state.NodeID, subURLs, string(cmdJSON), messageID); err != nil {
 		log.Printf("Bot: failed to update sub_urls and queue update_sub for node %s: %v", state.NodeID, err)
 		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить URL подписки.", "Failed to update subscription URLs.")+"</b>", b.cancelMarkup())
@@ -552,8 +529,7 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 
 	b.audit.Log("telegram_bot", audit.ActionUpdateDevice, state.NodeID, "Updated subscription URLs to "+strings.Join(subURLs, ", ")+" (via Telegram bot)")
 
-	// Onboarding-style success: keep the message compact and offer a path back
-	// to the full node detail view.
+	// Onboarding-style success: keep the message compact and offer a path back to the full node detail view.
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.btn("💻", "Детали узла", "View Node Details"), "node:detail:"+state.NodeID),
@@ -568,9 +544,7 @@ func (b *Bot) processSetSubText(chatID int64, text string) {
 		&markup)
 }
 
-// subURLReachable checks that a subscription URL is well-formed (http/https,
-// no embedded credentials) and actually reachable (5s timeout, HTTP < 400)
-// before the bot saves it.
+// subURLReachable checks that a subscription URL is well-formed (http/https, no embedded credentials) and actually reachable (5s timeout, HTTP < 400) before the bot saves it.
 func subURLReachable(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	u, err := url.Parse(raw)
@@ -658,9 +632,7 @@ func (b *Bot) handleSwitch(chatID int64, messageID int, nodeID, target string) {
 	b.showNodeDetail(chatID, messageID, nodeID, "🛡️ "+b.tr("Переключение на", "Switch to")+" <b>"+target+"</b> "+b.tr("поставлено в очередь", "queued"))
 }
 
-// backToNodesMarkup is the standard "🔙 Back to Nodes List" footer row, used
-// after a node was deleted/rejected so the admin returns to the node list
-// (the deleted node can no longer render its detail view).
+// backToNodesMarkup is the standard "🔙 Back to Nodes List" footer row, used after a node was deleted/rejected so the admin returns to the node list (the deleted node can no longer render its detail view).
 func (b *Bot) backToNodesMarkup() *tgbotapi.InlineKeyboardMarkup {
 	markup := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -670,10 +642,7 @@ func (b *Bot) backToNodesMarkup() *tgbotapi.InlineKeyboardMarkup {
 	return &markup
 }
 
-// handleRejectNode is the onboarding "Reject & Delete" action. Instead of only
-// dropping the DB row, it queues a full TERMINATE command so the unwanted
-// client actually stops its Docker containers and destroys its local config on
-// its next poll. The DB row is left for the offline-cleanup cron to reap.
+// handleRejectNode is the onboarding "Reject & Delete" action. Instead of only dropping the DB row, it queues a full TERMINATE command so the unwanted client actually stops its Docker containers and destroys its local config on its next poll. The DB row is left for the offline-cleanup cron to reap.
 func (b *Bot) handleRejectNode(chatID int64, messageID int, nodeID string) {
 	name := b.nodeLabel(nodeID)
 	command, _ := json.Marshal(map[string]string{"action": "terminate"})
@@ -696,8 +665,7 @@ func (b *Bot) handleRejectNode(chatID int64, messageID int, nodeID string) {
 		b.backToNodesMarkup())
 }
 
-// handleSoftDelete is the node-menu "Soft Delete" action: it removes the DB
-// row only, without touching the client (for nodes you simply want gone).
+// handleSoftDelete is the node-menu "Soft Delete" action: it removes the DB row only, without touching the client (for nodes you simply want gone).
 func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 	name := b.nodeLabel(nodeID)
 	if err := b.repo.DeleteNode(nodeID); err != nil {
@@ -711,9 +679,7 @@ func (b *Bot) handleSoftDelete(chatID int64, messageID int, nodeID string) {
 		b.backToNodesMarkup())
 }
 
-// handleRefreshAllSubs mirrors the web UI "Refresh All Subscriptions" action:
-// it queues an update_sub command for EVERY node (each agent re-fetches and
-// re-applies its existing subscription URL). No URL input is requested.
+// handleRefreshAllSubs mirrors the web UI "Refresh All Subscriptions" action: it queues an update_sub command for EVERY node (each agent re-fetches and re-applies its existing subscription URL). No URL input is requested.
 func (b *Bot) handleRefreshAllSubs(chatID int64, messageID int) {
 	nodes, err := b.repo.GetAllNodes()
 	if err != nil {
@@ -744,12 +710,7 @@ func (b *Bot) handleRefreshAllSubs(chatID int64, messageID int) {
 func (b *Bot) handleOtaAll(chatID int64, messageID int) {
 	baseURL := "https://" + b.cfg.SubDomain
 	token := b.cfg.FleetSecret
-	// Tokenized download URLs: every payload endpoint on the sub-domain
-	// requires ?t=<SECRET_TOKEN> (payloadTokenGuard serves a fake nginx 404
-	// otherwise), so OTA silently failed before the token was added. The
-	// pkg_url field (agent_src.zip) is required by the agent to update its
-	// own Python package; the web handler (UpdateClientFilesHandler) sets the
-	// exact same fields.
+	// Tokenized download URLs: every payload endpoint on the sub-domain requires ?t=<SECRET_TOKEN> (payloadTokenGuard serves a fake nginx 404 otherwise), so OTA silently failed before the token was added. The pkg_url field (agent_src.zip) is required by the agent to update its own Python package; the web handler (UpdateClientFilesHandler) sets the exact same fields.
 	command, _ := json.Marshal(map[string]string{
 		"action":         "update_client_files",
 		"agent_url":      baseURL + "/node_agent.py?t=" + token,

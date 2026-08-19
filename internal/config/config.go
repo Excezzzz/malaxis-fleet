@@ -117,11 +117,7 @@ func getStringDefault(key string, defaultValue string) string {
 		return defaultValue
 	}
 	value = strings.TrimSpace(value)
-	// Unwrap surrounding quotes ONLY when the value is fully wrapped in
-	// matching quotes. This preserves passwords containing special characters
-	// (backticks, quotes, etc.) while still handling the common
-	// ADMIN_PASS="admin" form used in .env files. A value that merely
-	// *contains* a quote is left untouched.
+	// Unwrap surrounding quotes ONLY when the value is fully wrapped in matching quotes. This preserves passwords containing special characters (backticks, quotes, etc.) while still handling the common ADMIN_PASS="admin" form used in .env files. A value that merely *contains* a quote is left untouched.
 	if len(value) >= 2 {
 		first, last := value[0], value[len(value)-1]
 		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {

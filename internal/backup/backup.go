@@ -85,10 +85,7 @@ func (e *Engine) CreateBackup() (string, error) {
 	return zipFilePath, nil
 }
 
-// CreateGzipBackup dumps the PostgreSQL database with pg_dump and compresses
-// the resulting .sql dump with gzip. Returns the path of the .sql.gz file
-// stored inside the backups directory. Used by the Telegram bot so a single
-// gzipped file can be sent as a Telegram document.
+// CreateGzipBackup dumps the PostgreSQL database with pg_dump and compresses the resulting .sql dump with gzip. Returns the path of the .sql.gz file stored inside the backups directory. Used by the Telegram bot so a single gzipped file can be sent as a Telegram document.
 func (e *Engine) CreateGzipBackup() (string, error) {
 	if err := os.MkdirAll(e.backupDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create backup directory: %w", err)

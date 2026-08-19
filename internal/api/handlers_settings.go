@@ -67,8 +67,7 @@ func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	token, _ := a.repo.GetSetting("tg_bot_token")
 	chatIDStr, _ := a.repo.GetSetting("tg_admin_chat_id")
 
-	// Fall back to the env-configured values when the DB keys are empty, so the
-	// dashboard always reflects the token/chat_id the bot actually runs with.
+	// Fall back to the env-configured values when the DB keys are empty, so the dashboard always reflects the token/chat_id the bot actually runs with.
 	if token == "" {
 		token = a.config.BotToken
 	}
@@ -88,8 +87,7 @@ func (a *API) GetBotSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetUserPreferencesHandler returns the current user's personalization
-// settings (accent color, theme mode, language, bot emoji rendering).
+// GetUserPreferencesHandler returns the current user's personalization settings (accent color, theme mode, language, bot emoji rendering).
 func (a *API) GetUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
 	if !ok {
@@ -108,8 +106,7 @@ func (a *API) GetUserPreferencesHandler(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(prefs)
 }
 
-// UpdateUserPreferencesHandler updates the current user's personalization
-// settings. Invalid values are silently replaced with the defaults.
+// UpdateUserPreferencesHandler updates the current user's personalization settings. Invalid values are silently replaced with the defaults.
 func (a *API) UpdateUserPreferencesHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
 	if !ok {
@@ -154,8 +151,7 @@ func strSliceContains(list []string, v string) bool {
 	return false
 }
 
-// ResetBotAvatarHandler re-uploads the embedded default profile photo of the
-// Telegram bot on demand.
+// ResetBotAvatarHandler re-uploads the embedded default profile photo of the Telegram bot on demand.
 func (a *API) ResetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireOwner(w, r) {
 		return
@@ -179,9 +175,7 @@ func (a *API) ResetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// SetBotAvatarHandler applies one of the five themed avatar colors to the
-// Telegram bot's profile photo (owner only). The chosen color is persisted in
-// the settings table and re-applied automatically on every bot start.
+// SetBotAvatarHandler applies one of the five themed avatar colors to the Telegram bot's profile photo (owner only). The chosen color is persisted in the settings table and re-applied automatically on every bot start.
 func (a *API) SetBotAvatarHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireOwner(w, r) {
 		return
@@ -304,8 +298,7 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		backupIntervalHours = v
 	}
 
-	// Fall back to env-configured values so the settings page always reflects
-	// the token/chat_id the bot actually runs with.
+	// Fall back to env-configured values so the settings page always reflects the token/chat_id the bot actually runs with.
 	if botToken == "" {
 		botToken = a.config.BotToken
 	}
@@ -335,10 +328,7 @@ func (a *API) GetSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateBackupSettingsHandler updates the automated-backup settings: routing
-// (local / Telegram) and the backup interval in hours (owner only). The values
-// are persisted in the settings table and consumed by the backup scheduler
-// inside the bot, which re-reads them on every cycle.
+// UpdateBackupSettingsHandler updates the automated-backup settings: routing (local / Telegram) and the backup interval in hours (owner only). The values are persisted in the settings table and consumed by the backup scheduler inside the bot, which re-reads them on every cycle.
 func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.requireOwner(w, r) {
 		return
@@ -398,9 +388,7 @@ func (a *API) UpdateBackupSettingsHandler(w http.ResponseWriter, r *http.Request
 }
 
 func (a *API) DownloadBackupHandler(w http.ResponseWriter, r *http.Request) {
-	// Defense-in-depth: DB backups contain user hashes, session secrets and
-	// tokens, so access is hardcoded to the owner role regardless of any
-	// permission list. The router additionally enforces RequireOwner.
+	// Defense-in-depth: DB backups contain user hashes, session secrets and tokens, so access is hardcoded to the owner role regardless of any permission list. The router additionally enforces RequireOwner.
 	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
 	if !ok || userID == 0 {
 		http.Error(w, "Unauthorized: Not authenticated", http.StatusUnauthorized)
@@ -449,11 +437,7 @@ func (a *API) GetAuditLogsHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(logs)
 }
 
-// GetMasterLogsHandler returns the last 100 lines of a master server container's
-// logs (used by the "Logs & Audit" tab). The container is chosen via the
-// `?container=` query param (fleet-master, fleet-postgres, ...; default
-// fleet-master) and read from `docker logs` so the real output is shown.
-// For fleet-master, a configured log file (MasterLogFile) is preferred.
+// GetMasterLogsHandler returns the last 100 lines of a master server container's logs (used by the "Logs & Audit" tab). The container is chosen via the `?container=` query param (fleet-master, fleet-postgres, ...; default fleet-master) and read from `docker logs` so the real output is shown. For fleet-master, a configured log file (MasterLogFile) is preferred.
 func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermViewMasterLogs) {
 		return
@@ -464,10 +448,7 @@ func (a *API) GetMasterLogsHandler(w http.ResponseWriter, r *http.Request) {
 		container = "fleet-master"
 	}
 
-	// Security hardening: only a whitelisted set of master containers may be
-	// inspected. This keeps the `docker logs <container>` invocation (exec.Command
-	// with user-supplied args) from being used to read arbitrary container logs
-	// or, in a crafted case, reaching paths the Logs & Audit tab should not touch.
+	// Security hardening: only a whitelisted set of master containers may be inspected. This keeps the `docker logs <container>` invocation (exec.Command with user-supplied args) from being used to read arbitrary container logs or, in a crafted case, reaching paths the Logs & Audit tab should not touch.
 	allowedMasterContainers := map[string]bool{
 		"fleet-master":   true,
 		"fleet-postgres": true,

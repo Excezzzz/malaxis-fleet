@@ -97,18 +97,14 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		req.Role = domain.RoleClient
 	}
 
-	// ROLE HIERARCHY: an actor may only create users whose role rank is
-	// STRICTLY LOWER than their own. Creating a user with an equal or higher
-	// rank (e.g. an admin creating another admin, or a client escalating to
-	// owner) is forbidden.
+	// ROLE HIERARCHY: an actor may only create users whose role rank is STRICTLY LOWER than their own. Creating a user with an equal or higher rank (e.g. an admin creating another admin, or a client escalating to owner) is forbidden.
 	actorRank := a.roleRank(actorUser.Role)
 	if a.roleRank(req.Role) >= actorRank {
 		a.writeForbidden(w, "Forbidden: Cannot create users with equal or higher role rank")
 		return
 	}
 
-	// The owner role is reserved for the original seeded admin account. Nobody
-	// (not even the owner) may create additional owner accounts.
+	// The owner role is reserved for the original seeded admin account. Nobody (not even the owner) may create additional owner accounts.
 	if req.Role == domain.RoleOwner {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -207,17 +203,13 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	isSelf := actorID == id
 
 	if isSelf {
-		// Self-editing is allowed for username, password and color, but the
-		// RBAC self-demotion protection still holds: nobody may change their
-		// own role through this endpoint.
+		// Self-editing is allowed for username, password and color, but the RBAC self-demotion protection still holds: nobody may change their own role through this endpoint.
 		if req.Role != "" || req.RoleID != nil {
 			a.writeForbidden(w, "Forbidden: Cannot change your own role")
 			return
 		}
 	} else {
-		// ROLE HIERARCHY: an actor may only edit a target whose role rank is
-		// STRICTLY LOWER than their own. Editing an equal/higher rank (an admin
-		// demoting another admin, or anything touching the owner) is forbidden.
+		// ROLE HIERARCHY: an actor may only edit a target whose role rank is STRICTLY LOWER than their own. Editing an equal/higher rank (an admin demoting another admin, or anything touching the owner) is forbidden.
 		if a.roleRank(user.Role) >= a.roleRank(actorUser.Role) {
 			a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
 			return
@@ -243,8 +235,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if req.Role != "" {
-			// An actor may not grant a target a role with an equal/higher rank
-			// than themselves, even when the target currently ranks lower.
+			// An actor may not grant a target a role with an equal/higher rank than themselves, even when the target currently ranks lower.
 			if a.roleRank(req.Role) >= a.roleRank(actorUser.Role) {
 				a.writeForbidden(w, "Forbidden: Cannot assign a role with equal or higher role rank")
 				return
@@ -252,9 +243,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 			user.Role = req.Role
 		}
 
-		// Owner role protection: the original admin account (seeded by
-		// UpsertAdminUser) is the sole owner and cannot be demoted; no other user
-		// may ever be assigned the owner role.
+		// Owner role protection: the original admin account (seeded by UpsertAdminUser) is the sole owner and cannot be demoted; no other user may ever be assigned the owner role.
 		if user.Role == domain.RoleOwner {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusForbidden)
@@ -267,8 +256,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 		user.ColorHex = req.ColorHex
 	}
 
-	// A user may rename themselves (or an admin a lower-rank user) via the
-	// management endpoint; username conflicts are rejected explicitly.
+	// A user may rename themselves (or an admin a lower-rank user) via the management endpoint; username conflicts are rejected explicitly.
 	if req.Username != "" && req.Username != user.Username {
 		if existing, errUniq := a.repo.GetUserByUsername(req.Username); errUniq == nil && existing != nil && existing.ID != id {
 			w.Header().Set("Content-Type", "application/json")
@@ -360,9 +348,7 @@ func (a *API) DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE HIERARCHY: an actor may only delete a user whose role rank is
-	// STRICTLY LOWER than their own. This protects the owner account and any
-	// equal-or-higher-rank colleague from lower-rank deletion.
+	// ROLE HIERARCHY: an actor may only delete a user whose role rank is STRICTLY LOWER than their own. This protects the owner account and any equal-or-higher-rank colleague from lower-rank deletion.
 	actorUser, errAct := a.repo.GetUserByID(actorID)
 	if errAct == nil && a.roleRank(user.Role) >= a.roleRank(actorUser.Role) {
 		a.writeForbidden(w, "Forbidden: Cannot delete users with equal or higher role rank")
@@ -423,8 +409,7 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE HIERARCHY: password resets count as modification. An actor may
-	// only reset passwords of users ranking strictly lower than themselves.
+	// ROLE HIERARCHY: password resets count as modification. An actor may only reset passwords of users ranking strictly lower than themselves.
 	if a.roleRank(targetUser.Role) >= a.roleRank(actorUser.Role) {
 		a.writeForbidden(w, "Forbidden: Cannot modify users with equal or higher role rank")
 		return
@@ -480,9 +465,7 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE RANK ENFORCEMENT: the actor may only create roles ranked STRICTLY
-	// LOWER than their own role. A custom role with a rank >= actor rank could
-	// be granted to peers, breaking the hierarchy.
+	// ROLE RANK ENFORCEMENT: the actor may only create roles ranked STRICTLY LOWER than their own role. A custom role with a rank >= actor rank could be granted to peers, breaking the hierarchy.
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	actorUser, err := a.repo.GetUserByID(actorID)
 	if err != nil {
@@ -499,8 +482,7 @@ func (a *API) CreateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Escalation guard: an actor may never grant permissions they do not
-	// hold themselves (owner/admin bypass via enforcePermission).
+	// Escalation guard: an actor may never grant permissions they do not hold themselves (owner/admin bypass via enforcePermission).
 	if !a.rolePermissionsAllowed(w, r, req.PermissionsJSON) {
 		return
 	}
@@ -596,10 +578,7 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE RANK ENFORCEMENT:
-	//  - The owner role (rank 100) is completely immutable: nobody may
-	//    re-rank or otherwise modify it.
-	//  - An actor may only modify roles ranked STRICTLY LOWER than their own.
+	// ROLE RANK ENFORCEMENT: - The owner role (rank 100) is completely immutable: nobody may re-rank or otherwise modify it. - An actor may only modify roles ranked STRICTLY LOWER than their own.
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	actorUser, err := a.repo.GetUserByID(actorID)
 	if err != nil {
@@ -626,8 +605,7 @@ func (a *API) UpdateCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Escalation guard: an actor may never grant permissions they do not
-	// hold themselves (owner/admin bypass via enforcePermission).
+	// Escalation guard: an actor may never grant permissions they do not hold themselves (owner/admin bypass via enforcePermission).
 	if req.PermissionsJSON != "" && !a.rolePermissionsAllowed(w, r, req.PermissionsJSON) {
 		return
 	}
@@ -681,10 +659,7 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ROLE RANK ENFORCEMENT: the owner role (rank 100) is immutable and may
-	// never be deleted. Every other role - including the built-in admin,
-	// client and viewer roles - can be deleted by an actor whose rank is
-	// STRICTLY higher, per the mathematical hierarchy.
+	// ROLE RANK ENFORCEMENT: the owner role (rank 100) is immutable and may never be deleted. Every other role - including the built-in admin, client and viewer roles - can be deleted by an actor whose rank is STRICTLY higher, per the mathematical hierarchy.
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	actorUser, err := a.repo.GetUserByID(actorID)
 	if err != nil {
@@ -723,10 +698,7 @@ func (a *API) DeleteCustomRoleHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// rolePermissionsAllowed verifies that none of the granted permissions in
-// permissionsJSON exceed the actor's own granted permissions. Used to prevent
-// role-creation privilege escalation: a manager may only hand out permissions
-// they hold themselves.
+// rolePermissionsAllowed verifies that none of the granted permissions in permissionsJSON exceed the actor's own granted permissions. Used to prevent role-creation privilege escalation: a manager may only hand out permissions they hold themselves.
 func (a *API) rolePermissionsAllowed(w http.ResponseWriter, r *http.Request, permissionsJSON string) bool {
 	if permissionsJSON == "" {
 		return true

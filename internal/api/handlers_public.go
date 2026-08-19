@@ -7,8 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sort"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,9 +21,7 @@ import (
 
 // --- Public Handlers ---
 
-// stripUTF8BOM removes a leading UTF-8 byte order mark (EF BB BF) from a
-// payload. Windows PowerShell's Invoke-Expression chokes on the BOM bytes
-// ("ï»¿#"), so served scripts must never start with it.
+// stripUTF8BOM removes a leading UTF-8 byte order mark (EF BB BF) from a payload. Windows PowerShell's Invoke-Expression chokes on the BOM bytes ("ï»¿#"), so served scripts must never start with it.
 func stripUTF8BOM(b []byte) []byte {
 	if len(b) >= 3 && bytes.Equal(b[:3], []byte{0xEF, 0xBB, 0xBF}) {
 		return b[3:]
@@ -31,24 +29,17 @@ func stripUTF8BOM(b []byte) []byte {
 	return b
 }
 
-// stripCRLF removes every carriage-return byte from a payload. Shell scripts
-// edited on Windows are saved with CRLF line endings, which makes Bash on
-// Linux clients misparse lines such as `set -o pipefail\r` (": invalid option
-// namepipefail", "curl: (23) Failed writing body"). The master server always
-// serves .sh/.bash files with clean Unix LF endings no matter how the
-// developer saved them.
+// stripCRLF removes every carriage-return byte from a payload. Shell scripts edited on Windows are saved with CRLF line endings, which makes Bash on Linux clients misparse lines such as `set -o pipefail\r` (": invalid option namepipefail", "curl: (23) Failed writing body"). The master server always serves .sh/.bash files with clean Unix LF endings no matter how the developer saved them.
 func stripCRLF(b []byte) []byte {
 	return bytes.ReplaceAll(b, []byte("\r"), []byte(""))
 }
 
-// isShellScript reports whether a served file name is a POSIX shell script
-// that must be served with Unix LF line endings.
+// isShellScript reports whether a served file name is a POSIX shell script that must be served with Unix LF line endings.
 func isShellScript(filename string) bool {
 	return strings.HasSuffix(filename, ".sh") || strings.HasSuffix(filename, ".bash")
 }
 
-// HealthHandler answers with a deliberately generic probe-friendly response.
-// No application identity, database status, or bot state is disclosed.
+// HealthHandler answers with a deliberately generic probe-friendly response. No application identity, database status, or bot state is disclosed.
 func (a *API) HealthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
@@ -88,16 +79,12 @@ func (a *API) serveDockerCompose(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(content))
 }
 
-// serveAgentPackage builds a zip archive of the modular agent package
-// (deploy/agent_src) on the fly and serves it. Used by the installers and the
-// agent's own OTA update_client_files flow.
+// serveAgentPackage builds a zip archive of the modular agent package (deploy/agent_src) on the fly and serves it. Used by the installers and the agent's own OTA update_client_files flow.
 func (a *API) serveAgentPackage(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 
-	// go:embed silently skips files whose names start with "_", so the Python
-	// package marker __init__.py is never part of the embedded FS. It must be
-	// injected explicitly or the extracted agent_src/ would not be a package.
+	// go:embed silently skips files whose names start with "_", so the Python package marker __init__.py is never part of the embedded FS. It must be injected explicitly or the extracted agent_src/ would not be a package.
 	fh := &zip.FileHeader{Name: "agent_src/__init__.py", Method: zip.Deflate}
 	fh.SetModTime(time.Now())
 	if f, err := zw.CreateHeader(fh); err == nil {
@@ -144,9 +131,7 @@ func (a *API) serveAgentPackage(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
-// listTemplateFiles dynamically scans the embedded deploy directory and
-// returns every regular file within it (top level only). Any file added to
-// internal/api/deploy automatically appears in the Web IDE.
+// listTemplateFiles dynamically scans the embedded deploy directory and returns every regular file within it (top level only). Any file added to internal/api/deploy automatically appears in the Web IDE.
 func listTemplateFiles() []string {
 	entries, err := deployFS.ReadDir("deploy")
 	if err != nil {
@@ -165,15 +150,12 @@ func listTemplateFiles() []string {
 	return names
 }
 
-// templateNameValid rejects path traversal: only a flat base name (no path
-// separators, no "..") is ever accepted.
+// templateNameValid rejects path traversal: only a flat base name (no path separators, no "..") is ever accepted.
 func templateNameValid(name string) bool {
 	return name != "" && !strings.ContainsAny(name, "/\\") && !strings.Contains(name, "..")
 }
 
-// isKnownTemplate reports whether name is a valid editable client template:
-// it must exist in the embedded deploy dir OR have a "template:" override in
-// the DB settings table.
+// isKnownTemplate reports whether name is a valid editable client template: it must exist in the embedded deploy dir OR have a "template:" override in the DB settings table.
 func (a *API) isKnownTemplate(name string) bool {
 	if !templateNameValid(name) {
 		return false
@@ -198,8 +180,7 @@ func templateKey(name string) string {
 	return "template:" + name
 }
 
-// readTemplate returns the template content, preferring a web-edited override
-// stored in the database over the embedded copy.
+// readTemplate returns the template content, preferring a web-edited override stored in the database over the embedded copy.
 func (a *API) readTemplate(name string) (string, bool) {
 	if templateNameValid(name) {
 		if override, err := a.repo.GetSetting(templateKey(name)); err == nil && override != "" {
@@ -213,10 +194,7 @@ func (a *API) readTemplate(name string) (string, bool) {
 	return string(fileBytes), true
 }
 
-// serveNodeAgent serves the node_agent.py launcher template with the active
-// SECRET_TOKEN injected. node_agent.py is a thin bootstrap that imports the
-// modular agent_src package, so single-file downloads and the legacy
-// `import node_agent` CLI contract keep working.
+// serveNodeAgent serves the node_agent.py launcher template with the active SECRET_TOKEN injected. node_agent.py is a thin bootstrap that imports the modular agent_src package, so single-file downloads and the legacy `import node_agent` CLI contract keep working.
 func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 	content, ok := a.readTemplate("node_agent.py")
 	if !ok {
@@ -244,10 +222,7 @@ func (a *API) serveNodeAgent(w http.ResponseWriter, r *http.Request) {
 	w.Write(contentBytes)
 }
 
-// InstallCommandHandler returns the exact one-line command used to onboard a
-// new node, with the join domain and fleet secret pre-filled. The secret is
-// exposed here on purpose: the route is permission-gated (can_update_client)
-// and only reachable through an authenticated web session.
+// InstallCommandHandler returns the exact one-line command used to onboard a new node, with the join domain and fleet secret pre-filled. The secret is exposed here on purpose: the route is permission-gated (can_update_client) and only reachable through an authenticated web session.
 func (a *API) InstallCommandHandler(w http.ResponseWriter, r *http.Request) {
 	if a.config.FleetSecret == "" || a.config.JoinDomain == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -267,10 +242,7 @@ func (a *API) InstallCommandHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetTemplatesHandler returns every client deployment template file stored in
-// the embedded deploy directory (dynamically scanned — no hardcoded list), plus
-// any extra overrides present in the DB settings table, with names and raw
-// contents. Web-edited overrides take precedence over the embedded copies.
+// GetTemplatesHandler returns every client deployment template file stored in the embedded deploy directory (dynamically scanned — no hardcoded list), plus any extra overrides present in the DB settings table, with names and raw contents. Web-edited overrides take precedence over the embedded copies.
 func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -304,11 +276,7 @@ func (a *API) GetTemplatesHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// UpdateTemplateHandler overwrites a client template file (validated against
-// the dynamically scanned deploy dir / DB overrides) with the content from the
-// request body. The new content is stored in the database (authoritative for
-// serving) and written to the local repo deploy dir when possible.
-// Body: {"content": "..."}
+// UpdateTemplateHandler overwrites a client template file (validated against the dynamically scanned deploy dir / DB overrides) with the content from the request body. The new content is stored in the database (authoritative for serving) and written to the local repo deploy dir when possible. Body: {"content": "..."}
 func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermEditSub) {
 		return
@@ -335,8 +303,7 @@ func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Best-effort write into the repo deploy dir so a source checkout stays in
-	// sync (on the server the running binary serves from the DB override).
+	// Best-effort write into the repo deploy dir so a source checkout stays in sync (on the server the running binary serves from the DB override).
 	if err := os.WriteFile("internal/api/deploy/"+filename, []byte(req.Content), 0o644); err != nil {
 		log.Printf("WARN: Could not write template %s to disk: %v", filename, err)
 	}
@@ -352,8 +319,7 @@ func (a *API) UpdateTemplateHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// serveTemplateFile serves a whitelisted client template, preferring the
-// web-edited DB override over the embedded copy.
+// serveTemplateFile serves a whitelisted client template, preferring the web-edited DB override over the embedded copy.
 func (a *API) serveTemplateFile(name, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		content, ok := a.readTemplate(name)

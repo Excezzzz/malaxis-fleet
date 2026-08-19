@@ -52,8 +52,7 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Auto-discovery on boot: reconcile subscription_providers with the URLs
-	// actually present on nodes (also runs after every sub_urls mutation).
+	// Auto-discovery on boot: reconcile subscription_providers with the URLs actually present on nodes (also runs after every sub_urls mutation).
 	if err := repo.SyncProviders(); err != nil {
 		log.Printf("ERROR: failed to sync subscription providers: %v", err)
 	}
@@ -111,10 +110,7 @@ func main() {
 }
 
 func createInitialAdmin(repo repository.Repository, username, password string) error {
-	// Seed the default admin only on the FIRST boot. Once any user row
-	// exists, the configured ADMIN_USER/ADMIN_PASS no longer override
-	// anything: passwords changed through the UI or the bot must survive
-	// restarts.
+	// Seed the default admin only on the FIRST boot. Once any user row exists, the configured ADMIN_USER/ADMIN_PASS no longer override anything: passwords changed through the UI or the bot must survive restarts.
 	empty, err := repo.IsUsersEmpty()
 	if err != nil {
 		return fmt.Errorf("failed to check users table: %w", err)

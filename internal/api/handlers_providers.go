@@ -12,10 +12,7 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// providerDomainFromRequest validates and normalizes a subscription provider
-// domain. Only bare hostnames are accepted: no scheme, no path/query, no user
-// info, no port (subscription URLs may use any port, but a provider mapping is
-// per-host). Returns the lowercased domain or "" when invalid.
+// providerDomainFromRequest validates and normalizes a subscription provider domain. Only bare hostnames are accepted: no scheme, no path/query, no user info, no port (subscription URLs may use any port, but a provider mapping is per-host). Returns the lowercased domain or "" when invalid.
 func providerDomainFromRequest(raw string) string {
 	raw = strings.TrimSpace(strings.ToLower(raw))
 	if raw == "" {
@@ -25,8 +22,7 @@ func providerDomainFromRequest(raw string) string {
 	if strings.Contains(raw, "://") || strings.ContainsAny(raw, "/?#@") {
 		return ""
 	}
-	// Provider mappings are keyed by subscription URL host: IP literals are
-	// meaningless for grouping and rejected.
+	// Provider mappings are keyed by subscription URL host: IP literals are meaningless for grouping and rejected.
 	if net.ParseIP(raw) != nil {
 		return ""
 	}
@@ -39,8 +35,7 @@ func providerDomainFromRequest(raw string) string {
 	return raw
 }
 
-// GetProvidersHandler lists all subscription providers. Read access requires
-// can_view_nodes so any node viewer sees the friendly names in grouped UIs.
+// GetProvidersHandler lists all subscription providers. Read access requires can_view_nodes so any node viewer sees the friendly names in grouped UIs.
 func (a *API) GetProvidersHandler(w http.ResponseWriter, r *http.Request) {
 	providers, err := a.repo.GetSubscriptionProviders()
 	if err != nil {
@@ -54,8 +49,7 @@ func (a *API) GetProvidersHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(providers)
 }
 
-// UpsertProviderHandler creates or renames a subscription provider mapping
-// (POST with a body, PUT with the domain in the URL).
+// UpsertProviderHandler creates or renames a subscription provider mapping (POST with a body, PUT with the domain in the URL).
 func (a *API) UpsertProviderHandler(w http.ResponseWriter, r *http.Request) {
 	if !a.enforcePermission(w, r, domain.PermManageProviders) {
 		return

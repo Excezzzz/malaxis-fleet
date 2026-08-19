@@ -26,15 +26,11 @@ import (
 type BotManager interface {
 	Reboot() error
 	SendAdminMessage(text string)
-	// NotifyNewNode pushes an instant onboarding notification for a freshly
-	// registered device with quick-setup inline action buttons. When the
-	// agent already reported subscription URLs on its first poll, the
-	// notification carries an "Approve & Fetch Config" button.
+	// NotifyNewNode pushes an instant onboarding notification for a freshly registered device with quick-setup inline action buttons. When the agent already reported subscription URLs on its first poll, the notification carries an "Approve & Fetch Config" button.
 	NotifyNewNode(id, name, ipLan string, subURLs []string)
 	// SetDefaultAvatar re-uploads the embedded default profile photo.
 	SetDefaultAvatar() error
-	// SetAvatarColor applies one of the five themed avatar colors and persists
-	// the choice so it is re-applied on every bot start.
+	// SetAvatarColor applies one of the five themed avatar colors and persists the choice so it is re-applied on every bot start.
 	SetAvatarColor(colorName string) error
 }
 
@@ -49,9 +45,7 @@ type API struct {
 	botManager   BotManager
 }
 
-// visitorEntry is a per-IP/per-node rate limiter with a lastSeen timestamp so
-// the visitors map can be pruned: without it every unique address (or node)
-// would accumulate an entry forever and leak memory.
+// visitorEntry is a per-IP/per-node rate limiter with a lastSeen timestamp so the visitors map can be pruned: without it every unique address (or node) would accumulate an entry forever and leak memory.
 type visitorEntry struct {
 	limiter  *rate.Limiter
 	lastSeen time.Time
@@ -90,8 +84,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	agentAPI.HandleFunc("/agent/latest", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
 	agentAPI.HandleFunc("/agent/latest.zip", payloadTokenGuard(cfg, http.HandlerFunc(api.serveAgentPackage)).ServeHTTP).Methods("GET")
 
-	// Subscription validation endpoint for client onboarding. The agent HMAC
-	// signature is mandatory: without it anyone could register fake nodes.
+	// Subscription validation endpoint for client onboarding. The agent HMAC signature is mandatory: without it anyone could register fake nodes.
 	agentAPI.Handle("/subscription/validate", api.AgentTokenMiddleware(http.HandlerFunc(api.ValidateSubscriptionHandler))).Methods("POST")
 
 	// Client API endpoints (password change, own nodes)
@@ -108,12 +101,10 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	authRoutes := webAPIRouter.PathPrefix("/auth").Subrouter()
 	authRoutes.Handle("/login", api.RateLimit(float64(cfg.LoginRateLimit)/60.0, cfg.LoginRateLimit, http.HandlerFunc(api.LoginHandler))).Methods("POST")
 	authRoutes.HandleFunc("/logout", api.LogoutHandler).Methods("POST")
-	// /me MUST run inside auth.Middleware so the user context (and thus the
-	// role/permissions in the response) is populated for the Vue dashboard.
+	// /me MUST run inside auth.Middleware so the user context (and thus the role/permissions in the response) is populated for the Vue dashboard.
 	authRoutes.Handle("/me", auth.Middleware(cfg)(http.HandlerFunc(api.MeHandler))).Methods("GET")
 
-	// Web UI routes - Vue 3 frontend compatible endpoints
-	// All /api/web/* routes are authenticated + RBAC enforced
+	// Web UI routes - Vue 3 frontend compatible endpoints All /api/web/* routes are authenticated + RBAC enforced
 
 	// GET /api/web/devices and /api/web/nodes - list all nodes (permission can_view_nodes, admin/owner bypass)
 	webAPIRouter.Handle("/web/devices", auth.Middleware(cfg)(auth.RequirePermission(repo, "can_view_nodes")(http.HandlerFunc(api.GetNodesHandler)))).Methods("GET")
@@ -202,8 +193,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	// GET /api/web/logs/master - master server logs (permission can_view_master_logs)
 	webAPIRouter.Handle("/web/logs/master", auth.Middleware(cfg)(auth.RequirePermission(repo, domain.PermViewMasterLogs)(http.HandlerFunc(api.GetMasterLogsHandler)))).Methods("GET")
 
-	// GET /api/web/backup/download - backup download (owner only; DB backups
-	// contain user hashes, session secrets and tokens)
+	// GET /api/web/backup/download - backup download (owner only; DB backups contain user hashes, session secrets and tokens)
 	webAPIRouter.Handle("/web/backup/download", auth.Middleware(cfg)(auth.RequireOwnerWithMessage(repo, "Forbidden: Backups are strictly restricted to the system Owner.")(http.HandlerFunc(api.DownloadBackupHandler)))).Methods("GET")
 
 	// POST /api/web/devices/{id}/command - send a command to a specific node (permission can_switch_vpn)
@@ -221,8 +211,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	adminAPIRoutes.HandleFunc("/nodes/{id}", api.UpdateNodeHandler).Methods("PUT")
 	adminAPIRoutes.HandleFunc("/nodes/{id}", api.DeleteNodeHandler).Methods("DELETE")
 
-	// Owner-only admin routes: user management and node->user assignment. The
-	// owner role is the ONLY role that can manage other users or roles.
+	// Owner-only admin routes: user management and node->user assignment. The owner role is the ONLY role that can manage other users or roles.
 	ownerAdminRoutes := webAPIRouter.PathPrefix("/admin").Subrouter()
 	ownerAdminRoutes.Use(auth.Middleware(cfg))
 	ownerAdminRoutes.Use(auth.RequireOwner(repo))
@@ -280,9 +269,7 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 		})
 	}
 
-	// --- Public Bootstrap Routes (token-gated payload delivery) ---
-	// All payload endpoints require ?t=<SECRET_TOKEN>; unauthenticated
-	// requests receive a generic nginx 404 page.
+	// --- Public Bootstrap Routes (token-gated payload delivery) --- All payload endpoints require ?t=<SECRET_TOKEN>; unauthenticated requests receive a generic nginx 404 page.
 	joinRouter.HandleFunc("/", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	joinRouter.HandleFunc("/join.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/join.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	joinRouter.HandleFunc("/join.ps1", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/join.ps1", "text/x-powershell"))).ServeHTTP).Methods("GET")
@@ -294,20 +281,14 @@ func RegisterRoutes(router *mux.Router, repo repository.Repository, cfg *config.
 	subRouter.HandleFunc("/requirements.txt", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("requirements.txt", "text/plain"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/entrypoint.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("entrypoint.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/node_agent.py", payloadTokenGuard(cfg, http.HandlerFunc(api.serveNodeAgent)).ServeHTTP).Methods("GET")
-	// /agent_src.zip is the OTA package endpoint: UpdateClientFilesHandler
-	// commands every agent to download the zip from the sub-domain
-	// (<SUB_DOMAIN>/agent_src.zip?t=<secret>). The route was only ever
-	// registered on the API domain (/api/agent/latest.zip), so agents fetched
-	// a 404 page instead of the archive and every OTA update failed with
-	// "BadZipFile". Registered here alongside the other client payloads.
+	// /agent_src.zip is the OTA package endpoint: UpdateClientFilesHandler commands every agent to download the zip from the sub-domain (<SUB_DOMAIN>/agent_src.zip?t=<secret>). The route was only ever registered on the API domain (/api/agent/latest.zip), so agents fetched a 404 page instead of the archive and every OTA update failed with "BadZipFile". Registered here alongside the other client payloads.
 	subRouter.HandleFunc("/agent_src.zip", payloadTokenGuard(cfg, http.HandlerFunc(api.serveAgentPackage)).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/fleet-cli.sh", payloadTokenGuard(cfg, http.HandlerFunc(api.serveTemplateFile("fleet-cli.sh", "application/x-shellscript"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/configs/xray_config.json", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/configs/xray_config.json", "application/json"))).ServeHTTP).Methods("GET")
 	subRouter.HandleFunc("/configs/singbox_config.json", payloadTokenGuard(cfg, http.HandlerFunc(api.serveFile(deployFS, "deploy/configs/singbox_config.json", "application/json"))).ServeHTTP).Methods("GET")
 }
 
-// applyDomainPlaceholders substitutes the client-facing domain placeholders
-// (used in deploy templates) with the configured domains from .env.
+// applyDomainPlaceholders substitutes the client-facing domain placeholders (used in deploy templates) with the configured domains from .env.
 func (a *API) applyDomainPlaceholders(content string) string {
 	content = strings.ReplaceAll(content, "https://__API_DOMAIN__", "https://"+a.config.ApiDomain)
 	content = strings.ReplaceAll(content, "https://__SUB_DOMAIN__", "https://"+a.config.SubDomain)
@@ -317,15 +298,12 @@ func (a *API) applyDomainPlaceholders(content string) string {
 	content = strings.ReplaceAll(content, "__SUB_DOMAIN__", a.config.SubDomain)
 	content = strings.ReplaceAll(content, "__JOIN_DOMAIN__", a.config.JoinDomain)
 	content = strings.ReplaceAll(content, "__DASH_DOMAIN__", a.config.DashboardDomain)
-	// The fleet secret is injected so bootstrap scripts can authenticate their
-	// subsequent payload downloads with ?t=<SECRET_TOKEN>.
+	// The fleet secret is injected so bootstrap scripts can authenticate their subsequent payload downloads with ?t=<SECRET_TOKEN>.
 	content = strings.ReplaceAll(content, "__SECRET_TOKEN__", a.config.FleetSecret)
 	return content
 }
 
-// fakeNginx404 is served for unauthenticated payload requests. It is
-// byte-identical to a stock nginx 404 page so active probes cannot tell the
-// payload endpoints apart from any other dead path on the host.
+// fakeNginx404 is served for unauthenticated payload requests. It is byte-identical to a stock nginx 404 page so active probes cannot tell the payload endpoints apart from any other dead path on the host.
 const fakeNginx404 = `<html>
 <head><title>404 Not Found</title></head>
 <body>
@@ -335,10 +313,7 @@ const fakeNginx404 = `<html>
 </html>
 `
 
-// payloadTokenGuard requires the ?t=<SECRET_TOKEN> query parameter on payload
-// delivery routes (join bootstrap script, client templates, engine configs).
-// Requests without a matching token receive the generic nginx 404 above and
-// never reach the payload handler.
+// payloadTokenGuard requires the ?t=<SECRET_TOKEN> query parameter on payload delivery routes (join bootstrap script, client templates, engine configs). Requests without a matching token receive the generic nginx 404 above and never reach the payload handler.
 func payloadTokenGuard(cfg *config.Config, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if cfg.FleetSecret != "" && r.URL.Query().Get("t") == cfg.FleetSecret {
@@ -351,10 +326,7 @@ func payloadTokenGuard(cfg *config.Config, next http.Handler) http.Handler {
 	})
 }
 
-// serveFile is a helper to serve an embedded file. The Content-Type always
-// carries charset=utf-8 so PowerShell's Invoke-RestMethod decodes localized
-// (e.g. Cyrillic) text as UTF-8 instead of the ANSI codepage, and any UTF-8
-// BOM is stripped so `irm ... | iex` does not parse "ï»¿#" as garbage.
+// serveFile is a helper to serve an embedded file. The Content-Type always carries charset=utf-8 so PowerShell's Invoke-RestMethod decodes localized (e.g. Cyrillic) text as UTF-8 instead of the ANSI codepage, and any UTF-8 BOM is stripped so `irm ... | iex` does not parse "ï»¿#" as garbage.
 func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fileBytes, err := efs.ReadFile(path)
@@ -372,11 +344,7 @@ func (a *API) serveFile(efs embed.FS, path, contentType string) http.HandlerFunc
 	}
 }
 
-// serveDashboard serves the embedded Vue.js SPA. It must stay completely
-// public — no auth, no token guard, no stealth 404 — or the login page can
-// never load. Only the /api/web/* routes are authenticated. Paths that are
-// not real files (Vue Router deep links such as /login) fall back to
-// index.html so direct navigation renders the SPA instead of a 404.
+// serveDashboard serves the embedded Vue.js SPA. It must stay completely public — no auth, no token guard, no stealth 404 — or the login page can never load. Only the /api/web/* routes are authenticated. Paths that are not real files (Vue Router deep links such as /login) fall back to index.html so direct navigation renders the SPA instead of a 404.
 func serveDashboard(fsys fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(fsys))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -392,8 +360,7 @@ func serveDashboard(fsys fs.FS) http.Handler {
 	})
 }
 
-// RateLimit returns middleware with configurable requests per duration.
-// Uses sliding window via golang.org/x/time/rate.
+// RateLimit returns middleware with configurable requests per duration. Uses sliding window via golang.org/x/time/rate.
 func (a *API) RateLimit(rps float64, burst int, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -420,10 +387,7 @@ func (a *API) RateLimit(rps float64, burst int, next http.Handler) http.Handler 
 	})
 }
 
-// startRateLimitCleanup prunes rate-limit entries that have not been touched
-// for 15 minutes. Without it, the visitors map would grow unboundedly: every
-// unique IP (login attempts) and node id (sub_url updates) would leave a
-// permanent entry and eventually exhaust memory on a busy master.
+// startRateLimitCleanup prunes rate-limit entries that have not been touched for 15 minutes. Without it, the visitors map would grow unboundedly: every unique IP (login attempts) and node id (sub_url updates) would leave a permanent entry and eventually exhaust memory on a busy master.
 func (a *API) startRateLimitCleanup() {
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
@@ -441,9 +405,7 @@ func (a *API) startRateLimitCleanup() {
 	}()
 }
 
-// stripPort removes the port from a domain if it exists
-// (e.g. localhost:8080 -> localhost, [::1]:8080 -> [::1]). A bare hostname
-// without a port is returned unchanged.
+// stripPort removes the port from a domain if it exists (e.g. localhost:8080 -> localhost, [::1]:8080 -> [::1]). A bare hostname without a port is returned unchanged.
 func stripPort(domain string) string {
 	if host, _, err := net.SplitHostPort(domain); err == nil {
 		return host

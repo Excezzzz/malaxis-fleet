@@ -6,9 +6,7 @@ import (
 	"malaxis-fleet/internal/domain"
 )
 
-// ErrNodeNotFound is returned when a write targets a node id that does not
-// exist in the database. It keeps the command flow consistent: a command can
-// never be queued against a ghost node.
+// ErrNodeNotFound is returned when a write targets a node id that does not exist in the database. It keeps the command flow consistent: a command can never be queued against a ghost node.
 var ErrNodeNotFound = errors.New("node not found")
 
 // Repository defines the interface for data access operations.
@@ -23,14 +21,10 @@ type Repository interface {
 	GetAllNodes() ([]domain.Node, error)
 	GetNodesByUserID(userID int64) ([]domain.Node, error)
 	AddNode(node *domain.Node) error
-	// UpsertNode upserts the node and returns the canonical id together with a
-	// bool reporting whether this registration created a BRAND NEW node row
-	// (used by the backend to fire instant Telegram onboarding notifications).
+	// UpsertNode upserts the node and returns the canonical id together with a bool reporting whether this registration created a BRAND NEW node row (used by the backend to fire instant Telegram onboarding notifications).
 	UpsertNode(node *domain.Node) (string, bool, error)
 	RenameNode(id, name string) error
-	// UpdateNodeNameIfUnset applies the agent-reported display name only when
-	// the node has not been explicitly renamed by an admin (i.e. the current
-	// name is empty, still the OS hostname, or already the reported name).
+	// UpdateNodeNameIfUnset applies the agent-reported display name only when the node has not been explicitly renamed by an admin (i.e. the current name is empty, still the OS hostname, or already the reported name).
 	UpdateNodeNameIfUnset(id, name string) error
 	SetNodeHardwareHash(id, hardwareHash string) error
 	UpdateNode(node *domain.Node) error
@@ -47,22 +41,17 @@ type Repository interface {
 
 	// --- Subscription Provider Methods ---
 	GetSubscriptionProviders() ([]domain.SubscriptionProvider, error)
-	// GetProviderNames returns a domain -> friendly name map for the agent
-	// poll payload, so agents can tag cached servers with provider names.
+	// GetProviderNames returns a domain -> friendly name map for the agent poll payload, so agents can tag cached servers with provider names.
 	GetProviderNames() (map[string]string, error)
 	UpsertSubscriptionProvider(p domain.SubscriptionProvider) error
 	DeleteSubscriptionProvider(domain string) error
-	// SyncProviders reconciles the subscription_providers table with the URLs
-	// actually referenced by nodes: missing domains are auto-added (name =
-	// domain) and rows whose domain is referenced by no node are deleted.
+	// SyncProviders reconciles the subscription_providers table with the URLs actually referenced by nodes: missing domains are auto-added (name = domain) and rows whose domain is referenced by no node are deleted.
 	SyncProviders() error
 
 	// --- Command Methods ---
 	GetPendingCommand(nodeID string) (string, error)
 	SetPendingCommand(nodeID, command string, messageID int64) error
-	// UpdateNodeSubURLsAndQueue atomically saves the subscription URLs and
-	// queues the agent update command in a single UPDATE, so a sub_urls change
-	// can never be persisted without triggering the agent to fetch it.
+	// UpdateNodeSubURLsAndQueue atomically saves the subscription URLs and queues the agent update command in a single UPDATE, so a sub_urls change can never be persisted without triggering the agent to fetch it.
 	UpdateNodeSubURLsAndQueue(nodeID string, subURLs []string, command string, messageID int64) error
 	ClearPendingCommand(nodeID string) error
 

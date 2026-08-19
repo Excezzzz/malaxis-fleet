@@ -71,8 +71,7 @@ func (s *Server) RebootBot() error {
 	return s.bot.Reboot()
 }
 
-// setupMasterLogFile tees Go's standard logger into a file so the
-// "Logs & Audit" tab can show the master's own logs.
+// setupMasterLogFile tees Go's standard logger into a file so the "Logs & Audit" tab can show the master's own logs.
 func setupMasterLogFile(path string) {
 	if path == "" {
 		path = "data/logs/master.log"
@@ -91,9 +90,7 @@ func setupMasterLogFile(path string) {
 	log.Printf("Master logs are being written to %s", path)
 }
 
-// rotateMasterLogIfLarge performs a simple rotation at startup: when the log
-// file has grown beyond 50 MB, the current file is renamed to master.log.1
-// and a fresh file is started, so the file can never grow without bound.
+// rotateMasterLogIfLarge performs a simple rotation at startup: when the log file has grown beyond 50 MB, the current file is renamed to master.log.1 and a fresh file is started, so the file can never grow without bound.
 func rotateMasterLogIfLarge(path string) {
 	info, err := os.Stat(path)
 	if err != nil {

@@ -36,35 +36,31 @@ type PollRequest struct {
 	Hostname     string `json:"hostname"`
 	IPLan        string `json:"ip_lan"`
 	HardwareHash string `json:"hardware_hash"`
-	// SubURL is the legacy single-URL field kept for backwards compatibility
-	// with pre-v1.2.0 agents; new agents send SubURLs.
+	// SubURL is the legacy single-URL field kept for backwards compatibility with pre-v1.2.0 agents; new agents send SubURLs.
 	SubURL  string   `json:"sub_url"`
 	SubURLs []string `json:"sub_urls"`
 	Name    string   `json:"name,omitempty"`
 }
 
 type ReportRequest struct {
-	ID               string            `json:"id"`
-	ExternalIP       string            `json:"external_ip"`
-	Engine           string            `json:"engine"`
-	Protocol         string            `json:"protocol"`
-	OutboundJSON     string            `json:"outbound_json"`
-	Status           string            `json:"status,omitempty"`
-	Message          string            `json:"message,omitempty"`
-	ActiveServer     string            `json:"active_server,omitempty"`
-	ActiveProvider   string            `json:"active_provider,omitempty"`
-	// AvailableServers holds either the v1.2.2 grouped object
-	// {provider: [server, ...]} or the legacy flat array from older agents
-	// (normalized to a provider-less group on read). Kept as RawMessage so the
-	// stored bytes round-trip unchanged.
+	ID             string `json:"id"`
+	ExternalIP     string `json:"external_ip"`
+	Engine         string `json:"engine"`
+	Protocol       string `json:"protocol"`
+	OutboundJSON   string `json:"outbound_json"`
+	Status         string `json:"status,omitempty"`
+	Message        string `json:"message,omitempty"`
+	ActiveServer   string `json:"active_server,omitempty"`
+	ActiveProvider string `json:"active_provider,omitempty"`
+	// AvailableServers holds either the v1.2.2 grouped object {provider: [server, ...]} or the legacy flat array from older agents (normalized to a provider-less group on read). Kept as RawMessage so the stored bytes round-trip unchanged.
 	AvailableServers json.RawMessage `json:"available_servers,omitempty"`
-	SubURL           string            `json:"sub_url,omitempty"`
-	SubURLs          []string          `json:"sub_urls,omitempty"`
+	SubURL           string          `json:"sub_url,omitempty"`
+	SubURLs          []string        `json:"sub_urls,omitempty"`
 	// ServerProviders maps server name -> provider name for UI grouping.
 	ServerProviders map[string]string `json:"server_providers,omitempty"`
-	Name             string            `json:"name,omitempty"`
-	HardwareHash     string            `json:"hardware_hash,omitempty"`
-	Logs             string            `json:"logs,omitempty"`
+	Name            string            `json:"name,omitempty"`
+	HardwareHash    string            `json:"hardware_hash,omitempty"`
+	Logs            string            `json:"logs,omitempty"`
 }
 
 type PasswordUpdateRequest struct {
@@ -123,10 +119,7 @@ type UpdateNodeRequest struct {
 
 // --- Auth Handlers ---
 
-// enforcePermission is the defense-in-depth check every restricted handler
-// MUST run before mutating state: it re-verifies the session user's role
-// against the permissions_json stored in PostgreSQL and writes a 403 response
-// when the permission is missing. Returns true when the call is allowed.
+// enforcePermission is the defense-in-depth check every restricted handler MUST run before mutating state: it re-verifies the session user's role against the permissions_json stored in PostgreSQL and writes a 403 response when the permission is missing. Returns true when the call is allowed.
 func (a *API) enforcePermission(w http.ResponseWriter, r *http.Request, permission string) bool {
 	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
 	if !ok || userID == 0 {
@@ -159,8 +152,7 @@ func (a *API) enforcePermission(w http.ResponseWriter, r *http.Request, permissi
 	return false
 }
 
-// requireOwner is the defense-in-depth check for user/role management: only
-// the owner role may manage other users or roles. Writes 403 when denied.
+// requireOwner is the defense-in-depth check for user/role management: only the owner role may manage other users or roles. Writes 403 when denied.
 func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
 	userID, ok := r.Context().Value(auth.UserContextKey).(int64)
 	if !ok || userID == 0 {
@@ -182,9 +174,7 @@ func (a *API) requireOwner(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
-// actor resolves the acting user from the session context, logging any
-// resolution failure instead of silently ignoring it. Returns nil when the
-// actor cannot be loaded.
+// actor resolves the acting user from the session context, logging any resolution failure instead of silently ignoring it. Returns nil when the actor cannot be loaded.
 func (a *API) actor(r *http.Request) *domain.User {
 	actorID, _ := r.Context().Value(auth.UserContextKey).(int64)
 	u, err := a.repo.GetUserByID(actorID)
@@ -195,8 +185,7 @@ func (a *API) actor(r *http.Request) *domain.User {
 	return u
 }
 
-// actorName safely renders the acting user's username, never panicking on a
-// failed actor resolution.
+// actorName safely renders the acting user's username, never panicking on a failed actor resolution.
 func (a *API) actorName(u *domain.User) string {
 	if u == nil {
 		return "unknown"
@@ -204,8 +193,7 @@ func (a *API) actorName(u *domain.User) string {
 	return u.Username
 }
 
-// actorRole safely renders the acting user's role, never panicking on a failed
-// actor resolution.
+// actorRole safely renders the acting user's role, never panicking on a failed actor resolution.
 func (a *API) actorRole(u *domain.User) string {
 	if u == nil {
 		return "unknown"
@@ -220,10 +208,7 @@ func (a *API) writeForbidden(w http.ResponseWriter, message string) {
 	json.NewEncoder(w).Encode(ErrResponse{Error: message})
 }
 
-// roleRank resolves the effective hierarchy rank of a role. It prefers the
-// configurable rank stored in the roles table (for custom and seeded roles)
-// and falls back to the built-in domain rank table for owners / hardcoded
-// roles that are matched by name but might not exist as rows.
+// roleRank resolves the effective hierarchy rank of a role. It prefers the configurable rank stored in the roles table (for custom and seeded roles) and falls back to the built-in domain rank table for owners / hardcoded roles that are matched by name but might not exist as rows.
 func (a *API) roleRank(roleName string) int {
 	role, err := a.repo.GetRoleByName(roleName)
 	if err == nil && role.Rank >= 1 && role.Rank <= 100 {
@@ -232,8 +217,7 @@ func (a *API) roleRank(roleName string) int {
 	return domain.RoleRank(roleName)
 }
 
-// parsePermissionsJSON parses a role's permissions_json in both supported
-// storage formats (array of strings, or map key->bool).
+// parsePermissionsJSON parses a role's permissions_json in both supported storage formats (array of strings, or map key->bool).
 func (a *API) parsePermissionsJSON(raw string) []string {
 	if raw == "" {
 		return []string{}
@@ -255,9 +239,7 @@ func (a *API) parsePermissionsJSON(raw string) []string {
 	return perms
 }
 
-// permissionsForUser resolves the permission list for a user. Owner and admin
-// bypass checks (implicitly granted all permissions); custom roles read their
-// permissions_json, supporting both array and map storage formats.
+// permissionsForUser resolves the permission list for a user. Owner and admin bypass checks (implicitly granted all permissions); custom roles read their permissions_json, supporting both array and map storage formats.
 func (a *API) permissionsForUser(user *domain.User) []string {
 	if user.Role == domain.RoleOwner || user.Role == domain.RoleAdmin {
 		return domain.AllPermissions
@@ -395,10 +377,7 @@ func (a *API) PollHandler(w http.ResponseWriter, r *http.Request) {
 		resp["node_id"] = canonicalID
 	}
 
-	// v1.2.0 multi-subscription: the master is the source of truth for the
-	// node's subscription URLs. Return them (plus the legacy single URL for
-	// old agents) together with the provider-name dictionary so the agent can
-	// tag every cached server with its provider.
+	// v1.2.0 multi-subscription: the master is the source of truth for the node's subscription URLs. Return them (plus the legacy single URL for old agents) together with the provider-name dictionary so the agent can tag every cached server with its provider.
 	node, err := a.repo.GetNodeByID(canonicalID)
 	if err == nil {
 		subURLs := node.SubURLs
@@ -423,10 +402,7 @@ func (a *API) PollHandler(w http.ResponseWriter, r *http.Request) {
 			log.Printf("ERROR: Failed to update pipeline status to Fetched for %s: %v", canonicalID, err)
 		}
 
-		// NOTE: pending_command is NOT cleared here. It stays queued in
-		// PostgreSQL until the agent finishes executing and reports back
-		// (ReportHandler clears it). This keeps the command resilient if the
-		// agent goes offline or crashes mid-execution.
+		// NOTE: pending_command is NOT cleared here. It stays queued in PostgreSQL until the agent finishes executing and reports back (ReportHandler clears it). This keeps the command resilient if the agent goes offline or crashes mid-execution.
 	} else {
 		resp["status"] = "ok"
 	}
@@ -454,9 +430,7 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Persist the display name set on the device (CLI "Rename Node") so a
-	// custom name survives agent restarts and hostname churn. Admin-renamed
-	// nodes are never clobbered by the agent.
+	// Persist the display name set on the device (CLI "Rename Node") so a custom name survives agent restarts and hostname churn. Admin-renamed nodes are never clobbered by the agent.
 	if req.Name != "" {
 		if err := a.repo.UpdateNodeNameIfUnset(req.ID, req.Name); err != nil {
 			log.Printf("ERROR: Failed to persist reported name for %s: %v", req.ID, err)
@@ -481,8 +455,7 @@ func (a *API) ReportHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Persist container logs (docker logs tail) reported by the agent. The
-	// value is a JSON map keyed by container name (node-agent/xray-node/singbox-node).
+	// Persist container logs (docker logs tail) reported by the agent. The value is a JSON map keyed by container name (node-agent/xray-node/singbox-node).
 	if req.Logs != "" {
 		if err := a.repo.SetNodeLogs(req.ID, req.Logs); err != nil {
 			log.Printf("ERROR: Failed to store node logs for %s: %v", req.ID, err)
@@ -513,11 +486,7 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Security hardening: only whitelisted actions are accepted here. The
-	// agent's arbitrary shell/script execution (`exec`) and raw config write
-	// (`apply_config`, `install_xray`, `install_singbox`) are intentionally
-	// forbidden through the dashboard API; a can_switch_vpn credential must
-	// never translate into code execution on fleet nodes.
+	// Security hardening: only whitelisted actions are accepted here. The agent's arbitrary shell/script execution (`exec`) and raw config write (`apply_config`, `install_xray`, `install_singbox`) are intentionally forbidden through the dashboard API; a can_switch_vpn credential must never translate into code execution on fleet nodes.
 	action, _ := req["action"].(string)
 	if action == "" {
 		if commandStr, ok := req["command"].(string); ok && strings.HasPrefix(strings.TrimSpace(commandStr), "switch:") {
@@ -572,9 +541,7 @@ func (a *API) SendCommandHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// allowedCommandActions lists the command actions that may be queued through
-// the dashboard's SendCommandHandler. Dangerous agent capabilities (arbitrary
-// shell execution, raw config file writes, engine installs) are excluded.
+// allowedCommandActions lists the command actions that may be queued through the dashboard's SendCommandHandler. Dangerous agent capabilities (arbitrary shell execution, raw config file writes, engine installs) are excluded.
 var allowedCommandActions = map[string]bool{
 	"switch":              true,
 	"update_sub":          true,
@@ -645,8 +612,7 @@ func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 		HardwareHash: req.HardwareHash,
 		SubURLs:      subURLs,
 	}
-	// The agent sends its custom node name; fall back to the OS hostname when
-	// no custom name has been configured.
+	// The agent sends its custom node name; fall back to the OS hostname when no custom name has been configured.
 	if node.Name == "" {
 		node.Name = req.Hostname
 	}
@@ -655,9 +621,7 @@ func (a *API) registerOrUpdateNode(req PollRequest) (string, error) {
 		return canonicalID, err
 	}
 
-	// FIRST-TIME registration: fire an instant Telegram onboarding notification
-	// so the admin can approve (when the agent already reported sub URLs),
-	// set the subscription URLs, or reject the device right from the chat.
+	// FIRST-TIME registration: fire an instant Telegram onboarding notification so the admin can approve (when the agent already reported sub URLs), set the subscription URLs, or reject the device right from the chat.
 	if isNew && a.botManager != nil {
 		a.botManager.NotifyNewNode(canonicalID, req.Hostname, req.IPLan, subURLs)
 	}

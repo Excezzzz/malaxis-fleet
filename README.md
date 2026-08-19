@@ -1,6 +1,6 @@
 # Malaxis Fleet Manager
 
-![Release](https://img.shields.io/badge/Release-v1.1.0-brightgreen)
+![Release](https://img.shields.io/badge/Release-v1.4.0-brightgreen)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883)
@@ -166,8 +166,8 @@ to avoid probe spam.
 - **Web dashboard** (Vue 3): glassmorphism UI, Web IDE for live config
   editing, container log streaming, dark/light themes, audit log.
 - **Telegram bot**: single-message inline UI covering nodes, users, roles,
-  and backups; onboarding alerts; on-demand Postgres backup delivery as a
-  `.zip`.
+  subscription providers, and backups; onboarding alerts; on-demand Postgres
+  backup delivery as a `.zip`.
 
 ### Security
 

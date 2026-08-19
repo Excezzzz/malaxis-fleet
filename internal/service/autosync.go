@@ -98,8 +98,7 @@ func (s *AutoSyncService) RunSync() {
 
 func (s *AutoSyncService) syncNode(n *domain.Node) {
 	log.Printf("Syncing subscriptions for %s", n.Name)
-	// v1.2.0: a node can have multiple subscription URLs; merge outbounds from
-	// every one so the active server is found no matter which sub it came from.
+	// v1.2.0: a node can have multiple subscription URLs; merge outbounds from every one so the active server is found no matter which sub it came from.
 	var outbounds []domain.Outbound
 	for _, subURL := range n.SubURLs {
 		subOutbounds, err := fetchSubOutbounds(subURL)
@@ -141,10 +140,7 @@ func (s *AutoSyncService) syncNode(n *domain.Node) {
 }
 
 func fetchSubOutbounds(subURL string) ([]domain.Outbound, error) {
-	// Security hardening: the master server performs this request for the
-	// node, so it must never follow user-controlled URLs into internal
-	// networks / cloud-metadata. Restrict the scheme to http(s) and reject
-	// loopback + private + link-local literals outright.
+	// Security hardening: the master server performs this request for the node, so it must never follow user-controlled URLs into internal networks / cloud-metadata. Restrict the scheme to http(s) and reject loopback + private + link-local literals outright.
 	parsed, err := url.Parse(subURL)
 	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return nil, fmt.Errorf("invalid subscription URL scheme")

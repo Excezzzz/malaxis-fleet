@@ -30,8 +30,7 @@ var defaultAvatarPNG []byte
 //go:embed avatars/*.png
 var avatarsFS embed.FS
 
-// avatarColors maps the five dashboard accent colors to their embedded avatar
-// files. The bot's profile photo can be switched to match the site theme.
+// avatarColors maps the five dashboard accent colors to their embedded avatar files. The bot's profile photo can be switched to match the site theme.
 var avatarColors = map[string]string{
 	"indigo":  "avatar_indigo.png",
 	"emerald": "avatar_emerald.png",
@@ -40,27 +39,21 @@ var avatarColors = map[string]string{
 	"cyan":    "avatar_cyan.png",
 }
 
-// onlineWindow is how recent a LastSeen timestamp must be for a node to count
-// as online (mirrors the web dashboard).
+// onlineWindow is how recent a LastSeen timestamp must be for a node to count as online (mirrors the web dashboard).
 const onlineWindow = 90 * time.Second
 
-// userState is the in-memory text-input session for the admin. The bot shows
-// exactly ONE dynamic bot message; when a feature needs free-form text input
-// (sub URL, rename, TERMINATE, password, role rank/name, create-user creds, ...)
-// the conversation moves into a state machine that consumes the next text
-// message: prompt -> capture -> process -> delete -> return to the menu. The
-// Username/Password/RoleName fields carry in-progress create flows and
-// TargetID/TargetRoleID identify the DB row for the active CRUD operation.
+// userState is the in-memory text-input session for the admin. The bot shows exactly ONE dynamic bot message; when a feature needs free-form text input (sub URL, rename, TERMINATE, password, role rank/name, create-user creds, ...) the conversation moves into a state machine that consumes the next text message: prompt -> capture -> process -> delete -> return to the menu. The Username/Password/RoleName fields carry in-progress create flows and TargetID/TargetRoleID identify the DB row for the active CRUD operation.
 type userState struct {
-	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm", "add_user_creds", "add_user_role", "add_role_name", "add_role_rank", "user_pw", "role_rename", "role_rank"
+	Step   string // "", "rename_node", "set_sub", "set_sub_url", "terminate_confirm", "add_user_creds", "add_user_role", "add_role_name", "add_role_rank", "user_pw", "role_rename", "role_rank", "add_provider_domain", "add_provider_name", "provider_rename"
 	NodeID string
 	Note   string
 	// User/role creation flow fields.
 	Username     string
 	Password     string
 	RoleName     string
-	TargetID     int64 // target user or role id for in-progress CRUD operations
-	TargetRoleID int64 // target role id for the in-progress change-user-role flow
+	TargetID     int64  // target user or role id for in-progress CRUD operations
+	TargetRoleID int64  // target role id for the in-progress change-user-role flow
+	Domain       string // target provider domain for in-progress provider flows
 }
 
 type Bot struct {
@@ -126,8 +119,7 @@ func (b *Bot) loadSettingsFromDB() {
 	}
 }
 
-// enabledFromDB reports whether the bot should run according to the database
-// setting tg_bot_enabled. Only an explicit "false" or "0" disables the bot.
+// enabledFromDB reports whether the bot should run according to the database setting tg_bot_enabled. Only an explicit "false" or "0" disables the bot.
 func (b *Bot) enabledFromDB() bool {
 	enabled, _ := b.repo.GetSetting("tg_bot_enabled")
 	if enabled == "" {
@@ -198,12 +190,7 @@ func (b *Bot) Start() error {
 	return nil
 }
 
-// registerCommands registers the bot's official slash commands via the native
-// Telegram setMyCommands API so typing "/" shows the autocomplete menu. The
-// default (EN) command list is registered first, then the Russian (RU)
-// localization is applied via the language_code parameter — Telegram serves
-// the localized variant to users whose client language is Russian and falls
-// back to the default list for everyone else.
+// registerCommands registers the bot's official slash commands via the native Telegram setMyCommands API so typing "/" shows the autocomplete menu. The default (EN) command list is registered first, then the Russian (RU) localization is applied via the language_code parameter — Telegram serves the localized variant to users whose client language is Russian and falls back to the default list for everyone else.
 func (b *Bot) registerCommands() {
 	defaultCommands := []tgbotapi.BotCommand{
 		{Command: "start", Description: "Open main control menu"},
@@ -211,6 +198,7 @@ func (b *Bot) registerCommands() {
 		{Command: "nodes", Description: "Jump to Node management"},
 		{Command: "users", Description: "Jump to User management"},
 		{Command: "roles", Description: "Jump to Role management"},
+		{Command: "providers", Description: "Jump to Provider management"},
 		{Command: "status", Description: "Quick fleet health overview"},
 		{Command: "backup", Description: "Instantly request database .zip backup"},
 	}
@@ -220,6 +208,7 @@ func (b *Bot) registerCommands() {
 		{Command: "nodes", Description: "Управление узлами флота"},
 		{Command: "users", Description: "Управление пользователями"},
 		{Command: "roles", Description: "Управление ролями"},
+		{Command: "providers", Description: "Управление провайдерами"},
 		{Command: "status", Description: "Быстрый статус системы"},
 		{Command: "backup", Description: "Скачать бэкап базы данных"},
 	}
@@ -238,9 +227,7 @@ func (b *Bot) registerCommands() {
 	}
 }
 
-// showHelp sends a NEW help message (never edits the main menu) explaining how
-// the bot operates: the single-message interface, the text-input state
-// machine, and every available slash command.
+// showHelp sends a NEW help message (never edits the main menu) explaining how the bot operates: the single-message interface, the text-input state machine, and every available slash command.
 func (b *Bot) showHelp(chatID int64) {
 	text := "<b>❓ " + b.tr("Справка по Malaxis Fleet Bot", "Malaxis Fleet Bot Help") + "</b>\n\n" +
 		b.tr(
@@ -256,6 +243,7 @@ func (b *Bot) showHelp(chatID int64) {
 		"• /nodes — " + b.tr("управление узлами флота", "node management") + "\n" +
 		"• /users — " + b.tr("управление пользователями", "user management") + "\n" +
 		"• /roles — " + b.tr("управление ролями", "role management") + "\n" +
+		"• /providers — " + b.tr("управление провайдерами подписок", "subscription provider management") + "\n" +
 		"• /status — " + b.tr("быстрый статус системы", "quick fleet health overview") + "\n" +
 		"• /backup — " + b.tr("скачать бэкап базы данных", "download database backup")
 
@@ -264,19 +252,13 @@ func (b *Bot) showHelp(chatID int64) {
 	b.api.Send(msg)
 }
 
-// SetDefaultAvatar uploads the embedded default avatar to the Telegram bot via
-// setMyProfilePhoto (Bot API 7.0+ format: the photo field carries the JSON
-// input profile photo descriptor, the bytes travel in the attach:// file part).
-// It also clears any previously stored bot_avatar_color preference so the
-// default avatar is not re-applied on the next bot start.
+// SetDefaultAvatar uploads the embedded default avatar to the Telegram bot via setMyProfilePhoto (Bot API 7.0+ format: the photo field carries the JSON input profile photo descriptor, the bytes travel in the attach:// file part). It also clears any previously stored bot_avatar_color preference so the default avatar is not re-applied on the next bot start.
 func (b *Bot) SetDefaultAvatar() error {
 	b.repo.SetSetting("bot_avatar_color", "")
 	return b.uploadAvatar(defaultAvatarPNG)
 }
 
-// SetAvatarColor applies one of the five themed avatar colors (indigo,
-// emerald, amber, rose, cyan) and persists the choice in the settings table so
-// it is automatically re-applied on every bot start.
+// SetAvatarColor applies one of the five themed avatar colors (indigo, emerald, amber, rose, cyan) and persists the choice in the settings table so it is automatically re-applied on every bot start.
 func (b *Bot) SetAvatarColor(colorName string) error {
 	file, ok := avatarColors[colorName]
 	if !ok {
@@ -349,11 +331,7 @@ func (b *Bot) uploadAvatar(avatarBytes []byte) error {
 	return nil
 }
 
-// fetchUpdates polls the Telegram API for updates with an explicit offset and
-// forwards them into the updates channel. A 409 "Conflict: terminated by other
-// getUpdates request" means another process is polling with the same token
-// (or a webhook is set); instead of hammering the API we back off gracefully
-// and resume as soon as the conflicting consumer releases the poll.
+// fetchUpdates polls the Telegram API for updates with an explicit offset and forwards them into the updates channel. A 409 "Conflict: terminated by other getUpdates request" means another process is polling with the same token (or a webhook is set); instead of hammering the API we back off gracefully and resume as soon as the conflicting consumer releases the poll.
 func (b *Bot) fetchUpdates(updates chan<- tgbotapi.Update) {
 	offset := 0
 	for {
@@ -404,9 +382,7 @@ func (b *Bot) fetchUpdates(updates chan<- tgbotapi.Update) {
 	}
 }
 
-// pollUpdates consumes Telegram updates until the bot is flagged as not
-// running. STRICT SECURITY: every message and callback that does not originate
-// from the admin chat id (read from the database) is ignored completely.
+// pollUpdates consumes Telegram updates until the bot is flagged as not running. STRICT SECURITY: every message and callback that does not originate from the admin chat id (read from the database) is ignored completely.
 func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 	for update := range updates {
 		select {
@@ -428,9 +404,7 @@ func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 			if update.Message.Chat.ID != adminChatID {
 				continue
 			}
-			// COMMAND PURGE: only PLAIN TEXT messages are deleted immediately
-			// after processing, keeping the chat to ONE dynamic bot message.
-			// Slash command messages are left in the chat history untouched.
+			// COMMAND PURGE: only PLAIN TEXT messages are deleted immediately after processing, keeping the chat to ONE dynamic bot message. Slash command messages are left in the chat history untouched.
 			if !update.Message.IsCommand() && !strings.HasPrefix(update.Message.Text, "/") {
 				b.deleteMessage(adminChatID, update.Message.MessageID)
 			}
@@ -447,6 +421,8 @@ func (b *Bot) pollUpdates(updates <-chan tgbotapi.Update) {
 					b.showUsersMenuFresh(adminChatID)
 				case "roles":
 					b.showRolesMenuFresh(adminChatID)
+				case "providers":
+					b.showProvidersMenuFresh(adminChatID)
 				case "status":
 					b.showStatusFresh(adminChatID)
 				case "backup":
@@ -487,8 +463,7 @@ func (b *Bot) Reboot() error {
 
 // --- Backup ---
 
-// backupIntervalHours returns the configured automatic-backup interval in
-// hours (default 24, clamped to a sane range) from the settings table.
+// backupIntervalHours returns the configured automatic-backup interval in hours (default 24, clamped to a sane range) from the settings table.
 func (b *Bot) backupIntervalHours() int {
 	raw, _ := b.repo.GetSetting("backup_interval_hours")
 	hours, err := strconv.Atoi(raw)
@@ -542,9 +517,7 @@ func (b *Bot) runBackupScheduler() {
 	}
 }
 
-// handleBackup creates a pg_dump + gzip backup and sends it as a Telegram
-// document, then restores the main menu in the single bot message. Strictly
-// owner-only: it exits silently for any chat other than tg_admin_chat_id.
+// handleBackup creates a pg_dump + gzip backup and sends it as a Telegram document, then restores the main menu in the single bot message. Strictly owner-only: it exits silently for any chat other than tg_admin_chat_id.
 func (b *Bot) handleBackup(chatID int64, messageID int) {
 	if !b.isAdminChat(chatID) {
 		return
@@ -637,8 +610,7 @@ func (b *Bot) getMainMenuID(chatID int64) int {
 
 // --- Message helpers (single-message UI) ---
 
-// editMessage updates the text and inline keyboard of the conversation's
-// single dynamic bot message and records it as the current main menu id.
+// editMessage updates the text and inline keyboard of the conversation's single dynamic bot message and records it as the current main menu id.
 func (b *Bot) editMessage(chatID int64, messageID int, text string, markup *tgbotapi.InlineKeyboardMarkup) {
 	if messageID <= 0 {
 		return
@@ -684,9 +656,7 @@ func (b *Bot) showMainMenu(chatID int64) {
 	b.mu.Unlock()
 }
 
-// sendFreshMenu deletes the tracked main menu message (if any) and sends a
-// brand new message with the given content at the bottom of the chat, updating
-// the tracked message id. This is how manual slash commands summon their menus.
+// sendFreshMenu deletes the tracked main menu message (if any) and sends a brand new message with the given content at the bottom of the chat, updating the tracked message id. This is how manual slash commands summon their menus.
 func (b *Bot) sendFreshMenu(chatID int64, text string, markup *tgbotapi.InlineKeyboardMarkup) {
 	if old := b.getMainMenuID(chatID); old > 0 {
 		b.deleteMessage(chatID, old)
@@ -708,10 +678,7 @@ func (b *Bot) sendFreshMenu(chatID int64, text string, markup *tgbotapi.InlineKe
 	b.mu.Unlock()
 }
 
-// showMainMenuFresh is used for the /start command: it always sends a BRAND
-// NEW main menu message (instead of editing the previous one) so the user can
-// summon a fresh menu at the bottom of the chat. Any previous menu message is
-// deleted to keep the chat to one dynamic bot message.
+// showMainMenuFresh is used for the /start command: it always sends a BRAND NEW main menu message (instead of editing the previous one) so the user can summon a fresh menu at the bottom of the chat. Any previous menu message is deleted to keep the chat to one dynamic bot message.
 func (b *Bot) showMainMenuFresh(chatID int64) {
 	text, markup := b.getMainMenuContent()
 	b.sendFreshMenu(chatID, text, &markup)
@@ -719,8 +686,7 @@ func (b *Bot) showMainMenuFresh(chatID int64) {
 
 // --- Preferences ---
 
-// botPrefs loads the admin user's personalization settings used to render the
-// bot menu (language and emoji rendering).
+// botPrefs loads the admin user's personalization settings used to render the bot menu (language and emoji rendering).
 func (b *Bot) botPrefs() (lang string, emojis bool) {
 	lang = "ru"
 	emojis = true
@@ -748,8 +714,7 @@ func (b *Bot) tr(ru, en string) string {
 	return ru
 }
 
-// emoji returns the label with its leading emoji stripped when emoji rendering
-// is disabled for the bot.
+// emoji returns the label with its leading emoji stripped when emoji rendering is disabled for the bot.
 func (b *Bot) emoji(label string) string {
 	_, enabled := b.botPrefs()
 	if !enabled {
@@ -762,9 +727,7 @@ func (b *Bot) emoji(label string) string {
 	return label
 }
 
-// fmtBtn renders an inline keyboard button label with an optional emoji
-// prefix: the emoji is only prepended when emoji rendering is enabled for the
-// bot, guaranteeing a strict no-emoji button surface when disabled.
+// fmtBtn renders an inline keyboard button label with an optional emoji prefix: the emoji is only prepended when emoji rendering is enabled for the bot, guaranteeing a strict no-emoji button surface when disabled.
 func (b *Bot) fmtBtn(label string, emoji string, emojisEnabled bool) string {
 	if !emojisEnabled {
 		return label
@@ -772,8 +735,7 @@ func (b *Bot) fmtBtn(label string, emoji string, emojisEnabled bool) string {
 	return emoji + " " + label
 }
 
-// btn is the localization-aware shortcut for fmtBtn: it resolves the stored
-// bot language and emoji flag, then formats the button label.
+// btn is the localization-aware shortcut for fmtBtn: it resolves the stored bot language and emoji flag, then formats the button label.
 func (b *Bot) btn(emoji, ru, en string) string {
 	_, enabled := b.botPrefs()
 	return b.fmtBtn(b.tr(ru, en), emoji, enabled)
@@ -819,8 +781,7 @@ func (b *Bot) saveBotPrefs(lang string, emojis int) {
 	}
 }
 
-// getMainMenuContent builds the main menu: node online/offline counters and
-// the fleet action buttons.
+// getMainMenuContent builds the main menu: node online/offline counters and the fleet action buttons.
 func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	nodes, err := b.repo.GetAllNodes()
 	if err != nil {
@@ -840,7 +801,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		emojiState = b.tr("ВЫКЛ", "OFF")
 	}
 
-	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v1.1.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
+	text := fmt.Sprintf("<b>🌐 Malaxis Fleet v1.4.0</b>\n\n%s: 🟢 %d %s | 🔴 %d %s",
 		b.tr("Узлы", "Nodes"), onlineCount, b.tr("онлайн", "Online"), offlineCount, b.tr("офлайн", "Offline"))
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(
@@ -849,6 +810,9 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Управление узлами", "Manage Nodes"), "💻", emojis), "nodes:list"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Управление провайдерами", "Manage Providers"), "🌍", emojis), "providers:menu"),
 		),
 		tgbotapi.NewInlineKeyboardRow(
 			tgbotapi.NewInlineKeyboardButtonData(b.fmtBtn(b.tr("Отправить файлы клиентов (OTA)", "Push Client Files (OTA)"), "🚀", emojis), "ota:all"),
@@ -880,10 +844,7 @@ func (b *Bot) getMainMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	return text, markup
 }
 
-// showStatusFresh renders a quick fleet health summary (online/offline node
-// counters plus database stats) and sends it as a brand new message (used by
-// the /status slash command): the old menu message is deleted and a fresh one
-// is placed at the bottom of the chat.
+// showStatusFresh renders a quick fleet health summary (online/offline node counters plus database stats) and sends it as a brand new message (used by the /status slash command): the old menu message is deleted and a fresh one is placed at the bottom of the chat.
 func (b *Bot) showStatusFresh(chatID int64) {
 	nodes, err := b.repo.GetAllNodes()
 	if err != nil {
@@ -939,8 +900,7 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 	case "add_user_creds":
 		b.processAddUserCredsText(chatID, text)
 	case "add_user_role":
-		// Role selection happens via the inline keyboard; stray text is
-		// ignored and the role picker is re-shown.
+		// Role selection happens via the inline keyboard; stray text is ignored and the role picker is re-shown.
 		b.showRoleSelection(chatID, b.getMainMenuID(chatID), state.Username, b.tr("Нажмите на роль ниже, чтобы завершить создание пользователя:", "Tap a role below to finish creating the user:"))
 	case "add_role_name":
 		b.processAddRoleNameText(chatID, text)
@@ -952,6 +912,12 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 		b.processRenameRoleText(chatID, text)
 	case "role_rank":
 		b.processChangeRoleRankText(chatID, text)
+	case "add_provider_domain":
+		b.processAddProviderDomainText(chatID, text)
+	case "add_provider_name":
+		b.processAddProviderNameText(chatID, text)
+	case "provider_rename":
+		b.processRenameProviderText(chatID, text)
 	default:
 		b.clearState(chatID)
 		b.showMainMenu(chatID)
@@ -960,11 +926,7 @@ func (b *Bot) handleTextInput(chatID int64, text string) {
 
 // --- Onboarding & utilities ---
 
-// handleJoinCommand shows the tokenized node onboarding command for both
-// supported OS families. Each command is rendered as a <code> block so
-// Telegram lets the admin copy it on tap. The join domain and fleet secret
-// are resolved dynamically from the settings store when present, falling
-// back to the static env configuration.
+// handleJoinCommand shows the tokenized node onboarding command for both supported OS families. Each command is rendered as a <code> block so Telegram lets the admin copy it on tap. The join domain and fleet secret are resolved dynamically from the settings store when present, falling back to the static env configuration.
 func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 	domain := b.cfg.JoinDomain
 	if v, err := b.repo.GetSetting("join_domain"); err == nil && strings.TrimSpace(v) != "" {
@@ -993,13 +955,9 @@ func (b *Bot) handleJoinCommand(chatID int64, messageID int) {
 	b.editMessage(chatID, messageID, text, b.backMenuMarkup())
 }
 
-// handlePrefsCallback answers callbacks for the preference toggles (language,
-// emoji rendering, backup interval) with a visible toast and re-renders the
-// main menu.
+// handlePrefsCallback answers callbacks for the preference toggles (language, emoji rendering, backup interval) with a visible toast and re-renders the main menu.
 func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
-	// Backup operations are strictly restricted to the primary owner chat
-	// (tg_admin_chat_id) — pollUpdates already filters every update, this is
-	// explicit defense-in-depth for the DB-backup surface.
+	// Backup operations are strictly restricted to the primary owner chat (tg_admin_chat_id) — pollUpdates already filters every update, this is explicit defense-in-depth for the DB-backup surface.
 	if (data == "backup:download" || data == "backup:interval" || strings.HasPrefix(data, "backup:set:")) && !b.isAdminChat(q.Message.Chat.ID) {
 		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Доступ только владельцу", "Owner only")))
 		return
@@ -1039,9 +997,7 @@ func (b *Bot) handlePrefsCallback(q *tgbotapi.CallbackQuery, data string) {
 	b.showMainMenu(q.Message.Chat.ID)
 }
 
-// isAdminChat reports whether the given Telegram chat is the primary owner
-// chat (the configured tg_admin_chat_id). Backup operations are strictly
-// restricted to it.
+// isAdminChat reports whether the given Telegram chat is the primary owner chat (the configured tg_admin_chat_id). Backup operations are strictly restricted to it.
 func (b *Bot) isAdminChat(chatID int64) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -1087,8 +1043,7 @@ var avatarColorDisplay = map[string]string{
 	"cyan":    "Cyan",
 }
 
-// showAvatarMenu renders the bot avatar color picker sub-menu. The five
-// color options match the dashboard accent palette (avatarColors).
+// showAvatarMenu renders the bot avatar color picker sub-menu. The five color options match the dashboard accent palette (avatarColors).
 func (b *Bot) showAvatarMenu(chatID int64, messageID int) {
 	text := "<b>🎨 " + b.tr("Выбор цвета аватарки", "Select Bot Avatar Color") + "</b>\n\n" +
 		b.tr("Выберите цвет, соответствующий вашей теме:", "Choose a color matching your theme:")
@@ -1118,9 +1073,7 @@ func (b *Bot) showAvatarMenu(chatID int64, messageID int) {
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// handleAvatarDefault resets the bot's profile photo to the embedded standard
-// avatar (clearing any stored color preference so it is not re-applied on the
-// next bot start).
+// handleAvatarDefault resets the bot's profile photo to the embedded standard avatar (clearing any stored color preference so it is not re-applied on the next bot start).
 func (b *Bot) handleAvatarDefault(q *tgbotapi.CallbackQuery, chatID int64, messageID int) {
 	if err := b.SetDefaultAvatar(); err != nil {
 		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Не удалось установить стандартный аватар", "Could not set standard avatar")))
@@ -1139,9 +1092,7 @@ func (b *Bot) handleAvatarDefault(q *tgbotapi.CallbackQuery, chatID int64, messa
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// handleAvatarColorSelection applies the chosen avatar color to the bot's
-// profile photo (persisting bot_avatar_color) and confirms with a success
-// screen offering to pick another color.
+// handleAvatarColorSelection applies the chosen avatar color to the bot's profile photo (persisting bot_avatar_color) and confirms with a success screen offering to pick another color.
 func (b *Bot) handleAvatarColorSelection(q *tgbotapi.CallbackQuery, color string) {
 	if _, ok := avatarColors[color]; !ok {
 		b.api.Request(tgbotapi.NewCallback(q.ID, "❌ "+b.tr("Неизвестный цвет", "Unknown color")))
@@ -1195,8 +1146,7 @@ func (b *Bot) backMenuMarkup() *tgbotapi.InlineKeyboardMarkup {
 func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 	data := q.Data
 
-	// The preference toggles answer their callbacks with a visible toast, so
-	// they are handled before the generic empty acknowledgment below.
+	// The preference toggles answer their callbacks with a visible toast, so they are handled before the generic empty acknowledgment below.
 	if data == "prefs:lang" || data == "prefs:emoji" || data == "backup:interval" || data == "backup:download" || strings.HasPrefix(data, "backup:set:") {
 		b.handlePrefsCallback(q, data)
 		return
@@ -1224,6 +1174,18 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 		b.handleAvatarColorSelection(q, strings.TrimPrefix(data, "bot:avatar:"))
 	case data == "nodes:list":
 		b.handleNodeList(chatID, messageID)
+	case data == "providers:menu":
+		b.handleProvidersMenu(chatID, messageID)
+	case data == "providers:add":
+		b.handleProviderAddRequest(chatID, messageID)
+	case strings.HasPrefix(data, "provider:detail:"):
+		b.showProviderDetail(chatID, messageID, strings.TrimPrefix(data, "provider:detail:"), "")
+	case strings.HasPrefix(data, "provider:rename:"):
+		b.handleProviderRenameRequest(chatID, messageID, strings.TrimPrefix(data, "provider:rename:"))
+	case strings.HasPrefix(data, "provider:del:"):
+		b.handleProviderDeleteRequest(chatID, messageID, strings.TrimPrefix(data, "provider:del:"))
+	case strings.HasPrefix(data, "provider:delconfirm:"):
+		b.handleProviderDeleteConfirm(chatID, messageID, strings.TrimPrefix(data, "provider:delconfirm:"))
 	case data == "ota:all":
 		b.handleOtaAll(chatID, messageID)
 	case data == "task:refresh_subs":
@@ -1342,8 +1304,7 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 				b.tr("Можно отправить несколько URL через пробел.", "Multiple URLs separated by spaces are supported.")),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:set_sub:"):
-		// Onboarding quick-action: prompt for the subscription URL inside the
-		// notification message itself.
+		// Onboarding quick-action: prompt for the subscription URL inside the notification message itself.
 		nodeID := strings.TrimPrefix(data, "node:set_sub:")
 		b.setState(chatID, &userState{Step: "set_sub_url", NodeID: nodeID})
 		b.editMessage(chatID, messageID,
@@ -1354,8 +1315,7 @@ func (b *Bot) handleCallbackQuery(q *tgbotapi.CallbackQuery) {
 				b.tr("Можно отправить несколько URL через пробел.", "Multiple URLs separated by spaces are supported.")),
 			b.cancelMarkup())
 	case strings.HasPrefix(data, "node:approve:"):
-		// Onboarding quick-action: the agent already reported a sub URL, so
-		// approving just queues the update_sub fetch.
+		// Onboarding quick-action: the agent already reported a sub URL, so approving just queues the update_sub fetch.
 		b.handleApproveNode(chatID, messageID, strings.TrimPrefix(data, "node:approve:"))
 	case strings.HasPrefix(data, "node:reject:"):
 		b.handleRejectNode(chatID, messageID, strings.TrimPrefix(data, "node:reject:"))
@@ -1395,8 +1355,7 @@ func emptyDash(s string) string {
 	return s
 }
 
-// xmlEscape escapes HTML-significant characters so dynamic node/user-supplied
-// text is safe to render with Telegram's HTML parse mode.
+// xmlEscape escapes HTML-significant characters so dynamic node/user-supplied text is safe to render with Telegram's HTML parse mode.
 func xmlEscape(s string) string {
 	if s == "" {
 		return s

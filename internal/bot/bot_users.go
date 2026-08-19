@@ -17,8 +17,7 @@ import (
 
 // --- User & Role management ---
 
-// roleRankOf resolves the numeric rank of a role name, preferring the custom
-// roles table and falling back to the built-in domain rank table.
+// roleRankOf resolves the numeric rank of a role name, preferring the custom roles table and falling back to the built-in domain rank table.
 func (b *Bot) roleRankOf(role string) int {
 	roles, err := b.repo.GetAllRoles()
 	if err == nil {
@@ -74,25 +73,19 @@ func (b *Bot) buildUsersMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	return text.String(), tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-// handleUsersMenu lists all fleet users with their role/rank and offers an
-// Add User button.
+// handleUsersMenu lists all fleet users with their role/rank and offers an Add User button.
 func (b *Bot) handleUsersMenu(chatID int64, messageID int) {
 	text, markup := b.buildUsersMenuContent()
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// showUsersMenuFresh sends a brand new users list menu (used by the /users
-// slash command): the old menu message is deleted and a fresh one is placed at
-// the bottom of the chat.
+// showUsersMenuFresh sends a brand new users list menu (used by the /users slash command): the old menu message is deleted and a fresh one is placed at the bottom of the chat.
 func (b *Bot) showUsersMenuFresh(chatID int64) {
 	text, markup := b.buildUsersMenuContent()
 	b.sendFreshMenu(chatID, text, &markup)
 }
 
-// showUserDetail renders a single user with its role/rank and the full set of
-// management actions: change role, change password, delete user. The manage
-// actions are hidden for the owner account and for any role ranked at or above
-// the built-in admin rank (mirroring the web API's rank guards).
+// showUserDetail renders a single user with its role/rank and the full set of management actions: change role, change password, delete user. The manage actions are hidden for the owner account and for any role ranked at or above the built-in admin rank (mirroring the web API's rank guards).
 func (b *Bot) showUserDetail(chatID int64, messageID int, userID int64, note string) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
@@ -137,8 +130,7 @@ func (b *Bot) showUserDetail(chatID int64, messageID int, userID int64, note str
 	b.editMessage(chatID, messageID, text.String(), &markup)
 }
 
-// showUserRolePicker renders every non-owner role as a target for reassigning
-// the user's role. One button per row so every role stays fully visible.
+// showUserRolePicker renders every non-owner role as a target for reassigning the user's role. One button per row so every role stays fully visible.
 func (b *Bot) showUserRolePicker(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
@@ -178,9 +170,7 @@ func (b *Bot) showUserRolePicker(chatID int64, messageID int, userID int64) {
 		&markup)
 }
 
-// handleUserChangeRole assigns a new role to an existing user, mirroring the
-// web API's rank guards: the owner role is never assignable and the bot only
-// ever reassigns strictly lower-ranked roles.
+// handleUserChangeRole assigns a new role to an existing user, mirroring the web API's rank guards: the owner role is never assignable and the bot only ever reassigns strictly lower-ranked roles.
 func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
@@ -223,8 +213,7 @@ func (b *Bot) handleUserChangeRole(chatID int64, messageID int, userID, roleID i
 	b.showUserDetail(chatID, messageID, userID, b.tr("Роль изменена на", "Role changed to")+" "+role.Name)
 }
 
-// handleUserPwRequest opens the password-change prompt; the next text message
-// becomes the new password (and is deleted after processing).
+// handleUserPwRequest opens the password-change prompt; the next text message becomes the new password (and is deleted after processing).
 func (b *Bot) handleUserPwRequest(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
@@ -237,8 +226,7 @@ func (b *Bot) handleUserPwRequest(chatID int64, messageID int, userID int64) {
 		b.cancelMarkup())
 }
 
-// processChangeUserPwText captures the new password, hashes it and updates the
-// target user.
+// processChangeUserPwText captures the new password, hashes it and updates the target user.
 func (b *Bot) processChangeUserPwText(chatID int64, text string) {
 	state := b.getState(chatID)
 	b.clearState(chatID)
@@ -274,8 +262,7 @@ func (b *Bot) processChangeUserPwText(chatID int64, text string) {
 	b.showUserDetail(chatID, b.getMainMenuID(chatID), state.TargetID, b.tr("Пароль обновлён", "Password updated"))
 }
 
-// handleUserDeleteRequest asks for explicit confirmation before deleting a
-// user; the owner account and admin are always protected.
+// handleUserDeleteRequest asks for explicit confirmation before deleting a user; the owner account and admin are always protected.
 func (b *Bot) handleUserDeleteRequest(chatID int64, messageID int, userID int64) {
 	user, err := b.repo.GetUserByID(userID)
 	if err != nil {
@@ -321,8 +308,7 @@ func (b *Bot) handleUserDeleteConfirm(chatID int64, messageID int, userID int64)
 	b.handleUsersMenu(chatID, messageID)
 }
 
-// processAddUserCredsText parses "username password" from the admin's reply,
-// validates that the username is free, then moves to the role-selection step.
+// processAddUserCredsText parses "username password" from the admin's reply, validates that the username is free, then moves to the role-selection step.
 func (b *Bot) processAddUserCredsText(chatID int64, text string) {
 	parts := strings.Fields(strings.TrimSpace(text))
 	if len(parts) != 2 {
@@ -346,9 +332,7 @@ func (b *Bot) processAddUserCredsText(chatID int64, text string) {
 	b.showRoleSelection(chatID, b.getMainMenuID(chatID), username, "")
 }
 
-// showRoleSelection renders every non-owner role from the database as an
-// inline keyboard for the in-progress add-user flow. One button per row so
-// every role stays fully visible.
+// showRoleSelection renders every non-owner role from the database as an inline keyboard for the in-progress add-user flow. One button per row so every role stays fully visible.
 func (b *Bot) showRoleSelection(chatID int64, messageID int, username, note string) {
 	roles, err := b.repo.GetAllRoles()
 	if err != nil {
@@ -379,8 +363,7 @@ func (b *Bot) showRoleSelection(chatID int64, messageID int, username, note stri
 	b.editMessage(chatID, messageID, text.String(), &markup)
 }
 
-// handleUserCreate finishes the add-user flow: it resolves the chosen role,
-// hashes the stored password and persists the new fleet user.
+// handleUserCreate finishes the add-user flow: it resolves the chosen role, hashes the stored password and persists the new fleet user.
 func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
 	state := b.getState(chatID)
 	if state == nil || state.Step != "add_user_role" || state.Username == "" || state.Password == "" {
@@ -476,23 +459,19 @@ func (b *Bot) buildRolesMenuContent() (string, tgbotapi.InlineKeyboardMarkup) {
 	return text.String(), tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-// handleRolesMenu lists all defined roles (with their ranks) and offers an
-// Add Role button.
+// handleRolesMenu lists all defined roles (with their ranks) and offers an Add Role button.
 func (b *Bot) handleRolesMenu(chatID int64, messageID int) {
 	text, markup := b.buildRolesMenuContent()
 	b.editMessage(chatID, messageID, text, &markup)
 }
 
-// showRolesMenuFresh sends a brand new roles list menu (used by the /roles
-// slash command): the old menu message is deleted and a fresh one is placed at
-// the bottom of the chat.
+// showRolesMenuFresh sends a brand new roles list menu (used by the /roles slash command): the old menu message is deleted and a fresh one is placed at the bottom of the chat.
 func (b *Bot) showRolesMenuFresh(chatID int64) {
 	text, markup := b.buildRolesMenuContent()
 	b.sendFreshMenu(chatID, text, &markup)
 }
 
-// showRoleDetail renders a single role with its rank, user count and the full
-// set of management actions: rename, change rank, delete.
+// showRoleDetail renders a single role with its rank, user count and the full set of management actions: rename, change rank, delete.
 func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note string) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
@@ -534,8 +513,7 @@ func (b *Bot) showRoleDetail(chatID int64, messageID int, roleID int64, note str
 	b.editMessage(chatID, messageID, text.String(), &markup)
 }
 
-// handleRoleRenameRequest opens the rename prompt; the next text message
-// becomes the role's new name, guarded against reserved/duplicate names.
+// handleRoleRenameRequest opens the rename prompt; the next text message becomes the role's new name, guarded against reserved/duplicate names.
 func (b *Bot) handleRoleRenameRequest(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
@@ -598,8 +576,7 @@ func (b *Bot) processRenameRoleText(chatID int64, text string) {
 	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, b.tr("Переименована в", "Renamed to")+" "+role.Name)
 }
 
-// handleRoleRankRequest opens the rank prompt; the next text message becomes
-// the role's new rank (1-99).
+// handleRoleRankRequest opens the rank prompt; the next text message becomes the role's new rank (1-99).
 func (b *Bot) handleRoleRankRequest(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
@@ -652,9 +629,7 @@ func (b *Bot) processChangeRoleRankText(chatID int64, text string) {
 	b.showRoleDetail(chatID, b.getMainMenuID(chatID), state.TargetID, b.tr("Ранг обновлён до", "Rank updated to")+" "+strconv.Itoa(rank))
 }
 
-// handleRoleDeleteRequest asks for explicit confirmation. System roles and the
-// owner role are never deletable; roles that still have assigned users also
-// cannot be deleted.
+// handleRoleDeleteRequest asks for explicit confirmation. System roles and the owner role are never deletable; roles that still have assigned users also cannot be deleted.
 func (b *Bot) handleRoleDeleteRequest(chatID int64, messageID int, roleID int64) {
 	role, err := b.repo.GetRoleByID(roleID)
 	if err != nil || role == nil {
@@ -713,8 +688,7 @@ func (b *Bot) handleRoleDeleteConfirm(chatID int64, messageID int, roleID int64)
 	b.handleRolesMenu(chatID, messageID)
 }
 
-// processAddRoleNameText captures the new role's name and moves the flow on to
-// the rank prompt.
+// processAddRoleNameText captures the new role's name and moves the flow on to the rank prompt.
 func (b *Bot) processAddRoleNameText(chatID int64, text string) {
 	name := strings.TrimSpace(text)
 	if name == "" {
@@ -744,8 +718,7 @@ func (b *Bot) processAddRoleNameText(chatID int64, text string) {
 		b.cancelMarkup())
 }
 
-// processAddRoleRankText validates the 1-99 rank and creates the role with
-// empty (web-editable) permissions.
+// processAddRoleRankText validates the 1-99 rank and creates the role with empty (web-editable) permissions.
 func (b *Bot) processAddRoleRankText(chatID int64, text string) {
 	state := b.getState(chatID)
 

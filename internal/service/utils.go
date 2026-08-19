@@ -4,9 +4,7 @@ import (
 	"encoding/json"
 )
 
-// CanonicalJSON marshals an interface to a canonical JSON string.
-// It achieves this by unmarshaling into a map[string]interface{} and then marshaling it again,
-// which sorts the keys alphabetically.
+// CanonicalJSON marshals an interface to a canonical JSON string. It achieves this by unmarshaling into a map[string]interface{} and then marshaling it again, which sorts the keys alphabetically.
 func CanonicalJSON(data interface{}) (string, error) {
 	// Marshal the data first
 	b, err := json.Marshal(data)

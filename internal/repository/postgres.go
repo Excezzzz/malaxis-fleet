@@ -22,9 +22,7 @@ type postgresRepository struct {
 	db *sql.DB
 }
 
-// NewRepository creates a new repository instance for PostgreSQL.
-// Implements a retry backoff loop to handle SQLSTATE 57P03 (cannot_connect_now)
-// which occurs when the PostgreSQL container is still initializing.
+// NewRepository creates a new repository instance for PostgreSQL. Implements a retry backoff loop to handle SQLSTATE 57P03 (cannot_connect_now) which occurs when the PostgreSQL container is still initializing.
 func NewRepository(cfg *config.Config) (Repository, error) {
 	connString := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		cfg.PostgresHost, cfg.PostgresPort, cfg.PostgresUser, cfg.PostgresPassword, cfg.PostgresDB)
@@ -34,9 +32,7 @@ func NewRepository(cfg *config.Config) (Repository, error) {
 		return nil, fmt.Errorf("failed to open postgres connection: %w", err)
 	}
 
-	// Connection pool tuning: cap concurrent connections and idle retention so
-	// the master keeps a modest pool under burst load (node polling storms,
-	// mass subscription refreshes) without exhausting container resources.
+	// Connection pool tuning: cap concurrent connections and idle retention so the master keeps a modest pool under burst load (node polling storms, mass subscription refreshes) without exhausting container resources.
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
 	db.SetConnMaxLifetime(5 * time.Minute)
@@ -125,8 +121,7 @@ func (r *postgresRepository) Init() error {
 		}
 	}
 
-	// Idempotent migrations. Every statement is error-checked and logged with
-	// its SQL so schema drift can never fail silently.
+	// Idempotent migrations. Every statement is error-checked and logged with its SQL so schema drift can never fail silently.
 	type migration struct {
 		query string
 		args  []interface{}
@@ -147,18 +142,13 @@ func (r *postgresRepository) Init() error {
 		// Migrate: Add hardware_hash column for hardware fingerprint dedup
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS hardware_hash TEXT`},
 		{query: `CREATE INDEX IF NOT EXISTS idx_nodes_hardware_hash ON nodes(hardware_hash)`},
-		// Migrate: Multi-subscription support - sub_urls JSONB array replaces
-		// the single sub_url TEXT column (kept as a legacy mirror of the first
-		// entry for backwards compatibility).
+		// Migrate: Multi-subscription support - sub_urls JSONB array replaces the single sub_url TEXT column (kept as a legacy mirror of the first entry for backwards compatibility).
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS sub_urls JSONB NOT NULL DEFAULT '[]'`},
-		// Backfill: copy any legacy single sub_url into the new array exactly
-		// once (guarded by the empty-array check, so it is idempotent).
+		// Backfill: copy any legacy single sub_url into the new array exactly once (guarded by the empty-array check, so it is idempotent).
 		{query: `UPDATE nodes SET sub_urls = to_jsonb(ARRAY[sub_url]) WHERE (sub_url IS NOT NULL AND sub_url != '') AND sub_urls = '[]'::jsonb`},
-		// Mirror the first array entry back into the legacy sub_url column so
-		// any remaining sub_url consumers keep working after upgrades.
+		// Mirror the first array entry back into the legacy sub_url column so any remaining sub_url consumers keep working after upgrades.
 		{query: `UPDATE nodes SET sub_url = sub_urls->>0 WHERE jsonb_array_length(sub_urls) > 0 AND COALESCE(sub_url, '') = ''`},
-		// Migrate: server_providers column - agent-reported map of server name
-		// -> provider name used for grouping in the web UI, bot and CLI.
+		// Migrate: server_providers column - agent-reported map of server name -> provider name used for grouping in the web UI, bot and CLI.
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS server_providers TEXT`},
 		// Migrate: Add node_logs column (JSON map of container -> last log tail)
 		{query: `ALTER TABLE nodes ADD COLUMN IF NOT EXISTS active_provider TEXT DEFAULT ''`},
@@ -178,17 +168,14 @@ func (r *postgresRepository) Init() error {
 		// Migrate: Add configurable rank column (int hierarchy) if it doesn't exist
 		{query: `ALTER TABLE roles ADD COLUMN IF NOT EXISTS rank INT NOT NULL DEFAULT 10`},
 		{query: `ALTER TABLE roles ALTER COLUMN rank SET DEFAULT 10`},
-		// Backfill ranks for the built-in system roles. Idempotent: only roles
-		// found in the DB are touched, so existing deployments keep their data.
+		// Backfill ranks for the built-in system roles. Idempotent: only roles found in the DB are touched, so existing deployments keep their data.
 		{query: `UPDATE roles SET rank = $1 WHERE name = 'owner'`, args: []interface{}{domain.RoleRankOwner}},
 		{query: `UPDATE roles SET rank = $1 WHERE name = 'admin'`, args: []interface{}{domain.RoleRankAdmin}},
 		{query: `UPDATE roles SET rank = $1 WHERE name = 'client'`, args: []interface{}{domain.RoleRankClient}},
 		{query: `UPDATE roles SET rank = $1 WHERE name = 'viewer'`, args: []interface{}{domain.RoleRankViewer}},
-		// Any non-system/custom role that still defaults to the client rank keeps
-		// its stored value; only NULL/zero ranks are normalized to the default.
+		// Any non-system/custom role that still defaults to the client rank keeps its stored value; only NULL/zero ranks are normalized to the default.
 		{query: `UPDATE roles SET rank = 10 WHERE rank IS NULL OR rank < 1 OR rank > 100`},
-		// Ensure the built-in system roles exist even on upgraded deployments whose
-		// roles table was seeded before the owner/viewer rows were introduced.
+		// Ensure the built-in system roles exist even on upgraded deployments whose roles table was seeded before the owner/viewer rows were introduced.
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'admin', '#EF4444', 'system', '{"can_view_nodes":true,"can_switch_vpn":true,"can_edit_sub":true,"can_rename_node":true,"can_terminate_node":true,"can_update_client":true,"can_purge_nodes":true,"can_manage_providers":true,"can_view_users":true,"can_create_users":true,"can_edit_users":true,"can_delete_users":true,"can_view_roles":true,"can_manage_roles":true,"can_view_audit":true,"can_view_node_logs":true,"can_view_master_logs":true,"can_view_audit_logs":true}', 80, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'admin')`},
@@ -201,19 +188,11 @@ func (r *postgresRepository) Init() error {
 		{query: `INSERT INTO roles (name, color_hex, owner_id, permissions_json, rank, created_at)
 			SELECT 'viewer', '#6B7280', 'system', '{"can_view_nodes":true}', 10, NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM roles WHERE name = 'viewer')`},
-		// Migrate: Rename the legacy 'admin' account to 'owner' so existing
-		// deployments keep dashboard access under the new default credential
-		// (ADMIN_USER=owner). Guarded against a unique-conflict when a user
-		// named 'owner' was already created manually.
+		// Migrate: Rename the legacy 'admin' account to 'owner' so existing deployments keep dashboard access under the new default credential (ADMIN_USER=owner). Guarded against a unique-conflict when a user named 'owner' was already created manually.
 		{query: `UPDATE users SET username = 'owner' WHERE username = 'admin' AND NOT EXISTS (SELECT 1 FROM users WHERE username = 'owner')`},
-		// Migrate: When both an 'admin' and an 'owner' account exist (an old
-		// deployment where UpsertAdminUser previously re-seeded 'admin' as an
-		// owner), the 'admin' row is a duplicate owner: demote it to the
-		// regular admin role so the canonical ADMIN_USER account stays the
-		// sole owner and ADMIN_PASS keeps force-syncing.
+		// Migrate: When both an 'admin' and an 'owner' account exist (an old deployment where UpsertAdminUser previously re-seeded 'admin' as an owner), the 'admin' row is a duplicate owner: demote it to the regular admin role so the canonical ADMIN_USER account stays the sole owner and ADMIN_PASS keeps force-syncing.
 		{query: `UPDATE users SET role = 'admin' WHERE username = 'admin' AND role = 'owner' AND EXISTS (SELECT 1 FROM users WHERE username = 'owner')`},
-		// Seed automated-backup routing defaults (idempotent). Missing values
-		// default to local-only storage; both are safe regardless of migration.
+		// Seed automated-backup routing defaults (idempotent). Missing values default to local-only storage; both are safe regardless of migration.
 		{query: `INSERT INTO settings (key, value, updated_at)
 			SELECT 'backup_to_local', 'true', NOW()
 			WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'backup_to_local')`},
@@ -233,18 +212,13 @@ func (r *postgresRepository) Init() error {
 	// Migrate: Copy old bot settings keys to new tg_ prefixed keys
 	r.migrateBotSettings()
 
-	// Migrate: Ensure the system admin role carries every current permission key,
-	// including the granular log permissions introduced for server-side RBAC.
+	// Migrate: Ensure the system admin role carries every current permission key, including the granular log permissions introduced for server-side RBAC.
 	r.migrateSystemRolePermissions()
 
 	return nil
 }
 
-// migrateSystemRolePermissions merges the full permission set into the system
-// admin role's permissions_json on every startup. This is the idempotent
-// upgrade path for existing deployments whose roles table was seeded before
-// granular keys (can_view_node_logs, can_view_master_logs, can_view_audit_logs)
-// existed. Only roles owned by "system" (admin/client) are touched.
+// migrateSystemRolePermissions merges the full permission set into the system admin role's permissions_json on every startup. This is the idempotent upgrade path for existing deployments whose roles table was seeded before granular keys (can_view_node_logs, can_view_master_logs, can_view_audit_logs) existed. Only roles owned by "system" (admin/client) are touched.
 func (r *postgresRepository) migrateSystemRolePermissions() {
 	systemRoles, err := r.GetCustomRolesByOwner("system")
 	if err != nil {
@@ -328,10 +302,7 @@ func (r *postgresRepository) Close() error {
 
 // --- Node Methods ---
 
-// unmarshalAvailableServers parses the stored JSON value of available servers.
-// v1.2.2 reports a grouped object {provider: [server, ...]}; values written by
-// older agents are flat arrays and are normalized to a single provider-less
-// group. Logs (never silently ignores) a corrupted value.
+// unmarshalAvailableServers parses the stored JSON value of available servers. v1.2.2 reports a grouped object {provider: [server, ...]}; values written by older agents are flat arrays and are normalized to a single provider-less group. Logs (never silently ignores) a corrupted value.
 func unmarshalAvailableServers(raw string) map[string][]string {
 	out := map[string][]string{}
 	if raw == "" || raw == "null" {
@@ -484,9 +455,7 @@ func (r *postgresRepository) AddNode(node *domain.Node) error {
 }
 
 func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error) {
-	// TERMINATION GUARD: a self-destructed device must never resurrect. If the
-	// presented node_id still maps to a Terminated row, mint a brand-new id so
-	// the device registers as a completely fresh install.
+	// TERMINATION GUARD: a self-destructed device must never resurrect. If the presented node_id still maps to a Terminated row, mint a brand-new id so the device registers as a completely fresh install.
 	if node.ID != "" {
 		var terminated bool
 		err := r.db.QueryRow(
@@ -503,14 +472,9 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 		}
 	}
 
-	// RESURRECTION: an id that does not exist in the DB (soft-deleted or
-	// purged by the admin) is recreated below by the INSERT with that exact id.
-	// Only Terminated rows are refused the resurrection path (handled above).
+	// RESURRECTION: an id that does not exist in the DB (soft-deleted or purged by the admin) is recreated below by the INSERT with that exact id. Only Terminated rows are refused the resurrection path (handled above).
 
-	// Hardware fingerprint dedup: a reinstalled node (fresh node_id.txt) whose
-	// id no longer exists in the DB is adopted back to its original row via the
-	// immutable hardware_hash, so the device keeps its name/history. Terminated
-	// rows are explicitly excluded: a killed device registers as brand-new.
+	// Hardware fingerprint dedup: a reinstalled node (fresh node_id.txt) whose id no longer exists in the DB is adopted back to its original row via the immutable hardware_hash, so the device keeps its name/history. Terminated rows are explicitly excluded: a killed device registers as brand-new.
 	adopted := false
 	if node.HardwareHash != "" {
 		var existingID string
@@ -530,10 +494,7 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 		}
 	}
 
-	// Secondary dedup fallback: if the hardware hash is a new value (e.g. the
-	// agent's fingerprint changed after the virtual-MAC fix) but hostname + LAN
-	// IP still match an existing active node, adopt that row instead of
-	// creating a duplicate. Terminated rows are excluded here too.
+	// Secondary dedup fallback: if the hardware hash is a new value (e.g. the agent's fingerprint changed after the virtual-MAC fix) but hostname + LAN IP still match an existing active node, adopt that row instead of creating a duplicate. Terminated rows are excluded here too.
 	if !adopted && node.Hostname != "" && node.IPLan != "" {
 		var existingID string
 		err := r.db.QueryRow(
@@ -552,18 +513,14 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 		}
 	}
 
-	// Ghost-node cleanup: remove stale duplicate rows for the same hostname.
-	// Runs AFTER dedup adoption so the canonical row (now carrying node.ID) is
-	// never the victim; only offline lookalikes older than 10 minutes go.
+	// Ghost-node cleanup: remove stale duplicate rows for the same hostname. Runs AFTER dedup adoption so the canonical row (now carrying node.ID) is never the victim; only offline lookalikes older than 10 minutes go.
 	if node.Hostname != "" {
 		if _, err := r.db.Exec(`DELETE FROM nodes WHERE hostname = $1 AND id != $2 AND last_seen < NOW() - interval '10 minutes'`, node.Hostname, node.ID); err != nil {
 			log.Printf("ERROR: ghost-node cleanup failed for hostname %q: %v", node.Hostname, err)
 		}
 	}
 
-	// Detect whether this is a genuinely new device FIRST time we've ever seen
-	// it. Hardware-hash adoption above collapses reinstalls onto their original
-	// row, so a reconnecting device is NOT reported as new.
+	// Detect whether this is a genuinely new device FIRST time we've ever seen it. Hardware-hash adoption above collapses reinstalls onto their original row, so a reconnecting device is NOT reported as new.
 	var isNew bool
 	err := r.db.QueryRow(`SELECT NOT EXISTS (SELECT 1 FROM nodes WHERE id = $1)`, node.ID).Scan(&isNew)
 	if err != nil {
@@ -587,9 +544,7 @@ func (r *postgresRepository) UpsertNode(node *domain.Node) (string, bool, error)
 	return node.ID, isNew, err
 }
 
-// newNodeID mints a fresh 12-hex-char node id in the same format the agent
-// generates (uuid.uuid4().hex[:12]), used to refuse resurrection of a
-// Terminated device.
+// newNodeID mints a fresh 12-hex-char node id in the same format the agent generates (uuid.uuid4().hex[:12]), used to refuse resurrection of a Terminated device.
 func newNodeID() string {
 	b := make([]byte, 6)
 	if _, err := rand.Read(b); err != nil {
@@ -643,10 +598,7 @@ func (r *postgresRepository) UpdateNodeStatus(id, ipLan string) error {
 	return err
 }
 
-// SetNodeLogs merges a JSON map of container -> log tail into the node's stored
-// logs. Each agent report only carries the container it just fetched, so a naive
-// overwrite would wipe the other containers' entries (node-agent polls would
-// erase xray-node/singbox-node logs and vice versa).
+// SetNodeLogs merges a JSON map of container -> log tail into the node's stored logs. Each agent report only carries the container it just fetched, so a naive overwrite would wipe the other containers' entries (node-agent polls would erase xray-node/singbox-node logs and vice versa).
 func (r *postgresRepository) SetNodeLogs(id, logsJSON string) error {
 	existing := map[string]string{}
 	if raw, err := r.GetNodeLogs(id); err == nil && raw != "" {
@@ -754,8 +706,7 @@ func (r *postgresRepository) SetPendingCommand(nodeID, command string, messageID
 	if err != nil {
 		return err
 	}
-	// Command-flow consistency: never silently queue a command for a node that
-	// does not exist in the DB (the single source of truth).
+	// Command-flow consistency: never silently queue a command for a node that does not exist in the DB (the single source of truth).
 	affected, err := res.RowsAffected()
 	if err != nil {
 		return err
@@ -767,9 +718,7 @@ func (r *postgresRepository) SetPendingCommand(nodeID, command string, messageID
 }
 
 func (r *postgresRepository) UpdateNodeSubURLsAndQueue(nodeID string, subURLs []string, command string, messageID int64) error {
-	// Single atomic UPDATE: saving the sub_urls and queuing the update_sub
-	// command must succeed or fail together, otherwise a sub_urls change
-	// could be persisted without ever triggering the agent to fetch it.
+	// Single atomic UPDATE: saving the sub_urls and queuing the update_sub command must succeed or fail together, otherwise a sub_urls change could be persisted without ever triggering the agent to fetch it.
 	res, err := r.db.Exec(`UPDATE nodes SET sub_urls = $1::jsonb,
 		sub_url = CASE WHEN jsonb_array_length($1::jsonb) > 0 THEN $1::jsonb->>0 ELSE '' END,
 		pending_command = $2, pending_msg_id = $3, pipeline_status = 'Queued', status_message = '' WHERE id = $4`,
@@ -848,9 +797,7 @@ func (r *postgresRepository) AddUser(user *domain.User) (int64, error) {
 	return id, err
 }
 
-// UpsertAdminUser creates the admin user if missing and ALWAYS overwrites its
-// password hash (and owner role) on every startup. There is no "IF NOT EXISTS"
-// skip path: an existing stale hash can never lock the dashboard out.
+// UpsertAdminUser creates the admin user if missing and ALWAYS overwrites its password hash (and owner role) on every startup. There is no "IF NOT EXISTS" skip path: an existing stale hash can never lock the dashboard out.
 func (r *postgresRepository) UpsertAdminUser(username, passwordHash string) error {
 	query := `INSERT INTO users (username, password_hash, role, created_at, color_hex)
 		VALUES ($1, $2, 'owner', NOW(), '#FF5733')
@@ -873,8 +820,7 @@ func (r *postgresRepository) UpdateUserPassword(id int64, passwordHash string) e
 	return err
 }
 
-// UpdateUserUsername renames a user account. The unique constraint on
-// username is enforced by the database; a conflicting rename returns an error.
+// UpdateUserUsername renames a user account. The unique constraint on username is enforced by the database; a conflicting rename returns an error.
 func (r *postgresRepository) UpdateUserUsername(id int64, username string) error {
 	_, err := r.db.Exec("UPDATE users SET username = $1 WHERE id = $2", username, id)
 	return err
@@ -1106,14 +1052,7 @@ func (r *postgresRepository) DeleteSubscriptionProvider(domain string) error {
 	return err
 }
 
-// SyncProviders reconciles the subscription_providers table with the URLs
-// actually referenced by nodes:
-//  1. Every hostname found in any node's sub_urls (or the legacy sub_url
-//     column) is guaranteed to exist as a provider row. Missing rows are
-//     auto-added with the domain itself as the default friendly name;
-//     ON CONFLICT DO NOTHING keeps manual renames intact.
-//  2. Provider rows whose domain is referenced by no node are deleted
-//     (garbage collection).
+// SyncProviders reconciles the subscription_providers table with the URLs actually referenced by nodes: 1. Every hostname found in any node's sub_urls (or the legacy sub_url column) is guaranteed to exist as a provider row. Missing rows are auto-added with the domain itself as the default friendly name; ON CONFLICT DO NOTHING keeps manual renames intact. 2. Provider rows whose domain is referenced by no node are deleted (garbage collection).
 func (r *postgresRepository) SyncProviders() error {
 	// 1. Extract the set of active domains across the whole fleet.
 	rows, err := r.db.Query(`SELECT sub_urls::text, COALESCE(sub_url, '') FROM nodes`)
@@ -1155,8 +1094,7 @@ func (r *postgresRepository) SyncProviders() error {
 		}
 	}
 
-	// 3. Garbage collection: purge provider rows whose domain is no longer
-	// referenced by any node's subscription.
+	// 3. Garbage collection: purge provider rows whose domain is no longer referenced by any node's subscription.
 	existing, err := r.GetProviderNames()
 	if err != nil {
 		return err
@@ -1171,9 +1109,7 @@ func (r *postgresRepository) SyncProviders() error {
 	return nil
 }
 
-// providerHost extracts the lowercased hostname of a subscription URL, or ""
-// when the URL is malformed or carries no host. Scheme-less entries (e.g.
-// "sub.example.com/path") are retried with an https:// prefix.
+// providerHost extracts the lowercased hostname of a subscription URL, or "" when the URL is malformed or carries no host. Scheme-less entries (e.g. "sub.example.com/path") are retried with an https:// prefix.
 func providerHost(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
