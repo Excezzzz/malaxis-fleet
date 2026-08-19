@@ -112,7 +112,7 @@ func (a *API) CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), domain.BcryptCost)
 	if err != nil {
 		log.Printf("[CreateUser] bcrypt error: %v", err)
 		w.Header().Set("Content-Type", "application/json")
@@ -275,7 +275,7 @@ func (a *API) UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Password != "" {
-		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), domain.BcryptCost)
 		if err != nil {
 			log.Printf("[UpdateUser] bcrypt error: %v", err)
 			w.Header().Set("Content-Type", "application/json")
@@ -426,7 +426,7 @@ func (a *API) ResetUserPasswordHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), domain.BcryptCost)
 	if err != nil {
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return

@@ -245,7 +245,7 @@ func (b *Bot) processChangeUserPwText(chatID int64, text string) {
 		return
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(password), domain.BcryptCost)
 	if err != nil {
 		log.Printf("Bot: failed to hash new password for user %d: %v", state.TargetID, err)
 		b.editMessage(chatID, b.getMainMenuID(chatID), "<b>❌ "+b.tr("Не удалось обновить пароль.", "Failed to update password.")+"</b>", b.cancelMarkup())
@@ -384,7 +384,7 @@ func (b *Bot) handleUserCreate(chatID int64, messageID int, roleIDStr string) {
 		return
 	}
 
-	hashed, err := bcrypt.GenerateFromPassword([]byte(state.Password), bcrypt.DefaultCost)
+	hashed, err := bcrypt.GenerateFromPassword([]byte(state.Password), domain.BcryptCost)
 	if err != nil {
 		log.Printf("Bot: failed to hash password for user %q: %v", state.Username, err)
 		b.editMessage(chatID, messageID, "<b>❌ "+b.tr("Не удалось создать пользователя.", "Failed to create user.")+"</b>", b.cancelMarkup())
