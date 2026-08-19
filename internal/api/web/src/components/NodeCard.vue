@@ -367,10 +367,13 @@ export default {
     const toastType = ref('success');
     let toastTimer = null;
 
+    const currentTime = ref(Date.now());
+    let tickTimer = null;
+
     const isOnline = computed(() => {
       if (!props.node.last_seen) return false;
       const lastSeen = new Date(props.node.last_seen);
-      const diffSeconds = (new Date() - lastSeen) / 1000;
+      const diffSeconds = (currentTime.value - lastSeen) / 1000;
       return diffSeconds < ONLINE_THRESHOLD_SECONDS;
     });
 
@@ -425,7 +428,7 @@ export default {
     const timeSince = (dateStr) => {
         if (!dateStr) return t('node_never');
         const date = new Date(dateStr);
-        const seconds = Math.floor((new Date() - date) / 1000);
+        const seconds = Math.floor((currentTime.value - date) / 1000);
         if (seconds < 5) return t('node_just_now');
         if (seconds < 60) return seconds === 1 ? t('time_second_ago') : t('time_seconds_ago', { n: seconds });
         const minutes = Math.floor(seconds / 60);
@@ -721,10 +724,12 @@ export default {
 
     onMounted(() => {
       fetchProviderNames();
+      tickTimer = setInterval(() => { currentTime.value = Date.now(); }, 5000);
     });
 
     onUnmounted(() => {
       stopAutoRefresh();
+      if (tickTimer) clearInterval(tickTimer);
     });
 
     return {

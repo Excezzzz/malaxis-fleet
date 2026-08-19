@@ -139,10 +139,13 @@ export default {
     let pollInterval;
     let toastTimer;
 
+    const currentTime = ref(Date.now());
+    let tickTimer = null;
+
     const isNodeOnline = (node) => {
       if (!node.last_seen) return false;
       const lastSeen = new Date(node.last_seen);
-      const diffSeconds = (new Date() - lastSeen) / 1000;
+      const diffSeconds = (currentTime.value - lastSeen) / 1000;
       return diffSeconds < ONLINE_THRESHOLD_SECONDS;
     };
 
@@ -262,10 +265,12 @@ export default {
     onMounted(() => {
       fetchNodes();
       pollInterval = setInterval(fetchNodes, POLLING_INTERVAL);
+      tickTimer = setInterval(() => { currentTime.value = Date.now(); }, 5000);
     });
 
     onUnmounted(() => {
       clearInterval(pollInterval);
+      if (tickTimer) clearInterval(tickTimer);
     });
 
 return {
