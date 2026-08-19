@@ -109,7 +109,7 @@ function Has-Sub {
 function Show-Menu {
     Clear-Host
     Write-Host "==========================================" -ForegroundColor Cyan
-    Write-Host "     Malaxis Fleet Agent CLI" -ForegroundColor Cyan
+    Write-Host "     Malaxis Fleet Agent CLI __VERSION__" -ForegroundColor Cyan
     Write-Host "==========================================" -ForegroundColor Cyan
     Write-Host ""
 

@@ -53,7 +53,7 @@
             </div>
             <div class="leading-tight">
               <h1 class="text-sm sm:text-lg font-bold tracking-tight whitespace-nowrap">Malaxis Fleet</h1>
-              <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">v1.4.0</span>
+              <span class="hidden sm:inline-block bg-indigo-600/90 text-white font-bold px-2.5 py-0.5 text-xs rounded-md tracking-wider shadow-lg shadow-indigo-950/50">{{ appVersion }}</span>
             </div>
           </div>
         </div>
@@ -138,6 +138,7 @@ export default {
     SettingsView,
   },
   setup() {
+    const appVersion = process.env.VUE_APP_VERSION || 'dev';
     const isAuthenticated = ref(false);
     const currentView = ref('Nodes');
     const role = ref('');
@@ -347,6 +348,7 @@ export default {
     });
 
     return {
+      appVersion,
       isAuthenticated,
       currentView,
       currentViewComponent,

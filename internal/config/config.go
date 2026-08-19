@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -52,6 +53,28 @@ type Config struct {
 
 	// Master log file path (used by the "Logs & Audit" tab)
 	MasterLogFile string
+
+	// AppVersion is the build version read from the root VERSION file (single source of truth)
+	AppVersion string
+}
+
+// loadAppVersion reads the root VERSION file at startup. go:embed cannot reference files
+// above the package directory (patterns with ".." are invalid), so the version is read
+// from the filesystem: the repo root when running locally, /app/VERSION inside the
+// container, or the directory of the running binary. Falls back to "dev".
+func loadAppVersion() string {
+	candidates := []string{"VERSION", "/app/VERSION"}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "VERSION"))
+	}
+	for _, p := range candidates {
+		if b, err := os.ReadFile(p); err == nil {
+			if v := strings.TrimSpace(string(b)); v != "" {
+				return v
+			}
+		}
+	}
+	return "dev"
 }
 
 // LoadConfig loads configuration from environment variables (.env file)
@@ -100,6 +123,7 @@ func LoadConfig() *Config {
 		OwnerRoleName:      getStringDefault("OWNER_ROLE_NAME", "Owner"),
 		OwnerColorHex:      getStringDefault("OWNER_COLOR_HEX", "#FF5733"),
 		MasterLogFile:      getStringDefault("MASTER_LOG_FILE", "data/logs/master.log"),
+		AppVersion:         loadAppVersion(),
 	}
 }
 

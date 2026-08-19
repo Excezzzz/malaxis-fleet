@@ -150,7 +150,7 @@ has_sub() {
 show_menu() {
     clear
     echo "${CYAN}==========================================${NC}"
-    echo "${CYAN}${BOLD}     Malaxis Fleet Agent CLI${NC}"
+    echo "${CYAN}${BOLD}     Malaxis Fleet Agent CLI __VERSION__${NC}"
     echo "${CYAN}==========================================${NC}"
     echo ""
 

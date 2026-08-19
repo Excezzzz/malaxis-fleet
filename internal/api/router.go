@@ -300,6 +300,8 @@ func (a *API) applyDomainPlaceholders(content string) string {
 	content = strings.ReplaceAll(content, "__DASH_DOMAIN__", a.config.DashboardDomain)
 	// The fleet secret is injected so bootstrap scripts can authenticate their subsequent payload downloads with ?t=<SECRET_TOKEN>.
 	content = strings.ReplaceAll(content, "__SECRET_TOKEN__", a.config.FleetSecret)
+	// The build version from the root VERSION file (used e.g. by the CLI banner).
+	content = strings.ReplaceAll(content, "__VERSION__", a.config.AppVersion)
 	return content
 }
 

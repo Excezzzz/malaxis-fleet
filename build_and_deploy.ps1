@@ -14,6 +14,13 @@ param (
 # --- Configuration ---
 $RemotePath = "~/malaxis-fleet"
 
+# --- Version (single source of truth: root VERSION file) ---
+if (-not (Test-Path "VERSION")) {
+    Write-Host "ERROR: VERSION file not found. It must exist at the repository root." -ForegroundColor Red
+    exit 1
+}
+$Version = (Get-Content "VERSION").Trim()
+
 # Function to check for errors and exit
 function Check-Error {
     if ($LASTEXITCODE -ne 0) {
@@ -51,7 +58,7 @@ Pop-Location
 Write-Host ">>> Vue build successful." -ForegroundColor Green
 
 # --- 2. Deploy source tree to VPS ---
-Write-Host ">>> Deploying to $VpsTarget..." -ForegroundColor Cyan
+Write-Host ">>> Deploying Malaxis Fleet $Version to $VpsTarget..." -ForegroundColor Cyan
 
 # Create remote directory
 Write-Host ">>> Creating remote directory..."
@@ -113,4 +120,4 @@ Remove-Item -Path "internal/api/web/dist" -Recurse -Force -ErrorAction SilentlyC
 Remove-Item -Path $Staging -Recurse -Force -ErrorAction SilentlyContinue
 
 # --- Success ---
-Write-Host "🎉 [SUCCESS] Deployment complete." -ForegroundColor Green
+Write-Host "🎉 [SUCCESS] Deployment of $Version complete." -ForegroundColor Green

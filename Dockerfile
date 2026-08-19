@@ -11,6 +11,9 @@ WORKDIR /app/web
 # "pattern web/dist: no matching files found".
 COPY internal/api/web/package*.json ./
 RUN npm ci --registry=$NPM_REGISTRY || echo "[!] npm ci failed - falling back to committed dist"
+# The root VERSION file is the single source of truth for the version string;
+# vue.config.js reads it via ../../../VERSION, so it must exist at /VERSION.
+COPY VERSION /VERSION
 COPY internal/api/web/ ./
 RUN npm run build || echo "[!] npm run build failed - falling back to committed dist"
 
@@ -28,6 +31,8 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates tzdata postgresql-client docker-cli
 WORKDIR /app
 COPY --from=go-builder /app/master_server .
+# VERSION is read at runtime by the Go backend (internal/config loadAppVersion).
+COPY VERSION /app/VERSION
 RUN chmod +x master_server
 EXPOSE 8000
 CMD ["./master_server"]
