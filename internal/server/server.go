@@ -40,7 +40,10 @@ func NewServer(cfg *config.Config, repo repository.Repository) *Server {
 	return s
 }
 
-func (s *Server) Start() error {
+// Start initializes all background services, registers routes and starts the
+// HTTP server in the background. It returns the running *http.Server so the
+// caller can gracefully drain active requests via Shutdown on SIGINT/SIGTERM.
+func (s *Server) Start() (*http.Server, error) {
 	setupMasterLogFile(s.config.MasterLogFile)
 
 	go s.autoSyncService.Start()
@@ -63,7 +66,12 @@ func (s *Server) Start() error {
 		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
-	return srv.ListenAndServe()
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+	}()
+	return srv, nil
 }
 
 func (s *Server) RebootBot() error {

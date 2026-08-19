@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -95,18 +96,53 @@ func main() {
 		log.Fatalf("Failed to seed default roles: %v", err)
 	}
 
+	// Initialize the global session version (stored in the DB so a restart
+	// keeps current sessions valid). The owner can bump it at any time via
+	// POST /api/web/settings/revoke-sessions to force-logout everyone.
+	sessionVer, err := repo.GetSetting("session_version")
+	if err != nil || sessionVer == "" {
+		sessionVer = generateRandomHex(16)
+		if err := repo.SetSetting("session_version", sessionVer); err != nil {
+			log.Fatalf("Failed to persist session_version: %v", err)
+		}
+		log.Println("Initialized new session_version")
+	}
+	auth.InitSessionVersion(sessionVer)
+
 	srv := server.NewServer(cfg, repo)
 
+	httpSrv, err := srv.Start()
+	if err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+
+	// Auto-cleanup of stale nodes (offline > 14 days), hourly.
 	go func() {
-		if err := srv.Start(); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			deleted, err := repo.DeleteOfflineNodes(14)
+			if err != nil {
+				log.Printf("ERROR: Auto-cleanup of stale nodes failed: %v", err)
+				continue
+			}
+			if deleted > 0 {
+				log.Printf("Auto-cleanup: removed %d stale node(s) (offline > 14 days)", deleted)
+			}
 		}
 	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
+
 	log.Println("Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(ctx); err != nil {
+		log.Printf("HTTP server forced shutdown: %v", err)
+	}
+	log.Println("Server stopped")
 }
 
 func createInitialAdmin(repo repository.Repository, username, password string) error {
@@ -129,7 +165,7 @@ func createInitialAdmin(repo repository.Repository, username, password string) e
 		password = "owner"
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), domain.BcryptCost)
 	if err != nil {
 		return err
 	}
