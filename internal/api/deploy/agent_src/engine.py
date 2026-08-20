@@ -446,22 +446,33 @@ def update_subscription() -> bool:
         return apply_configs(engine, subset, active_idx=idx)
 
     applied = False
-    if current_engine == "xray" and xray_servers:
-        applied = _apply_engine("xray", xray_servers)
-    elif current_engine == "singbox" and singbox_servers:
-        applied = _apply_engine("singbox", singbox_servers)
-    elif xray_servers:
-        agent.log("No xray servers found for current engine, switching to xray")
-        agent.save_rollback("xray")
-        apply_configs("xray", xray_servers)
-        state["active_engine"] = "xray"
-        applied = True
-    elif singbox_servers:
-        agent.log("No singbox servers found for current engine, switching to singbox")
-        agent.save_rollback("singbox")
-        apply_configs("singbox", singbox_servers)
-        state["active_engine"] = "singbox"
-        applied = True
+    active_engine_new = ""
+    if active_name:
+        for s in servers:
+            if s.get("tag") == active_name or s.get("name") == active_name:
+                active_engine_new = s.get("engine", "")
+                break
+    if active_engine_new and active_engine_new != current_engine:
+        subset = xray_servers if active_engine_new == "xray" else singbox_servers
+        agent.log(f"Active server '{active_name}' is a {active_engine_new} server now, switching engine {current_engine} -> {active_engine_new}")
+        applied = _apply_engine(active_engine_new, subset)
+    if not applied:
+        if current_engine == "xray" and xray_servers:
+            applied = _apply_engine("xray", xray_servers)
+        elif current_engine == "singbox" and singbox_servers:
+            applied = _apply_engine("singbox", singbox_servers)
+        elif xray_servers:
+            agent.log("No xray servers found for current engine, switching to xray")
+            agent.save_rollback("xray")
+            apply_configs("xray", xray_servers)
+            state["active_engine"] = "xray"
+            applied = True
+        elif singbox_servers:
+            agent.log("No singbox servers found for current engine, switching to singbox")
+            agent.save_rollback("singbox")
+            apply_configs("singbox", singbox_servers)
+            state["active_engine"] = "singbox"
+            applied = True
 
     tags = [s.get("tag", "") for s in servers]
     network.report(
