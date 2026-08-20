@@ -408,17 +408,18 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 # New (>= 1.12) DNS server format. The legacy `address` form is
                 # rejected by sing-box >= 1.14 outright, so configs must not use
                 # it (the ENABLE_DEPRECATED_* env vars were removed).
-                # The primary DoH resolver detours through the proxy tunnel so
-                # DNS queries never leave the client directly (RU ISPs poison
-                # responses for blocked domains). No loop is possible: outbound
-                # `server` is a raw IP (see _resolve_server_ip) and the DoH
-                # server address is an IP too, so sing-box never needs to
-                # resolve anything through the tunnel it is about to establish.
+                # The primary DoH resolver stays on "direct": the proxy outbound
+                # now carries `multiplex: h2mux`, and DoH (HTTP/2) inside h2mux
+                # (also HTTP/2 framing) gets force-closed by the multiplexer
+                # ("http2: client connection force closed via ClientConn.Close").
+                # DNS leaving the client directly is acceptable: outbound
+                # `server` is a raw IP (see _resolve_server_ip), so poisoned DNS
+                # cannot redirect the VPN tunnel itself.
                 # NOTE: no address_resolver / no server-level `strategy` here -
                 # older sing-box builds reject the unknown field with FATAL
                 # (config decode error); the new-format servers moved strategy
                 # to the top-level `dns.strategy` key instead.
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": ob.get("tag", "proxy")},
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
                 {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
@@ -501,19 +502,20 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
                 break
         else:
             final_tag = appended[0][1]
-    # DNS is built here, after final_tag is known: the primary DoH resolver
-    # detours through the active proxy tunnel so DNS queries never leave the
-    # client directly (RU ISPs poison responses for blocked domains). The plain
-    # UDP 8.8.8.8 server stays on "direct" as a safety fallback. No loop is
-    # possible: outbound `server` is a raw IP (see _resolve_server_ip) and the
-    # DoH server address is an IP too, so sing-box never needs to resolve
-    # anything through the tunnel it is about to establish. NOTE: no
-    # address_resolver here - older sing-box builds reject the unknown field
-    # with FATAL (config decode error). With no servers, final_tag is "direct"
-    # and DNS falls back to direct as well - the correct no-proxy behavior.
+    # DNS is built here, after final_tag is known. The primary DoH resolver
+    # stays on "direct": the proxy outbounds now carry `multiplex: h2mux`, and
+    # DoH (HTTP/2) inside h2mux (also HTTP/2 framing) gets force-closed by the
+    # multiplexer ("http2: client connection force closed via ClientConn.Close").
+    # DNS leaving the client directly is acceptable: outbound `server` is a raw
+    # IP (see _resolve_server_ip), so poisoned DNS cannot redirect the VPN
+    # tunnel itself. The plain UDP 8.8.8.8 server stays on "direct" as a
+    # safety fallback. NOTE: no address_resolver here - older sing-box builds
+    # reject the unknown field with FATAL (config decode error). With no
+    # servers, final_tag is "direct" and DNS stays direct as well - the correct
+    # no-proxy behavior.
     cfg["dns"] = {
         "servers": [
-            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": final_tag},
+            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
             {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
         ],
         "final": "resolver",
