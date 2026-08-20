@@ -78,7 +78,18 @@
         </div>
         <template v-if="canManage">
             <div class="flex flex-wrap gap-2">
-                <button v-if="canEditSubCard" @click="openSubModal" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                  <Shield class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_switch_vpn') }}]</span>
+                </button>
+                <button v-if="canSwitch" @click="testConnection" :disabled="isTestingConnection" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                  <RefreshCw v-if="isTestingConnection" class="w-4 h-4 shrink-0 animate-spin" />
+                  <Activity v-else class="w-4 h-4 shrink-0" />
+                  <span class="font-mono text-sm truncate min-w-0">[{{ isTestingConnection ? t('node_testing') : t('node_test_connection') }}]</span>
+                </button>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button v-if="canEditSubCard" @click="openSubModal" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Link class="w-4 h-4 shrink-0" />
                   <span class="font-mono text-sm truncate min-w-0">[{{ t('node_manage_sub') }}]</span>
                 </button>
@@ -86,21 +97,17 @@
                   <RefreshCw class="w-4 h-4 shrink-0" />
                   <span class="font-mono text-sm truncate min-w-0">[{{ t('node_refresh_subs') }}]</span>
                 </button>
-                <button v-if="canSwitch && !isTerminated" @click="showSwitchModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
-                  <Shield class="w-4 h-4 shrink-0" />
-                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_switch_vpn') }}]</span>
-                </button>
             </div>
             <div class="flex flex-wrap gap-2">
-                <button v-if="canViewNodeLogs" @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                <button v-if="canViewNodeLogs" @click="openLogs" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                     <ScrollText class="w-4 h-4 shrink-0" />
                     <span class="font-mono text-sm truncate min-w-0">[{{ t('node_view_logs') }}]</span>
                 </button>
-                <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Hourglass class="w-4 h-4 shrink-0" />
                   <span class="font-mono text-sm truncate min-w-0">[{{ t('node_task_queue') }} ({{ pendingCommandCount }})]</span>
                 </button>
-                <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-100 font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
+                <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[180px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <RefreshCw class="w-4 h-4 shrink-0" />
                   <span class="font-mono text-sm truncate min-w-0">[{{ t('node_push_client') }}]</span>
                 </button>
@@ -305,13 +312,13 @@
 <script>
 import { ref, computed, inject, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import axios from 'axios';
-import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale, Plus } from 'lucide-vue-next';
+import { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale, Plus, Activity } from 'lucide-vue-next';
 
 const ONLINE_THRESHOLD_SECONDS = 90;
 
 export default {
   name: 'NodeCard',
-  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale, Plus },
+  components: { Server, Cpu, RefreshCw, Shield, Hourglass, CheckCircle2, XCircle, ArrowDown, Cog, Link, Pencil, Copy, EyeOff, ScrollText, X, ChevronRight, Zap, Scale, Plus, Activity },
   props: {
     node: {
       type: Object,
@@ -587,6 +594,22 @@ export default {
       }
     };
 
+    const isTestingConnection = ref(false);
+    const testConnection = async () => {
+      if (isTestingConnection.value) return;
+      isTestingConnection.value = true;
+      try {
+        await axios.post(`/api/web/nodes/${props.node.id}/command`, { action: 'test_connection' });
+        emit('node-updated');
+        showToast(t('node_toast_test_queued'));
+      } catch (e) {
+        console.error('Error testing connection:', e);
+        showToast(t('node_toast_test_failed'), 'error');
+      } finally {
+        isTestingConnection.value = false;
+      }
+    };
+
     const copySubUrls = async () => {
       const urls = nodeSubUrls.value;
       if (!urls.length) return;
@@ -741,6 +764,7 @@ export default {
       showTaskQueueModal,
       activeModal,
       showSwitchModal, switchTo, serverGroups, totalServerCount, refreshSubs,
+      isTestingConnection, testConnection,
       showRenameModal, newNodeName, renameNode,
       showTerminateModal, terminateConfirm, terminateNode,
       cancelPendingCommand,

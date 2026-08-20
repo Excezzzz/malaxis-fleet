@@ -547,6 +547,7 @@ var allowedCommandActions = map[string]bool{
 	"switch":              true,
 	"update_sub":          true,
 	"update_client_files": true,
+	"test_connection":     true,
 }
 
 // --- Middleware ---

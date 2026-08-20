@@ -288,6 +288,9 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         # backend without waiting for the next poll interval.
         network.report(logs=json.dumps({container: output}))
         return True
+    elif action == "test_connection":
+        enqueue("test_connection")
+        return True
     elif action == "terminate":
         enqueue("terminate")
         return True
@@ -659,6 +662,9 @@ def _worker_loop() -> None:
                     truncated = detail[:1500] + ("..." if len(detail) > 1500 else "")
                     agent.log(f"[update_client_files] FAILED: {truncated}")
                     network.report(status="Update failed", message=truncated)
+            elif typ == "test_connection":
+                ok, msg = engine.test_proxy()
+                network.report(status="Verified & Active" if ok else "Connection failed", message=msg)
             elif typ == "terminate":
                 _terminate()
             else:
