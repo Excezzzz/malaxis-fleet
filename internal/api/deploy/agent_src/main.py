@@ -88,37 +88,74 @@ def health_loop() -> None:
                     dormant_logged = True
                 continue
             dormant_logged = False
-            ok, status = engine.test_proxy()
-            if ok:
-                if fail_count > 0:
-                    agent.log(f"Container healthy again after {fail_count} failures")
-                fail_count = 0
-            else:
-                fail_count += 1
-                if fail_count < agent.HEALTH_FAIL_THRESHOLD:
-                    # Transient blip: hold off on alarming/restarting until the
-                    # proxy has failed N CONSECUTIVE checks (N x interval = N
-                    # minutes of total silence). Never kill a working socket
-                    # over a single spike.
-                    agent.log(f"Health check warning ({fail_count}/{agent.HEALTH_FAIL_THRESHOLD}): transient probe miss, holding restart")
-                else:
-                    # Conservative recovery: only treat the proxy as dead and
-                    # attempt a restart after N consecutive failed checks.
-                    state = agent.load_state()
-                    container = "singbox-node" if state.get("active_engine", "singbox") == "singbox" else "xray-node"
-                    agent.log(f"Health check failed ({fail_count}): {status}")
-                    agent.log(f"Proxy considered dead after {fail_count} consecutive failures, restarting {container}")
-                    network.report(status="Proxy dead", message=f"Health check failed {fail_count} times consecutively, restarted {container}")
-                    docker_utils.docker_restart(container)
-                    docker_utils.log_crash_logs(container)
+
+            # Never race the worker: if a switch / config apply / restart is in
+            # progress, skip this cycle entirely — probing a half-restarted
+            # proxy would false-alarm "proxy dead" and restart it with stale
+            # config. The lock is only held for the probe + restart logic, NOT
+            # during the sleep at the top of the loop.
+            if not engine._engine_lock.acquire(blocking=False):
+                agent.log("Health check skipped: engine operation in progress")
+                continue
+            try:
+                ok, status = engine.test_proxy()
+                if ok:
+                    if fail_count > 0:
+                        agent.log(f"Container healthy again after {fail_count} failures")
                     fail_count = 0
+                else:
+                    fail_count += 1
+                    if fail_count < agent.HEALTH_FAIL_THRESHOLD:
+                        # Transient blip: hold off on alarming/restarting until the
+                        # proxy has failed N CONSECUTIVE checks (N x interval = N
+                        # minutes of total silence). Never kill a working socket
+                        # over a single spike.
+                        agent.log(f"Health check warning ({fail_count}/{agent.HEALTH_FAIL_THRESHOLD}): transient probe miss, holding restart")
+                    else:
+                        # Conservative recovery: only treat the proxy as dead and
+                        # attempt a restart after N consecutive failed checks.
+                        state = agent.load_state()
+                        container = "singbox-node" if state.get("active_engine", "singbox") == "singbox" else "xray-node"
+                        agent.log(f"Health check failed ({fail_count}): {status}")
+                        agent.log(f"Proxy considered dead after {fail_count} consecutive failures, restarting {container}")
+                        network.report(status="Proxy dead", message=f"Health check failed {fail_count} times consecutively, restarted {container}")
+                        docker_utils.docker_restart(container)
+                        docker_utils.log_crash_logs(container)
+                        fail_count = 0
+            finally:
+                engine._engine_lock.release()
         except Exception as e:
             agent.log(f"Health check error: {e}")
 
 
 # --- Command Execution ---
 
-_last_command: Optional[str] = None
+# The last processed command is persisted to disk: _last_command is an
+# in-memory value that resets to None on agent restart (health-loop restart,
+# OTA update, Docker restart), which would otherwise re-execute a command the
+# master has not yet cleared from pending_command -> double switches/restarts.
+_LAST_CMD_FILE = os.path.join(agent.CONFIG_DIR, ".last_command")
+
+
+def _load_last_command() -> Optional[str]:
+    try:
+        if os.path.exists(_LAST_CMD_FILE):
+            with open(_LAST_CMD_FILE) as f:
+                return f.read().strip() or None
+    except Exception:
+        pass
+    return None
+
+
+def _save_last_command(key: str) -> None:
+    try:
+        with open(_LAST_CMD_FILE, "w") as f:
+            f.write(key)
+    except Exception:
+        pass
+
+
+_last_command: Optional[str] = _load_last_command()
 
 
 def execute_command(cmd_data: Union[str, dict]) -> bool:
@@ -131,6 +168,7 @@ def execute_command(cmd_data: Union[str, dict]) -> bool:
         agent.log("Command already processed, skipping duplicate delivery")
         return True
     _last_command = key
+    _save_last_command(key)
     if isinstance(cmd_data, str):
         raw = cmd_data.strip()
         if raw.startswith("switch:"):
