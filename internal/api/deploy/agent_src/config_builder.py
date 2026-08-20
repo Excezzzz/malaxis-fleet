@@ -398,9 +398,6 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         # Outbound `server` must be an IP (see _resolve_server_ip) so sing-box
         # never DNS-resolves the proxy server itself.
         ob = {**ob, "server": _resolve_server_ip(ob["server"])}
-    # The outbound must carry the same multiplex / TFO / packet_encoding
-    # optimizations as multi-outbound configs (idempotent, TCP protocols only).
-    _apply_singbox_optimizations(ob)
     return {
         "log": {"level": "warn"},
         "dns": {
@@ -408,10 +405,9 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 # New (>= 1.12) DNS server format. The legacy `address` form is
                 # rejected by sing-box >= 1.14 outright, so configs must not use
                 # it (the ENABLE_DEPRECATED_* env vars were removed).
-                # The primary DoH resolver stays on "direct": the proxy outbound
-                # now carries `multiplex: h2mux`, and DoH (HTTP/2) inside h2mux
-                # (also HTTP/2 framing) gets force-closed by the multiplexer
-                # ("http2: client connection force closed via ClientConn.Close").
+                # The primary DoH resolver stays on "direct": keeping DNS out
+                # of the tunnel makes lookups immune to tunnel/transport
+                # problems and never depends on the proxy being up.
                 # DNS leaving the client directly is acceptable: outbound
                 # `server` is a raw IP (see _resolve_server_ip), so poisoned DNS
                 # cannot redirect the VPN tunnel itself.
@@ -503,9 +499,8 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         else:
             final_tag = appended[0][1]
     # DNS is built here, after final_tag is known. The primary DoH resolver
-    # stays on "direct": the proxy outbounds now carry `multiplex: h2mux`, and
-    # DoH (HTTP/2) inside h2mux (also HTTP/2 framing) gets force-closed by the
-    # multiplexer ("http2: client connection force closed via ClientConn.Close").
+    # stays on "direct": keeping DNS out of the tunnel makes lookups immune
+    # to tunnel/transport problems and never depends on the proxy being up.
     # DNS leaving the client directly is acceptable: outbound `server` is a raw
     # IP (see _resolve_server_ip), so poisoned DNS cannot redirect the VPN
     # tunnel itself. The plain UDP 8.8.8.8 server stays on "direct" as a
@@ -563,42 +558,6 @@ def _resolve_server_ip(host: str) -> str:
     except OSError:
         agent.log(f"[singbox] hostname resolution failed for {host}, keeping domain")
         return host
-
-
-_MUX_TYPES = ("vless", "vmess", "trojan", "ss")
-
-
-def _singbox_multiplex() -> dict:
-    """Multiplex block for TCP-based sing-box outbounds.
-
-    h2mux shares ONE TLS tunnel across all connections instead of doing a full
-    TLS handshake per connection (~200-400ms each), which is what makes image
-    loading in Telegram noticeably faster. Only the TCP-family protocols
-    (VLESS/VMess/Trojan/SS) support it; Hysteria2/TUIC/WireGuard are UDP/QUIC
-    based, multiplex natively and FATAL on unknown fields - never touched.
-    """
-    return {
-        "enabled": True,
-        "protocol": "h2mux",
-        "max_connections": 4,
-        "padding": True,
-    }
-
-
-def _apply_singbox_optimizations(ob: dict) -> None:
-    """Add multiplex / tcp_fast_open / packet_encoding to a TCP-based outbound.
-
-    Idempotent and safe to call on any outbound dict (incl. ones built outside
-    _singbox_outbound): non-TCP outbounds are skipped because sing-box rejects
-    unknown fields with FATAL and those protocols multiplex natively.
-    """
-    if ob.get("type") not in _MUX_TYPES:
-        return
-    ob["multiplex"] = _singbox_multiplex()
-    if ob.get("server"):
-        ob["tcp_fast_open"] = True
-    if ob.get("type") == "vless":
-        ob["packet_encoding"] = "xudp"
 
 
 def _singbox_outbound(srv: dict) -> Optional[dict]:
@@ -734,7 +693,14 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
             grpc["authority"] = host_hdr
         ob["transport"] = grpc
 
-    _apply_singbox_optimizations(ob)
+    # Multiplexing is deliberately disabled: the tunnel endpoint is an Xray
+    # (3x-ui) server, and sing-box's h2mux (HTTP/2 framing) is incompatible
+    # with Xray's mux protocol - every muxed connection dies with
+    # "http2: client connection force closed via ClientConn.Close"
+    # (verified empirically against this server). Also no tcp_fast_open
+    # and no packet_encoding: TFO SYN+data is dropped by RU middleboxes and
+    # Xray cannot decode sing-box's xudp, so all three must stay off.
+    ob["multiplex"] = {"enabled": False}
     return ob
 
 
