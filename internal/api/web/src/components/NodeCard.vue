@@ -43,8 +43,9 @@
               <div class="flex items-center gap-2 min-w-0">
                 <span class="text-xs text-zinc-400 truncate max-w-[140px] sm:max-w-[180px] inline-block align-bottom" :title="nodeSubUrls.join('\n')">{{ nodeSubUrls[0] }}<template v-if="nodeSubUrls.length > 1"> +{{ nodeSubUrls.length - 1 }}</template></span>
                 <button @click="copySubUrls" :title="t('node_copy_sub_tt')"
-                  class="p-1 rounded-md bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white transition-colors shrink-0">
-                  <Copy class="w-3 h-3" />
+                  :class="['p-1 rounded-md border transition-colors shrink-0', subCopied ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-400 hover:text-white']">
+                  <CheckCircle2 v-if="subCopied" class="w-3 h-3" />
+                  <Copy v-else class="w-3 h-3" />
                 </button>
               </div>
             </template>
@@ -115,7 +116,7 @@
             </template>
       </div>
 
-      <div v-if="toast" :class="['fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-950/95 md:bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-950/95 md:bg-red-500/15 border-red-500/40 text-red-200']">
+      <div v-if="toast" :class="['fixed top-4 right-4 md:right-6 z-[1100] px-5 py-3 rounded-xl backdrop-blur-md shadow-2xl border', toastType === 'success' ? 'bg-emerald-950/95 md:bg-emerald-500/15 border-emerald-500/40 text-emerald-200' : 'bg-red-950/95 md:bg-red-500/15 border-red-500/40 text-red-200']">
         {{ toast }}
       </div>
     </div>
@@ -271,9 +272,10 @@
               <span>{{ t('node_refresh') }}</span>
             </button>
             <button @click="copyLogs" :title="t('node_copy')"
-              class="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-sm text-white transition-colors">
-              <Copy class="w-4 h-4" />
-              <span>{{ t('node_copy') }}</span>
+              :class="['flex items-center gap-2 px-3 py-1.5 border rounded-lg text-sm transition-colors', logsCopied ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300' : 'bg-white/5 hover:bg-white/10 border-white/10 text-white']">
+              <CheckCircle2 v-if="logsCopied" class="w-4 h-4" />
+              <Copy v-else class="w-4 h-4" />
+              <span>{{ logsCopied ? t('copied') : t('node_copy') }}</span>
             </button>
           </div>
         </div>
@@ -610,11 +612,16 @@ export default {
       }
     };
 
+    const logsCopied = ref(false);
+    const subCopied = ref(false);
+
     const copySubUrls = async () => {
       const urls = nodeSubUrls.value;
       if (!urls.length) return;
       try {
         await navigator.clipboard.writeText(urls.join('\n'));
+        subCopied.value = true;
+        setTimeout(() => { subCopied.value = false; }, 2000);
         showToast(t('node_toast_sub_copied'));
       } catch (e) {
         console.error('Failed to copy sub URLs:', e);
@@ -739,6 +746,8 @@ export default {
       if (!nodeLogs.value) return;
       try {
         await navigator.clipboard.writeText(nodeLogs.value);
+        logsCopied.value = true;
+        setTimeout(() => { logsCopied.value = false; }, 2000);
         showToast(t('node_toast_logs_copied'));
       } catch (e) {
         console.error('Failed to copy logs:', e);
@@ -760,6 +769,7 @@ export default {
       showSubModal, newSubUrl, subUrls, nodeSubUrls, openSubModal, addSubUrl, removeSubUrl, updateSubUrls,
       pushClientFiles,
       copySubUrls, softDeleteNode, confirmDelete,
+      logsCopied, subCopied,
       showDeleteModal, deleteChoice,
       showTaskQueueModal,
       activeModal,

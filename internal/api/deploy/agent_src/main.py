@@ -420,6 +420,26 @@ def _reselect_after_update() -> None:
     engine.select_server(best, mode=mode)
 
 
+def _purge_pycache(app_dir: str) -> int:
+    """Delete every __pycache__ directory under app_dir.
+
+    Python prefers .pyc over .py when the mtime matches, but after an OTA file
+    swap the old bytecode can survive and shadow fresh sources. Called both
+    before and after the update so no stale bytecode is ever loaded.
+    """
+    removed = 0
+    for root, dirnames, _ in os.walk(app_dir):
+        if "__pycache__" not in dirnames:
+            continue
+        target = os.path.join(root, "__pycache__")
+        try:
+            shutil.rmtree(target, ignore_errors=True)
+            removed += 1
+        except Exception:
+            pass
+    return removed
+
+
 def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
     """Download latest client files from the fleet server and replace local copies.
 
@@ -641,8 +661,25 @@ def _worker_loop() -> None:
                 docker_utils.docker_restart("singbox-node")
                 network.report(status="Engine Restarting", message="Containers restarted")
             elif typ == "update_client_files":
+                app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                pre_purge = _purge_pycache(app_dir)
+                if pre_purge:
+                    agent.log(f"[update_client_files] purged {pre_purge} __pycache__ dir(s) before update")
                 ok, errors = update_client_files(action.get("urls", {}))
                 if ok:
+                    # Drop stale caches/locks so the subscription refresh below
+                    # rebuilds them fresh: old subscription/benchmark data and
+                    # an abandoned apply.lock must never survive an OTA.
+                    for cache in (agent.SUBCACHE, agent.BENCH_FILE, agent.APPLY_LOCK_FILE):
+                        try:
+                            if os.path.exists(cache):
+                                os.remove(cache)
+                                agent.log(f"[update_client_files] removed stale cache {os.path.basename(cache)}")
+                        except Exception as e:
+                            agent.log(f"[update_client_files] failed to remove {os.path.basename(cache)}: {e}")
+                    post_purge = _purge_pycache(app_dir)
+                    if post_purge:
+                        agent.log(f"[update_client_files] purged {post_purge} __pycache__ dir(s) after update")
                     # Fetch the absolute latest proxy configs from the server in
                     # addition to the new Python/Bash scripts, so nodes get both
                     # fresh code AND fresh subscription coverage.
