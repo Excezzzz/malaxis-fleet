@@ -400,7 +400,14 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 # New (>= 1.12) DNS server format. The legacy `address` form is
                 # rejected by sing-box >= 1.14 outright, so configs must not use
                 # it (the ENABLE_DEPRECATED_* env vars were removed).
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
+                # The primary DoH resolver detours through the proxy tunnel so
+                # DNS queries never leave the client directly (RU ISPs poison
+                # responses for blocked domains). The plain UDP 8.8.8.8 server
+                # stays on "direct" as the bootstrap resolver: sing-box uses it
+                # to resolve the proxy server's own hostname before the tunnel
+                # is up (queries for a detour outbound's address skip DNS
+                # servers that detour through that same outbound).
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": ob.get("tag", "proxy")},
                 {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
@@ -442,14 +449,6 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
 def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     cfg = {
         "log": {"level": "warn"},
-        "dns": {
-            "servers": [
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": "direct"},
-                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
-            ],
-            "final": "resolver",
-            "independent_cache": True,
-        },
         "inbounds": [
             {
                 "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357,
@@ -487,6 +486,22 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
                 break
         else:
             final_tag = appended[0][1]
+    # DNS is built here, after final_tag is known: the primary DoH resolver
+    # detours through the active proxy tunnel so DNS queries never leave the
+    # client directly (RU ISPs poison responses for blocked domains). The plain
+    # UDP 8.8.8.8 server stays on "direct" as the bootstrap resolver: sing-box
+    # uses it to resolve the proxy server's own hostname before the tunnel is
+    # up (queries for a detour outbound's address skip DNS servers that detour
+    # through that same outbound). With no servers, final_tag is "direct" and
+    # DNS falls back to direct as well - the correct no-proxy behavior.
+    cfg["dns"] = {
+        "servers": [
+            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": final_tag},
+            {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
+        ],
+        "final": "resolver",
+        "independent_cache": True,
+    }
     cfg["route"] = {
         "final": final_tag,
         "auto_detect_interface": True,
