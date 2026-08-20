@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 import traceback
+import urllib.error
 import urllib.request
 import zipfile
 from typing import Any, Optional, Union
@@ -487,6 +488,48 @@ def _purge_pycache(app_dir: str) -> int:
     return removed
 
 
+def _download_with_retry(url: str, what: str, timeout: int = 30) -> bytes:
+    """Download `url` with retry-with-backoff for transient failures.
+
+    Up to 3 attempts (1 original + 2 retries, 5s then 15s backoff). HTTP 4xx
+    is a permanent error (wrong URL / missing file on the server) and is NEVER
+    retried; connection, DNS, timeout and HTTP 5xx errors ARE retried. Between
+    retries, if the host has no default route at all, wait for the network to
+    come back (max 60s) so retries are not wasted on a down interface. Only
+    after all attempts are exhausted is the last error raised, so the caller's
+    atomic two-pass update still aborts cleanly with live files untouched.
+    """
+    attempts = 3
+    backoff = (5, 15)
+    last_err: Optional[Exception] = None
+    for attempt in range(1, attempts + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "malaxis-fleet-agent"})
+            ctx = ssl._create_unverified_context()
+            with urllib.request.urlopen(req, context=ctx, timeout=timeout) as resp:
+                if resp.status != 200:
+                    raise RuntimeError(f"server returned HTTP {resp.status} for {url!r}")
+                return resp.read()
+        except urllib.error.HTTPError as e:
+            if 400 <= e.code < 500:
+                raise RuntimeError(f"permanent HTTP {e.code} for {url!r}") from e
+            last_err = e
+        except Exception as e:
+            last_err = e
+        if attempt < attempts:
+            # Never burn a retry on a dead interface: wait for a default route
+            # (max 60s) before scheduling the next attempt.
+            agent.log(f"[download] {what} attempt {attempt} failed ({last_err}), waiting for network...")
+            waited = 0
+            while waited < 60 and not _has_default_route():
+                time.sleep(5)
+                waited += 5
+            agent.log(f"[download] {what} retrying in {backoff[attempt - 1]}s (attempt {attempt + 1}/{attempts})")
+            time.sleep(backoff[attempt - 1])
+    assert last_err is not None
+    raise last_err
+
+
 def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
     """Download latest client files from the fleet server and replace local copies.
 
@@ -512,12 +555,7 @@ def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
         tmp_zip = os.path.join(app_dir, ".agent_pkg.zip")
         staging = os.path.join(app_dir, ".agent_src_new")
         try:
-            req = urllib.request.Request(pkg_url, headers={"User-Agent": "malaxis-fleet-agent"})
-            ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"server returned HTTP {resp.status} for {pkg_url!r}")
-                data = resp.read()
+            data = _download_with_retry(pkg_url, "agent_src.zip package")
             if len(data) < 4 or data[:4] != b"PK\x03\x04":
                 raise RuntimeError(
                     f"downloaded payload is not a zip archive ({len(data)} bytes, "
@@ -590,12 +628,7 @@ def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
         dest = os.path.join(app_dir, fname)
         tmp = dest + ".tmp"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "malaxis-fleet-agent"})
-            ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, context=ctx, timeout=30) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"server returned HTTP {resp.status} for {url!r}")
-                data = resp.read()
+            data = _download_with_retry(url, fname)
             with open(tmp, "wb") as f:
                 f.write(data)
             # Integrity check while the live file is still untouched.
