@@ -5,6 +5,7 @@ descriptors, converts a raw proxy URL into an outbound object, and ships the
 default bootstrap configs."""
 import base64
 import re
+import socket
 import urllib.parse
 from typing import Optional, Tuple
 
@@ -393,6 +394,10 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
 
 
 def _singbox_cfg_with_outbound(ob: dict) -> dict:
+    if ob.get("server"):
+        # Outbound `server` must be an IP (see _resolve_server_ip) so sing-box
+        # never DNS-resolves the proxy server itself.
+        ob = {**ob, "server": _resolve_server_ip(ob["server"])}
     return {
         "log": {"level": "warn"},
         "dns": {
@@ -524,6 +529,24 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     return cfg
 
 
+def _resolve_server_ip(host: str) -> str:
+    """Resolve a VPN server hostname to an IP address.
+
+    The outbound's `server` must be an IP: all DNS queries go through the
+    tunnel, so if the proxy server itself were a domain, sing-box would need
+    DNS to establish the tunnel - a loop. Only the connection address changes;
+    SNI/server_name/host headers keep the original domain. Falls back to the
+    domain when resolution fails (offline, invalid hostname).
+    """
+    if not host:
+        return host
+    try:
+        return socket.gethostbyname(host)
+    except OSError:
+        agent.log(f"[singbox] hostname resolution failed for {host}, keeping domain")
+        return host
+
+
 def _singbox_outbound(srv: dict) -> Optional[dict]:
     host = srv.get("hostname", "")
     port = int(srv.get("port", 0) or 0)
@@ -535,7 +558,7 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
 
     ob: dict = {
         "type": proto,
-        "server": host,
+        "server": _resolve_server_ip(host),
         "server_port": port,
         # Socket hardening for all proxy outbounds: TCP keepalive keeps NAT
         # mappings and idle tunnels alive through transient link dropouts.
