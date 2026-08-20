@@ -1,18 +1,19 @@
 # Malaxis Fleet Manager
 
-[![Release](https://img.shields.io/badge/Release-v1.4.0-brightgreen)](https://github.com/Excezzzz/malaxis-fleet/releases)
+[![Release](https://img.shields.io/badge/Release-v2.0.0-brightgreen)](https://github.com/Excezzzz/malaxis-fleet/releases)
 [![License](https://img.shields.io/badge/License-AGPL--3.0-blue)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev)
 [![Vue](https://img.shields.io/badge/Vue-3-42b883)](https://vuejs.org)
 
 A self-hosted control plane for orchestrating VPN nodes across remote hosts to
 bypass DPI and network censorship. A single Go master server manages an
-arbitrary number of Dockerized Python agents, each running Xray-core and
-sing-box behind one TLS-terminating Caddy instance.
+arbitrary number of Dockerized Python agents, each running Xray-core (primary)
+and sing-box (for Hysteria2/TUIC/WireGuard) behind one TLS-terminating Caddy
+instance.
 
-The stack is tuned for networks under active deep packet inspection: XHTTP
-stream multiplexing, route-only sniffing, padding, and DoH resolution are
-configured by default.
+The stack is tuned for networks under active deep packet inspection: mux.cool
+stream multiplexing, XHTTP xmux, route-only sniffing, TCP keepalive hardening,
+and DoH resolution are configured by default.
 
 ---
 
@@ -121,19 +122,21 @@ agent code (`agent_src.zip`) and client assets fleet-wide in one action.
 
 ### Transports & protocols
 
-| Transport | Support |
-|-----------|---------|
-| VLESS Reality | Xray, sing-box |
-| VLESS XHTTP (`xmux` stream reuse) | Xray, sing-box |
-| Hysteria2 | sing-box |
-| TUIC | sing-box |
-| Shadowsocks | Xray, sing-box |
-| Trojan | Xray, sing-box |
-| WireGuard | sing-box |
+| Transport | Engine | Mux |
+|-----------|--------|-----|
+| VLESS Reality | Xray (default) | mux.cool |
+| VLESS XHTTP | Xray | xmux (built-in) |
+| VMess | Xray (default) | mux.cool |
+| Trojan | Xray (default) | mux.cool |
+| Shadowsocks | Xray (default) | mux.cool |
+| Hysteria2 | sing-box | built-in |
+| TUIC | sing-box | built-in |
+| WireGuard | sing-box | N/A |
 
 Both engines expose `SOCKS5 127.0.0.1:6357` and `HTTP 127.0.0.1:6358`. The
-agent generates engine configs at runtime and falls back from sing-box to
-Xray for transports sing-box cannot carry natively.
+agent generates engine configs at runtime, and the engine automatically
+follows the active server's protocol (Xray for VLESS/VMess/Trojan/Shadowsocks,
+sing-box for Hysteria2/TUIC/WireGuard).
 
 ### Anti-DPI & performance
 
@@ -147,8 +150,12 @@ Xray for transports sing-box cannot carry natively.
   rewrite the destination.
 - XHTTP `xmux` multiplexes a channel over parallel HTTP requests with adaptive
   request windows, avoiding single long-lived streams.
-- sing-box is the default engine allocation; Xray is used where sing-box
-  lacks native support.
+- **Xray is the default engine** for VLESS, VMess, Trojan, and Shadowsocks
+  (like Hiddify's `useXrayCoreWhenPossible`). sing-box is used only for
+  Hysteria2, TUIC, and WireGuard where Xray lacks native support.
+- **mux.cool** multiplexes up to 8 concurrent streams over a single TLS
+  connection, eliminating per-connection handshake overhead (~300ms each).
+  Media-heavy apps like Telegram load images instantly.
 
 ### Smart routing
 
@@ -182,6 +189,36 @@ to avoid probe spam.
 - DB backup access is hardcoded to the owner role only.
 - SQL is fully parameterized; login is rate-limited per IP; agent identity is
   hardware-fingerprinted (SHA-256 of hostname, primary MAC, system serial).
+- Session revocation: owner can invalidate all active sessions instantly
+  via `POST /api/web/settings/revoke-sessions`.
+- Docker socket access proxied through Tecnativa docker-socket-proxy
+  (read-only, containers only).
+- Container memory limits enforced (fleet-master 512M, postgres 256M).
+
+### OTA updates
+
+Agents self-update via Push Client Files (dashboard or Telegram bot). The
+update pipeline is bulletproof:
+
+1. **Atomic replacement** — all files download to `.tmp` first; if any
+   download fails, live files are untouched. Only after all integrity
+   checks pass does `os.replace()` swap them in.
+2. **Nuclear cleanup** — `__pycache__`, subscription/benchmark caches,
+   rollback directory, and engine configs are purged before restart.
+   The fresh agent rebuilds everything from scratch.
+3. **Retry with backoff** — transient DNS/network failures trigger up to
+   3 retries (5s/15s backoff) with network-readiness checks between
+   attempts.
+
+### Network resilience
+
+Nodes gracefully handle offline-to-online transitions (e.g. laptops
+without WiFi at boot):
+
+- Agent waits for a default network route before starting VPN containers.
+- Health checks are skipped when no route exists (no false "proxy dead").
+- When a network interface appears, the agent auto-recovers without
+  manual container restarts.
 
 ---
 
