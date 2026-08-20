@@ -414,12 +414,18 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 # `server` is a raw IP (see _resolve_server_ip) and the DoH
                 # server address is an IP too, so sing-box never needs to
                 # resolve anything through the tunnel it is about to establish.
-                # NOTE: no address_resolver here - older sing-box builds reject
-                # the unknown field with FATAL (config decode error).
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "strategy": "prefer_ipv4", "detour": ob.get("tag", "proxy")},
+                # NOTE: no address_resolver / no server-level `strategy` here -
+                # older sing-box builds reject the unknown field with FATAL
+                # (config decode error); the new-format servers moved strategy
+                # to the top-level `dns.strategy` key instead.
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": ob.get("tag", "proxy")},
                 {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
+            # Prefer IPv4 for DNS resolution - prevents slow IPv6 fallback
+            # timeouts on dual-stack networks (top-level key, supported since
+            # the legacy DNS schema; the new-format server object rejects it).
+            "strategy": "prefer_ipv4",
             "independent_cache": True,
         },
         "inbounds": [
@@ -507,10 +513,14 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     # and DNS falls back to direct as well - the correct no-proxy behavior.
     cfg["dns"] = {
         "servers": [
-            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "strategy": "prefer_ipv4", "detour": final_tag},
+            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": final_tag},
             {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
         ],
         "final": "resolver",
+        # Prefer IPv4 for DNS resolution - prevents slow IPv6 fallback
+        # timeouts on dual-stack networks (top-level key, supported since
+        # the legacy DNS schema; the new-format server object rejects it).
+        "strategy": "prefer_ipv4",
         "independent_cache": True,
     }
     cfg["route"] = {
