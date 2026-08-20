@@ -42,6 +42,46 @@ from agent_src.network import poll, report  # noqa: F401
 from agent_src.config_builder import parse_url_to_outbound  # noqa: F401
 
 
+def _has_default_route() -> bool:
+    """True when the host has ANY default route (i.e. an internet path exists).
+
+    Tries `ip route show default` first (iproute2), then falls back to parsing
+    /proc/net/route (destination 00000000 = default). Never touches DNS, so it
+    works even when only raw connectivity is present.
+    """
+    try:
+        rc = subprocess.run(
+            ["ip", "route", "show", "default"],
+            capture_output=True, timeout=5,
+        )
+        if rc.returncode == 0 and rc.stdout.strip():
+            return True
+    except Exception:
+        pass
+    try:
+        with open("/proc/net/route", "r") as f:
+            for line in f.readlines()[1:]:
+                parts = line.split()
+                if len(parts) >= 2 and parts[1] == "00000000":
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _wait_for_network() -> None:
+    """Block until the host has a default route.
+
+    A node that boots during an internet outage would otherwise start the
+    engine containers with stale/absent configs and fail every subscription
+    fetch. The node is useless offline anyway, so wait indefinitely (polling
+    every 10s) until raw connectivity exists.
+    """
+    while not _has_default_route():
+        agent.log("No network interface detected, waiting for connectivity...")
+        time.sleep(10)
+
+
 def update_subscription_cli(sub_url: str) -> int:
     """CLI entry point (fleet-cli.sh / fleet-cli.ps1): persist the subscription
     URL(s), trigger an immediate fetch/apply and report the result - mirrors the
@@ -104,6 +144,13 @@ def health_loop() -> None:
                         agent.log(f"Container healthy again after {fail_count} failures")
                     fail_count = 0
                 else:
+                    if not _has_default_route():
+                        # No internet path: the probe miss is expected, not a
+                        # dead proxy. Do NOT count it against the failure
+                        # threshold and do NOT restart anything - the engine
+                        # cannot be reachable while the host is offline.
+                        agent.log("No network, waiting...")
+                        continue
                     fail_count += 1
                     if fail_count < agent.HEALTH_FAIL_THRESHOLD:
                         # Transient blip: hold off on alarming/restarting until the
@@ -793,6 +840,11 @@ def main() -> None:
     agent.log(f"Server: {agent.SERVER_URL}")
     if not agent.SECRET_TOKEN:
         agent.log("WARNING: SECRET_TOKEN is empty - agent will not authenticate with server")
+
+    # Never start the VPN stack before the host has internet: booting during
+    # an outage would produce stale/absent configs and failed subscription
+    # fetches. Wait (indefinitely) for a default route first.
+    _wait_for_network()
 
     engine.ensure_default_configs()
 
