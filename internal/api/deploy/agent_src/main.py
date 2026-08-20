@@ -524,6 +524,12 @@ def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
         agent.log("[update_client_files] no pkg_url provided, skipping agent package update")
 
     # 2) Launcher + CLI + compose support files
+    # ATOMIC two-phase update: phase 1 downloads EVERY file to its .tmp
+    # staging path and runs integrity checks; phase 2 swaps the staged files
+    # into place ONLY if every download passed. A single failure aborts the
+    # whole update with the live files untouched - the node is never left
+    # half-old half-new.
+    staged: list = []  # (fname, dest, tmp, size)
     for fname in ("node_agent.py", "fleet-cli.sh", "requirements.txt", "entrypoint.sh"):
         url = urls.get({
             "node_agent.py": "agent_url",
@@ -545,7 +551,7 @@ def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
                 data = resp.read()
             with open(tmp, "wb") as f:
                 f.write(data)
-            # Integrity check before replacing the live file.
+            # Integrity check while the live file is still untouched.
             if fname == "node_agent.py":
                 try:
                     py_compile.compile(tmp, doraise=True)
@@ -572,14 +578,31 @@ def update_client_files(urls: dict) -> "tuple[bool, list[str]]":
                         continue
                 else:
                     agent.log("[update_client_files] bash not found - skipping fleet-cli.sh syntax check")
-            os.replace(tmp, dest)
-            agent.log(f"[update_client_files] updated {fname} ({len(data)} bytes)")
+            staged.append((fname, dest, tmp, len(data)))
+            agent.log(f"[update_client_files] staged {fname} ({len(data)} bytes)")
         except Exception as e:
             ok = False
             err_txt = f"failed to download {fname}: {e}\n{traceback.format_exc()}"
             errors.append(err_txt)
             agent.log(f"[update_client_files] {err_txt}")
             _safe_remove(tmp)
+    if ok:
+        # Phase 2: every staged file passed, swap them in atomically.
+        for fname, dest, tmp, size in staged:
+            try:
+                os.replace(tmp, dest)
+                agent.log(f"[update_client_files] updated {fname} ({size} bytes)")
+            except Exception as e:
+                ok = False
+                err_txt = f"failed to replace {fname}: {e}\n{traceback.format_exc()}"
+                errors.append(err_txt)
+                agent.log(f"[update_client_files] {err_txt}")
+                _safe_remove(tmp)
+    else:
+        # Phase 1 failed somewhere: drop every staged file, keep live files.
+        for fname, dest, tmp, size in staged:
+            _safe_remove(tmp)
+        agent.log("[update_client_files] one or more downloads failed - existing files kept untouched (no partial update)")
     return ok, errors
 
 
@@ -634,6 +657,7 @@ def _terminate() -> None:
 
 
 def _worker_loop() -> None:
+    global _last_command
     while True:
         action = _ACTION_QUEUE.get()
         typ = action.get("type", "")
@@ -662,14 +686,21 @@ def _worker_loop() -> None:
                 network.report(status="Engine Restarting", message="Containers restarted")
             elif typ == "update_client_files":
                 app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                # Clear the last-command marker BEFORE the update so a retried
+                # push of the same OTA version is never skipped as a duplicate.
+                _last_command = None
+                _safe_remove(_LAST_CMD_FILE)
                 pre_purge = _purge_pycache(app_dir)
                 if pre_purge:
                     agent.log(f"[update_client_files] purged {pre_purge} __pycache__ dir(s) before update")
                 ok, errors = update_client_files(action.get("urls", {}))
                 if ok:
-                    # Drop stale caches/locks so the subscription refresh below
-                    # rebuilds them fresh: old subscription/benchmark data and
-                    # an abandoned apply.lock must never survive an OTA.
+                    # NUCLEAR CLEANUP: drop every stale artifact so the
+                    # subscription refresh below rebuilds everything from
+                    # scratch with the NEW config_builder - old subscription /
+                    # benchmark caches, an abandoned apply.lock, old-format
+                    # rollback configs and stale engine configs must never
+                    # survive an OTA.
                     for cache in (agent.SUBCACHE, agent.BENCH_FILE, agent.APPLY_LOCK_FILE):
                         try:
                             if os.path.exists(cache):
@@ -677,18 +708,40 @@ def _worker_loop() -> None:
                                 agent.log(f"[update_client_files] removed stale cache {os.path.basename(cache)}")
                         except Exception as e:
                             agent.log(f"[update_client_files] failed to remove {os.path.basename(cache)}: {e}")
+                    if os.path.isdir(agent.ROLLBACK_DIR):
+                        try:
+                            shutil.rmtree(agent.ROLLBACK_DIR, ignore_errors=True)
+                            agent.log("[update_client_files] removed rollback directory (old-format configs discarded)")
+                        except Exception as e:
+                            agent.log(f"[update_client_files] failed to remove rollback directory: {e}")
                     post_purge = _purge_pycache(app_dir)
                     if post_purge:
                         agent.log(f"[update_client_files] purged {post_purge} __pycache__ dir(s) after update")
+                    # Force the engine configs to be rebuilt from scratch by
+                    # the new config_builder instead of reusing old-format ones.
+                    for cfg in (agent.SINGBOX_CONFIG, agent.XRAY_CONFIG):
+                        try:
+                            if os.path.exists(cfg):
+                                os.remove(cfg)
+                                agent.log(f"[update_client_files] removed {os.path.basename(cfg)} to force rebuild")
+                        except Exception as e:
+                            agent.log(f"[update_client_files] failed to remove {os.path.basename(cfg)}: {e}")
                     # Fetch the absolute latest proxy configs from the server in
                     # addition to the new Python/Bash scripts, so nodes get both
                     # fresh code AND fresh subscription coverage.
                     agent.log("[update_client_files] refreshing subscription before restart...")
                     try:
-                        engine.update_subscription()
-                        _reselect_after_update()
+                        refreshed = engine.update_subscription()
+                        if not refreshed:
+                            agent.log("[update_client_files] subscription refresh produced no config, ensuring defaults")
+                            engine.ensure_default_configs()
+                        else:
+                            _reselect_after_update()
                     except Exception as e:
                         agent.log(f"[update_client_files] subscription refresh failed (continuing): {e}")
+                        # Never leave the node without valid configs: write the
+                        # default ones so the engine containers do not crash-loop.
+                        engine.ensure_default_configs()
                     network.report(status="Updated", message="Client files updated")
                     agent.log("[update_client_files] Client files updated, restarting gracefully...")
                     _graceful_restart()

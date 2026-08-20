@@ -59,6 +59,22 @@ master_server
 server.exe
 /server
 
+# === Debug / troubleshooting scripts (must never be committed) ===
+verify_*.py
+check-*.sh
+test-*.sh
+fix-*.sh
+fleet-*.sh
+diag-*.sh
+find-*.sh
+fetch-*.sh
+list-*.sh
+q-*.sh
+q-*.sql
+*.tmp
+login.json
+*cookies.txt
+
 # === IDE / OS ===
 .idea/
 .vscode/
