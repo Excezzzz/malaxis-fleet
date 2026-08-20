@@ -402,13 +402,12 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 # it (the ENABLE_DEPRECATED_* env vars were removed).
                 # The primary DoH resolver detours through the proxy tunnel so
                 # DNS queries never leave the client directly (RU ISPs poison
-                # responses for blocked domains). The plain UDP 8.8.8.8 server
-                # stays on "direct" as the bootstrap resolver: sing-box uses it
-                # to resolve the proxy server's own hostname before the tunnel
-                # is up (queries for a detour outbound's address skip DNS
-                # servers that detour through that same outbound).
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": ob.get("tag", "proxy")},
-                {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
+                # responses for blocked domains). address_resolver points at the
+                # bootstrap server, breaking the loop when the VPN server is a
+                # domain: the proxy's own hostname is resolved via direct UDP
+                # 8.8.8.8, never through the tunnel it needs to establish.
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": ob.get("tag", "proxy"), "address_resolver": "bootstrap"},
+                {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
             "independent_cache": True,
@@ -489,15 +488,16 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     # DNS is built here, after final_tag is known: the primary DoH resolver
     # detours through the active proxy tunnel so DNS queries never leave the
     # client directly (RU ISPs poison responses for blocked domains). The plain
-    # UDP 8.8.8.8 server stays on "direct" as the bootstrap resolver: sing-box
-    # uses it to resolve the proxy server's own hostname before the tunnel is
-    # up (queries for a detour outbound's address skip DNS servers that detour
-    # through that same outbound). With no servers, final_tag is "direct" and
-    # DNS falls back to direct as well - the correct no-proxy behavior.
+    # UDP 8.8.8.8 server stays on "direct" as the bootstrap resolver: it breaks
+    # the loop when the VPN server is a domain (the proxy's own hostname is
+    # resolved via direct UDP, never through the tunnel it needs to establish)
+    # via the resolver's address_resolver. With no servers, final_tag is
+    # "direct" and DNS falls back to direct as well - the correct no-proxy
+    # behavior.
     cfg["dns"] = {
         "servers": [
-            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": final_tag},
-            {"type": "udp", "tag": "udp-google", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
+            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": final_tag, "address_resolver": "bootstrap"},
+            {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
         ],
         "final": "resolver",
         "independent_cache": True,
