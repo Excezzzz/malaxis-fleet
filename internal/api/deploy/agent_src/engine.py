@@ -7,6 +7,7 @@ import errno
 import json
 import os
 import socket
+import threading
 import time
 import traceback
 from typing import Callable, Optional, Tuple
@@ -42,6 +43,13 @@ def ensure_default_configs():
 # --- daemon process and CLI invocations (docker exec) running in parallel.
 
 _APPLY_LOCK: Optional[object] = None
+
+# In-process threading lock. The file-based apply lock (fcntl.flock) only
+# serializes against EXTERNAL processes — flock is per-fd, so it cannot stop
+# the health_loop thread from racing a worker switch inside this same process.
+# Every engine mutation must hold this lock; health_loop try-acquires it and
+# skips its cycle when a switch is in progress.
+_engine_lock = threading.Lock()
 
 
 def acquire_apply_lock() -> bool:
@@ -86,37 +94,43 @@ def _probe_host(host: str, port: int, timeout: float = 1.5) -> bool:
         s.connect((ip, port))
         s.close()
         return True
+    except ConnectionRefusedError:
+        return True  # host is up, port just doesn't accept TCP (UDP-only protocol)
+    except OSError as e:
+        if e.errno == errno.ECONNREFUSED:
+            return True
+        return False
     except Exception:
         return False
 
 
 def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
-    acquire_apply_lock()
-    try:
-        if engine == "xray":
-            docker_utils._docker(["stop", "singbox-node"])
-            cfg = config_builder._xray_cfg_with_outbound(ob)
-            with open(agent.XRAY_CONFIG, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2, ensure_ascii=False)
-            agent.log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
-            docker_utils._docker(["restart", "xray-node"])
-        else:
-            docker_utils._docker(["stop", "xray-node"])
-            cfg = config_builder._singbox_cfg_with_outbound(ob)
-            with open(agent.SINGBOX_CONFIG, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2, ensure_ascii=False)
-            agent.log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
-            docker_utils._ensure_xray_running()
-            docker_utils._docker(["restart", "singbox-node"])
-        time.sleep(2)
-        ok, status = test_proxy()
-        if not ok:
-            agent.log(f"Proxy not healthy after applying {engine}: {status}")
-            docker_utils.log_crash_logs("xray-node")
-            docker_utils.log_crash_logs("singbox-node")
-        return cfg
-    finally:
-        release_apply_lock()
+    with _engine_lock:
+        acquire_apply_lock()
+        try:
+            if engine == "xray":
+                docker_utils._docker(["stop", "singbox-node"])
+                cfg = config_builder._xray_cfg_with_outbound(ob)
+                with open(agent.XRAY_CONFIG, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                agent.log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+                docker_utils._docker(["restart", "xray-node"])
+            else:
+                docker_utils._docker(["stop", "xray-node"])
+                cfg = config_builder._singbox_cfg_with_outbound(ob)
+                with open(agent.SINGBOX_CONFIG, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                agent.log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+                docker_utils._ensure_xray_running()
+                docker_utils._docker(["restart", "singbox-node"])
+            ok, status = _wait_for_proxy(max_wait=15.0)
+            if not ok:
+                agent.log(f"Proxy not healthy after applying {engine}: {status}")
+                docker_utils.log_crash_logs("xray-node")
+                docker_utils.log_crash_logs("singbox-node")
+            return cfg
+        finally:
+            release_apply_lock()
 
 
 def _socks5_probe(ip: str, port: int, timeout: float = 5.0) -> Tuple[bool, str]:
@@ -170,17 +184,37 @@ def _http_probe(ip: str, port: int, timeout: float = 5.0) -> Tuple[bool, str]:
 
 def test_proxy() -> Tuple[bool, str]:
     state = agent.load_agent_state()
-    engine = state.get("active_engine", "singbox") if state else "singbox"
-    container = "singbox-node" if engine == "singbox" else "xray-node"
+    engine_name = state.get("active_engine", "singbox") if state else "singbox"
+    container = "singbox-node" if engine_name == "singbox" else "xray-node"
     status = docker_utils._docker_output(["inspect", "-f", "{{.State.Status}}", container])
     if status != "running":
         return False, f"Container not running (status: {status or 'unknown'})"
+
+    # Resolve the shared network namespace IP. Try xray-node DNS first (fast
+    # path), fall back to docker inspect when the DNS entry is stale or the
+    # container is mid-restart (Docker's embedded DNS can hang otherwise).
+    ip = None
     try:
-        # singbox-node shares xray-node's network namespace and has no own
-        # DNS entry, so probe the shared netns (xray-node) for ports 6357/6358.
-        ip = socket.gethostbyname("xray-node")
-    except Exception as e:
-        return False, f"Cannot resolve xray-node: {e}"
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(2.0)
+        try:
+            ip = socket.gethostbyname("xray-node")
+        finally:
+            socket.setdefaulttimeout(old_timeout)
+    except Exception:
+        pass
+
+    if not ip:
+        # Fallback: read the IP directly from Docker
+        ip = docker_utils._docker_output([
+            "inspect", "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            "xray-node",
+        ])
+
+    if not ip:
+        return False, "Cannot resolve xray-node IP (DNS + docker inspect both failed)"
+
     ok, msg = _socks5_probe(ip, 6357)
     if not ok:
         return False, msg
@@ -190,45 +224,64 @@ def test_proxy() -> Tuple[bool, str]:
     return True, msg
 
 
+def _wait_for_proxy(max_wait: float = 15.0, interval: float = 1.0) -> Tuple[bool, str]:
+    """Poll test_proxy() until it succeeds or max_wait seconds elapse.
+
+    On slow 1-2GB VPSes sing-box/xray can take 5-10 seconds to start listening
+    on ports 6357/6358; a single fixed sleep was racing that startup and
+    false-flagging healthy configs as "proxy dead". Caller is expected to hold
+    _engine_lock, so the polling cannot be interleaved with another switch.
+    """
+    deadline = time.monotonic() + max_wait
+    last_status = "timeout"
+    while time.monotonic() < deadline:
+        time.sleep(interval)
+        ok, status = test_proxy()
+        if ok:
+            return True, status
+        last_status = status
+    return False, last_status
+
+
 def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
     if not servers:
         agent.log(f"No servers for {engine}, keeping existing config")
         return False
-    acquire_apply_lock()
-    try:
-        if engine == "xray":
-            docker_utils._docker(["stop", "singbox-node"])
-            cfg = config_builder.build_xray_config(servers, active_idx)
-            with open(agent.XRAY_CONFIG, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2, ensure_ascii=False)
-            agent.log(f"Wrote xray config ({len(cfg['outbounds'])} outbounds)")
-            agent.log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
-            docker_utils._docker(["restart", "xray-node"])
-        else:
-            docker_utils._docker(["stop", "xray-node"])
-            cfg = config_builder.build_singbox_config(servers, active_idx)
-            with open(agent.SINGBOX_CONFIG, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2, ensure_ascii=False)
-            agent.log(f"Wrote singbox config ({len(cfg['outbounds'])} outbounds)")
-            agent.log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
-            docker_utils._ensure_xray_running()
-            docker_utils._docker(["restart", "singbox-node"])
-    finally:
-        release_apply_lock()
-    time.sleep(3)
-    ok, status = test_proxy()
-    if not ok:
-        agent.log(f"Proxy down after applying {engine}, rolling back...")
-        docker_utils.log_crash_logs("xray-node")
-        docker_utils.log_crash_logs("singbox-node")
-        if agent.restore_rollback(engine):
-            docker_utils.docker_restart(f"{engine}-node")
-            agent.log("Rolled back to previous config")
-        else:
-            agent.log("No rollback available")
-        return False
-    agent.log(f"Proxy verified after apply, IP: {status}")
-    return True
+    with _engine_lock:
+        acquire_apply_lock()
+        try:
+            if engine == "xray":
+                docker_utils._docker(["stop", "singbox-node"])
+                cfg = config_builder.build_xray_config(servers, active_idx)
+                with open(agent.XRAY_CONFIG, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                agent.log(f"Wrote xray config ({len(cfg['outbounds'])} outbounds)")
+                agent.log("Xray config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+                docker_utils._docker(["restart", "xray-node"])
+            else:
+                docker_utils._docker(["stop", "xray-node"])
+                cfg = config_builder.build_singbox_config(servers, active_idx)
+                with open(agent.SINGBOX_CONFIG, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2, ensure_ascii=False)
+                agent.log(f"Wrote singbox config ({len(cfg['outbounds'])} outbounds)")
+                agent.log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
+                docker_utils._ensure_xray_running()
+                docker_utils._docker(["restart", "singbox-node"])
+        finally:
+            release_apply_lock()
+        ok, status = _wait_for_proxy(max_wait=15.0)
+        if not ok:
+            agent.log(f"Proxy down after applying {engine}, rolling back...")
+            docker_utils.log_crash_logs("xray-node")
+            docker_utils.log_crash_logs("singbox-node")
+            if agent.restore_rollback(engine):
+                docker_utils.docker_restart(f"{engine}-node")
+                agent.log("Rolled back to previous config")
+            else:
+                agent.log("No rollback available")
+            return False
+        agent.log(f"Proxy verified after apply, IP: {status}")
+        return True
 
 
 def rollback_engine(engine: str) -> bool:
