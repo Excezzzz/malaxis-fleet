@@ -189,6 +189,22 @@ def _normalize_fp(fp: str) -> str:
     return "chrome"
 
 
+def _xray_mux() -> dict:
+    """mux.cool multiplexing block for xray outbounds.
+
+    The tunnel endpoint is an Xray (3x-ui) server, so mux.cool is the native
+    multiplexing protocol here (unlike sing-box's h2mux which Xray rejects).
+    xudp keeps UDP/QUIC flows multiplexed too; 443 UDP is rejected so QUIC
+    traffic falls back to TCP inside the tunnel instead of leaking.
+    """
+    return {
+        "enabled": True,
+        "concurrency": 8,
+        "xudpConcurrency": 8,
+        "xudpProxyUDP443": "reject",
+    }
+
+
 def _xray_outbound(srv: dict) -> Optional[dict]:
     stype = srv.get("type", "")
     host = srv.get("hostname", "")
@@ -282,7 +298,12 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                 },
             }
 
-        ob["mux"] = {"enabled": False}
+        # mux.cool everywhere except xhttp: xhttp has its own built-in xmux
+        # multiplexing (extra.xmux), so mux.cool on top would double-multiplex.
+        if net_type != "xhttp":
+            ob["mux"] = _xray_mux()
+        else:
+            ob["mux"] = {"enabled": False}
         return ob
 
     if stype == "vmess":
@@ -319,6 +340,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             if sni_val:
                 tls_settings["serverName"] = sni_val
             ob["streamSettings"]["tlsSettings"] = tls_settings
+        ob["mux"] = _xray_mux()
         return ob
 
     if stype == "trojan":
@@ -337,10 +359,11 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                 "sockopt": {"tcpKeepAliveInterval": 15},
             },
         }
+        ob["mux"] = _xray_mux()
         return ob
 
     if stype == "ss":
-        return {
+        ob = {
             "protocol": "shadowsocks",
             "settings": {
                 "servers": [{"address": host, "port": port, "method": srv.get("method", "chacha20-ietf-poly1305"), "password": srv.get("password", ""), "level": 0}],
@@ -351,6 +374,8 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                 "sockopt": {"tcpKeepAliveInterval": 15},
             },
         }
+        ob["mux"] = _xray_mux()
+        return ob
 
     return None
 
@@ -733,7 +758,10 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
         srv["encryption"] = params.get("encryption", "none")
         srv["insecure"] = params.get("insecure", "0") == "1"
         srv["x_padding_bytes"] = params.get("x_padding_bytes", "")
-        srv["engine"] = "xray" if (scheme == "vless" and net_type == "xhttp") else "singbox"
+        # Xray engine by default for VLESS/VMess: the tunnel server is Xray
+        # (3x-ui), so the xray client gives native mux.cool / xhttp support and
+        # perfect protocol compatibility (like Hiddify useXrayCoreWhenPossible).
+        srv["engine"] = "xray"
     elif scheme == "trojan":
         srv["password"] = user_info
         srv["sni"] = params.get("sni", params.get("peer", "")) or host
@@ -743,6 +771,7 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
         srv["host"] = params.get("host", "")
         srv["alpn"] = params.get("alpn", "")
         srv["insecure"] = params.get("insecure", "0") == "1"
+        srv["engine"] = "xray"  # xray handles Trojan natively
     elif scheme == "ss":
         raw = user_info or ""
         try:
@@ -757,6 +786,7 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
             srv["method"] = "chacha20-ietf-poly1305"
         srv["plugin"] = params.get("plugin", "")
         srv["network"] = params.get("type", "tcp")
+        srv["engine"] = "xray"  # xray handles Shadowsocks natively
     elif scheme in ("hysteria2", "hy2"):
         srv["password"] = user_info
         srv["sni"] = params.get("sni", "") or host
@@ -764,6 +794,7 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
         srv["obfs"] = params.get("obfs", "")
         srv["obfs-password"] = params.get("obfs-password", "")
         srv["protocol"] = "hysteria2"
+        srv["engine"] = "singbox"  # xray does not support hysteria2
     elif scheme == "tuic":
         srv["uuid"] = user_info
         srv["password"] = params.get("password", "")
@@ -772,6 +803,7 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
         srv["udp_relay_mode"] = params.get("udp_relay_mode", "native")
         srv["alpn"] = params.get("alpn", "")
         srv["insecure"] = params.get("insecure", "0") == "1"
+        srv["engine"] = "singbox"  # xray does not support tuic
     elif scheme == "wireguard":
         srv["private_key"] = params.get("private_key", "") or user_info
         srv["public_key"] = params.get("public_key", "") or params.get("peer_public_key", "")
@@ -787,10 +819,11 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
                 srv["reserved"] = [int(x) for x in reserved_raw.split(",")]
             except Exception:
                 srv["reserved"] = []
+        srv["engine"] = "singbox"  # xray does not support wireguard
     return srv
 
 
-def parse_url_to_outbound(url_str: str, engine: str = "singbox") -> Tuple[str, dict]:
+def parse_url_to_outbound(url_str: str, engine: str = "xray") -> Tuple[str, dict]:
     if not url_str:
         return "xray", {"protocol": "freedom", "tag": "direct"}
     try:

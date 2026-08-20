@@ -28,7 +28,7 @@ def ensure_default_configs():
                 json.dump(default, f, indent=2)
             agent.log(f"Created default {os.path.basename(path)}")
     state = agent.load_state()
-    engine = state.get("active_engine", "singbox")
+    engine = state.get("active_engine", "xray")
     if engine == "singbox":
         agent.log("Starting singbox-node (xray dummy config for network)...")
         docker_utils._ensure_xray_running()
@@ -123,6 +123,13 @@ def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
                 agent.log("Singbox config: " + json.dumps(cfg, indent=2, ensure_ascii=False)[:600])
                 docker_utils._ensure_xray_running()
                 docker_utils._docker(["restart", "singbox-node"])
+            # Record the engine BEFORE probing: test_proxy() reads active_engine
+            # from state to pick the container, and during an engine switch the
+            # stale value would probe the container that was just stopped and
+            # falsely roll back a good config.
+            state = agent.load_state()
+            state["active_engine"] = engine
+            agent.save_state(state)
             ok, status = _wait_for_proxy(max_wait=15.0)
             if not ok:
                 agent.log(f"Proxy not healthy after applying {engine}: {status}")
@@ -184,7 +191,7 @@ def _http_probe(ip: str, port: int, timeout: float = 5.0) -> Tuple[bool, str]:
 
 def test_proxy() -> Tuple[bool, str]:
     state = agent.load_agent_state()
-    engine_name = state.get("active_engine", "singbox") if state else "singbox"
+    engine_name = state.get("active_engine", "xray") if state else "xray"
     container = "singbox-node" if engine_name == "singbox" else "xray-node"
     status = docker_utils._docker_output(["inspect", "-f", "{{.State.Status}}", container])
     if status != "running":
@@ -269,6 +276,13 @@ def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
                 docker_utils._docker(["restart", "singbox-node"])
         finally:
             release_apply_lock()
+        # Record the engine BEFORE probing: test_proxy() reads active_engine
+        # from state to pick the container, and during an engine switch the
+        # stale value would probe the container that was just stopped and
+        # falsely roll back a good config.
+        state = agent.load_state()
+        state["active_engine"] = engine
+        agent.save_state(state)
         ok, status = _wait_for_proxy(max_wait=15.0)
         if not ok:
             agent.log(f"Proxy down after applying {engine}, rolling back...")
@@ -380,7 +394,7 @@ def update_subscription() -> bool:
     agent.log(f"Successfully parsed {len(servers)} servers from subscription")
 
     state = agent.load_state()
-    current_engine = state.get("active_engine", "singbox")
+    current_engine = state.get("active_engine", "xray")
     active_name = state.get("active_server", "")
 
     # VPN state retention: keep the current server when it still exists in the
@@ -532,7 +546,7 @@ def select_server(idx: int, mode: str = "manual") -> int:
         return 1
     srv = servers[idx]
     name = srv.get("name", f"Server {idx + 1}")
-    engine = srv.get("engine", "singbox")
+    engine = srv.get("engine", "xray")
     url = srv.get("url", "")
     agent.log(f"Selecting server {idx + 1}: {name} ({engine})")
     if not url:

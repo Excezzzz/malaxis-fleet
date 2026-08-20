@@ -74,12 +74,12 @@ def _parse_link(link: str) -> Optional[dict]:
     if scheme in ("vless", "vmess"):
         _parse_vlike(link, info)
         info["protocol"] = scheme
-        if scheme == "vless" and info.get("network", "tcp") == "xhttp":
-            info["engine"] = "xray"
-        else:
-            info["engine"] = "singbox"
+        # Xray engine by default: the tunnel server is Xray (3x-ui), so the
+        # xray client gives native mux.cool / xhttp support and perfect
+        # protocol compatibility (like Hiddify useXrayCoreWhenPossible).
+        info["engine"] = "xray"
     elif scheme == "trojan":
-        info["engine"] = "singbox"
+        info["engine"] = "xray"
         info["protocol"] = "trojan"
         _parse_trojan(link, info)
     elif scheme == "ss":
