@@ -398,6 +398,9 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
         # Outbound `server` must be an IP (see _resolve_server_ip) so sing-box
         # never DNS-resolves the proxy server itself.
         ob = {**ob, "server": _resolve_server_ip(ob["server"])}
+    # The outbound must carry the same multiplex / TFO / packet_encoding
+    # optimizations as multi-outbound configs (idempotent, TCP protocols only).
+    _apply_singbox_optimizations(ob)
     return {
         "log": {"level": "warn"},
         "dns": {
@@ -413,7 +416,7 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
                 # resolve anything through the tunnel it is about to establish.
                 # NOTE: no address_resolver here - older sing-box builds reject
                 # the unknown field with FATAL (config decode error).
-                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": ob.get("tag", "proxy")},
+                {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "strategy": "prefer_ipv4", "detour": ob.get("tag", "proxy")},
                 {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
             ],
             "final": "resolver",
@@ -504,7 +507,7 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
     # and DNS falls back to direct as well - the correct no-proxy behavior.
     cfg["dns"] = {
         "servers": [
-            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "detour": final_tag},
+            {"type": "https", "tag": "resolver", "server": "1.1.1.1", "server_port": 443, "strategy": "prefer_ipv4", "detour": final_tag},
             {"type": "udp", "tag": "bootstrap", "server": "8.8.8.8", "server_port": 53, "detour": "direct"},
         ],
         "final": "resolver",
@@ -548,6 +551,42 @@ def _resolve_server_ip(host: str) -> str:
     except OSError:
         agent.log(f"[singbox] hostname resolution failed for {host}, keeping domain")
         return host
+
+
+_MUX_TYPES = ("vless", "vmess", "trojan", "ss")
+
+
+def _singbox_multiplex() -> dict:
+    """Multiplex block for TCP-based sing-box outbounds.
+
+    h2mux shares ONE TLS tunnel across all connections instead of doing a full
+    TLS handshake per connection (~200-400ms each), which is what makes image
+    loading in Telegram noticeably faster. Only the TCP-family protocols
+    (VLESS/VMess/Trojan/SS) support it; Hysteria2/TUIC/WireGuard are UDP/QUIC
+    based, multiplex natively and FATAL on unknown fields - never touched.
+    """
+    return {
+        "enabled": True,
+        "protocol": "h2mux",
+        "max_connections": 4,
+        "padding": True,
+    }
+
+
+def _apply_singbox_optimizations(ob: dict) -> None:
+    """Add multiplex / tcp_fast_open / packet_encoding to a TCP-based outbound.
+
+    Idempotent and safe to call on any outbound dict (incl. ones built outside
+    _singbox_outbound): non-TCP outbounds are skipped because sing-box rejects
+    unknown fields with FATAL and those protocols multiplex natively.
+    """
+    if ob.get("type") not in _MUX_TYPES:
+        return
+    ob["multiplex"] = _singbox_multiplex()
+    if ob.get("server"):
+        ob["tcp_fast_open"] = True
+    if ob.get("type") == "vless":
+        ob["packet_encoding"] = "xudp"
 
 
 def _singbox_outbound(srv: dict) -> Optional[dict]:
@@ -683,7 +722,7 @@ def _singbox_outbound(srv: dict) -> Optional[dict]:
             grpc["authority"] = host_hdr
         ob["transport"] = grpc
 
-    ob["multiplex"] = {"enabled": False}
+    _apply_singbox_optimizations(ob)
     return ob
 
 

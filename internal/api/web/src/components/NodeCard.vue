@@ -106,7 +106,7 @@
                 </button>
                 <button v-if="canSwitch" @click="showTaskQueueModal = true" class="flex-1 min-w-[100px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <Hourglass class="w-4 h-4 shrink-0" />
-                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_task_queue') }} ({{ pendingCommandCount }})]</span>
+                  <span class="font-mono text-sm truncate min-w-0">[{{ t('node_task_queue') }}]</span>
                 </button>
                 <button v-if="canUpdateClient" @click="pushClientFiles" class="flex-1 min-w-[100px] flex items-center justify-center space-x-2 bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-400 hover:text-white font-semibold py-2 px-4 min-h-[40px] rounded-xl transition-colors">
                   <RefreshCw class="w-4 h-4 shrink-0" />
