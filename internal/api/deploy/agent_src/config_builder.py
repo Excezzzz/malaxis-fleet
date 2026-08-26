@@ -189,14 +189,21 @@ def _normalize_fp(fp: str) -> str:
     return "chrome"
 
 
-def _xray_mux() -> dict:
+def _xray_mux(flow_str: str = "") -> dict:
     """mux.cool multiplexing block for xray outbounds.
 
     The tunnel endpoint is an Xray (3x-ui) server, so mux.cool is the native
     multiplexing protocol here (unlike sing-box's h2mux which Xray rejects).
     xudp keeps UDP/QUIC flows multiplexed too; 443 UDP is rejected so QUIC
     traffic falls back to TCP inside the tunnel instead of leaking.
+
+    mux.cool is INCOMPATIBLE with XTLS flows (e.g. xtls-rprx-vision): Xray
+    accepts the connection but the TLS handshake never completes, so when a
+    flow is set we disable mux entirely. Only xhttp is excluded here for a
+    different reason (it uses its own extra.xmux) and is handled by the caller.
     """
+    if flow_str:
+        return {"enabled": False}
     return {
         "enabled": True,
         "concurrency": 8,
@@ -300,8 +307,11 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
 
         # mux.cool everywhere except xhttp: xhttp has its own built-in xmux
         # multiplexing (extra.xmux), so mux.cool on top would double-multiplex.
+        # XTLS flows (e.g. xtls-rprx-vision) are incompatible with mux.cool and
+        # are disabled inside _xray_mux(); xhttp is disabled here for its own
+        # reason (it multiplexes via extra.xmux instead).
         if net_type != "xhttp":
-            ob["mux"] = _xray_mux()
+            ob["mux"] = _xray_mux(flow_str)
         else:
             ob["mux"] = {"enabled": False}
         return ob
