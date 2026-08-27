@@ -83,6 +83,27 @@ def _wait_for_network() -> None:
         time.sleep(10)
 
 
+def _stop_both_engines() -> None:
+    """Guarantee mutual exclusion of the engine containers before boot.
+
+    xray-node and singbox-node share a network namespace and both bind ports
+    6357/6358. If both are running (or a stale one lingers after a crash /
+    engine-switch remnant / clean install), the second one to start crashes
+    with "address already in use". This helper ALWAYS stops BOTH containers
+    (ignoring errors if they aren't running or don't exist yet), then sleeps
+    1-2s so the OS releases the ports, BEFORE the active engine is started.
+    Every code path that starts a container must call this first to keep only
+    one container listening on 6357/6358 at any time.
+    """
+    try:
+        agent.log("Booting: stopping both engine containers to free ports 6357/6358...")
+        docker_utils._docker(["stop", "singbox-node"])
+        docker_utils._docker(["stop", "xray-node"])
+        time.sleep(2)
+    except Exception as e:
+        agent.log(f"_stop_both_engines error: {e}")
+
+
 def update_subscription_cli(sub_url: str) -> int:
     """CLI entry point (fleet-cli.sh / fleet-cli.ps1): persist the subscription
     URL(s), trigger an immediate fetch/apply and report the result - mirrors the
@@ -878,6 +899,16 @@ def main() -> None:
     # an outage would produce stale/absent configs and failed subscription
     # fetches. Wait (indefinitely) for a default route first.
     _wait_for_network()
+
+    # --- Mutual exclusion on boot (addresses EADDRINUSE on 6357/6358) ---
+    # The two engine containers (xray-node / singbox-node) share a network
+    # namespace and both bind 6357/6358. Whichever starts last crashes with
+    # "address already in use" if the other is still holding the ports. The
+    # boot sequence therefore ALWAYS stops BOTH engines first, lets the OS
+    # release the ports (1-2s), and only THEN lets ensure_default_configs()
+    # start the single active engine. This guarantees only one container
+    # listens on 6357/6358 at any time, even on a clean install / restart.
+    _stop_both_engines()
 
     engine.ensure_default_configs()
 

@@ -72,6 +72,7 @@ list-*.sh
 q-*.sh
 q-*.sql
 *.tmp
+nul
 login.json
 *cookies.txt
 

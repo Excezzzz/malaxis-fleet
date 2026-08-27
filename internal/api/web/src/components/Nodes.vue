@@ -14,6 +14,14 @@
           <option value="online">{{ t('nodes_filter_online') }}</option>
           <option value="offline">{{ t('nodes_filter_offline') }}</option>
         </select>
+        <select v-model="sortMode" :aria-label="t('sort_label')"
+          class="w-full sm:w-auto bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-zinc-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500/50 transition-colors cursor-pointer">
+        <option value="status">{{ t('sort_status') }}</option>
+        <option value="name_az">{{ t('sort_name_az') }}</option>
+        <option value="name_za">{{ t('sort_name_za') }}</option>
+        <option value="last_seen">{{ t('sort_last_seen') }}</option>
+        <option value="vpn_server">{{ t('sort_vpn_server') }}</option>
+      </select>
         <button @click="refreshList" class="flex items-center justify-center space-x-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-all duration-300" :title="t('nodes_refresh_list_tt')" :disabled="refreshingList">
           <RefreshCw :class="['w-5 h-5', refreshingList ? 'animate-spin' : '']" />
           <span class="font-mono">{{ refreshingList ? `[${t('nodes_refreshing')}]` : `[${t('nodes_refresh')}]` }}</span>
@@ -30,8 +38,8 @@
       <span class="block sm:inline">{{ error }}</span>
     </div>
 
-    <div v-if="filteredNodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch">
-      <div v-for="node in filteredNodes" :key="node.id" class="h-full"><NodeCard :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" /></div>
+    <div v-if="sortedNodes.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch">
+      <div v-for="node in sortedNodes" :key="node.id" class="h-full"><NodeCard :node="node" @node-updated="fetchNodes" @node-deleted="onNodeDeleted" /></div>
     </div>
 
     <div v-else-if="nodes.length > 0" class="text-center py-16">
@@ -100,7 +108,7 @@
 </template>
 
 <script>
-import { ref, computed, inject, onMounted, onUnmounted } from 'vue';
+import { ref, computed, inject, onMounted, onUnmounted, watch } from 'vue';
 import axios from 'axios';
 import NodeCard from './NodeCard.vue';
 import { Link, Trash2, RefreshCw, Search } from 'lucide-vue-next';
@@ -135,6 +143,36 @@ export default {
     const refreshingList = ref(false);
     const searchQuery = ref('');
     const statusFilter = ref('all');
+    const sortMode = ref('status');
+
+    const sortedNodes = computed(() => {
+      let result = [...filteredNodes.value];
+      
+      if (sortMode.value === 'status') {
+        // Online first, then alphabetical within each group
+        const online = result.filter(n => isNodeOnline(n)).sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+        const offline = result.filter(n => !isNodeOnline(n)).sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+        result = [...online, ...offline];
+      } else if (sortMode.value === 'name_az') {
+        result.sort((a, b) => (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase()));
+      } else if (sortMode.value === 'name_za') {
+        result.sort((a, b) => (b.name || '').toLowerCase().localeCompare((a.name || '').toLowerCase()));
+      } else if (sortMode.value === 'last_seen') {
+        result.sort((a, b) => {
+          const aTime = new Date(a.last_seen || 0).getTime();
+          const bTime = new Date(b.last_seen || 0).getTime();
+          return bTime - aTime;
+        });
+      } else if (sortMode.value === 'vpn_server') {
+        result.sort((a, b) => {
+          const aServer = (a.active_server || '').toLowerCase();
+          const bServer = (b.active_server || '').toLowerCase();
+          return aServer.localeCompare(bServer);
+        });
+      }
+      
+      return result;
+    });
     const fabOpen = ref(false);
     let pollInterval;
     let toastTimer;
