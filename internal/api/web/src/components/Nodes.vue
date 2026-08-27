@@ -314,6 +314,8 @@ export default {
 return {
       nodes,
       filteredNodes,
+      sortedNodes,
+      sortMode,
       error,
       canEditSub,
       canPurgeNodes,
