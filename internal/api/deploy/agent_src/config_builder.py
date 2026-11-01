@@ -809,8 +809,10 @@ def _url_to_srv(scheme: str, user_info: str, host: str, port: int, params: dict,
         srv["insecure"] = params.get("insecure", "0") == "1"
         srv["x_padding_bytes"] = params.get("x_padding_bytes", "")
         # Xray engine by default for VLESS/VMess: the tunnel server is Xray
-        # (3x-ui), so the xray client gives native mux.cool / xhttp support and
-        # perfect protocol compatibility (like Hiddify useXrayCoreWhenPossible).
+        # (3x-ui), so the xray client is used for native protocol compatibility
+        # (like Hiddify useXrayCoreWhenPossible). Mux is disabled in the
+        # outbound config itself (see _xray_mux) - no native mux.cool layer
+        # needed.
         srv["engine"] = "xray"
     elif scheme == "trojan":
         srv["password"] = user_info

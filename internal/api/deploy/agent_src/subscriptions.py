@@ -75,8 +75,9 @@ def _parse_link(link: str) -> Optional[dict]:
         _parse_vlike(link, info)
         info["protocol"] = scheme
         # Xray engine by default: the tunnel server is Xray (3x-ui), so the
-        # xray client gives native mux.cool / xhttp support and perfect
-        # protocol compatibility (like Hiddify useXrayCoreWhenPossible).
+        # xray client is used for native protocol compatibility (like
+        # Hiddify useXrayCoreWhenPossible). Mux is disabled in the outbound
+        # config itself (see _xray_mux) - no native mux.cool layer needed.
         info["engine"] = "xray"
     elif scheme == "trojan":
         info["engine"] = "xray"
