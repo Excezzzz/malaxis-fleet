@@ -135,6 +135,9 @@ def _apply_outbound_cfg(engine: str, ob: dict) -> dict:
                 agent.log(f"Proxy not healthy after applying {engine}: {status}")
                 docker_utils.log_crash_logs("xray-node")
                 docker_utils.log_crash_logs("singbox-node")
+            else:
+                # Only a verified-healthy config enters the offline cache.
+                agent.save_last_known_good(cfg)
             return cfg
         finally:
             release_apply_lock()
@@ -294,6 +297,8 @@ def apply_configs(engine: str, servers: list, active_idx: int = 0) -> bool:
             else:
                 agent.log("No rollback available")
             return False
+        # Only a verified-healthy config enters the offline cache.
+        agent.save_last_known_good(cfg)
         agent.log(f"Proxy verified after apply, IP: {status}")
         return True
 
@@ -330,6 +335,36 @@ def restore_active_vpn() -> None:
     agent.save_rollback(engine)
     _apply_outbound_cfg(engine, ob)
     agent.log(f"VPN config restored: {server_name}")
+
+
+def restore_last_known_good() -> bool:
+    """Offline boot fallback: start the engine from the cached last-known-good.
+
+    When the master API was unreachable at boot (network not raised yet / master
+    down), the agent must NOT hang waiting for a successful master response: it
+    immediately starts the tunnel from `configs/last_known_good.json` (if a
+    healthy config was cached before), brings the local ports (6357/6358) up and
+    keeps polling the master in the background, which will refresh the config
+    through the normal update path once the link is restored.
+    """
+    state = agent.load_state()
+    engine_name = state.get("active_engine", "xray") or "xray"
+    if engine_name not in ("xray", "singbox"):
+        engine_name = "xray"
+    cached = agent.load_last_known_good()
+    if not cached:
+        agent.log("Offline fallback: no cached last_known_good config available")
+        return False
+    path = agent.XRAY_CONFIG if engine_name == "xray" else agent.SINGBOX_CONFIG
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cached, f, indent=2, ensure_ascii=False)
+    agent.log(f"Offline fallback: started {engine_name} from last_known_good.json")
+    docker_utils.docker_restart(f"{engine_name}-node")
+    ok, status = _wait_for_proxy(max_wait=15.0)
+    if ok:
+        state["active_engine"] = engine_name
+        agent.save_state(state)
+    return ok
 
 
 def update_subscription() -> bool:
@@ -516,7 +551,7 @@ def fetch_subscription_now(url: Optional[str] = None) -> int:
     provider = provider_names.get(host, "") or host
     agent.log(f"Fetching subscription from: {url}")
     try:
-        resp = subscriptions.requests.get(url, headers={"User-Agent": subscriptions.SUB_USER_AGENT}, verify=False, timeout=15)
+        resp = subscriptions.requests.get(url, headers={"User-Agent": subscriptions.SUB_USER_AGENT}, verify=False, timeout=(3.05, 10))
         agent.log(f"HTTP status: {resp.status_code}, len: {len(resp.text)}")
         if resp.status_code != 200:
             agent.log(f"Subscription fetch returned {resp.status_code}")
@@ -719,7 +754,11 @@ def _switch_target(results: dict, servers: list, active_name: str, mode: str, th
     """
     reachable = {int(idx): r for idx, r in results.items() if r.get("ok")}
     if not reachable:
-        return None
+        # Offline case: no node answered the benchmark (agent started during an
+        # outage / all servers down). Fall back to the default node instead of
+        # dropping the switch decision / returning None.
+        agent.log("Smart routing: no reachable servers in benchmark - falling back to default node")
+        return 0 if servers else -1
     if mode == "fastest":
         best = min(reachable, key=lambda i: reachable[i]["latency_ms"])
     else:

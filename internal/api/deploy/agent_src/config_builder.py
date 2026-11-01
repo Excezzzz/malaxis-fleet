@@ -11,6 +11,32 @@ from typing import Optional, Tuple
 
 from agent_src import agent
 
+# Telegram traffic (MTProto control plane + media CDN). The full source-IP pool
+# including the media CDN range (91.105.192.0/23, where Telegram image/CDN nodes
+# live) plus the GeoIP tag and the Telegram domain list used for routing.
+TELEGRAM_IP_RULES: list = [
+    "91.108.0.0/16",
+    "149.154.160.0/20",
+    "185.76.151.0/24",
+    "91.105.192.0/23",
+    "geoip:telegram",
+]
+# CIDR-only pool: engines that accept strict CIDR matchers (sing-box
+# `ip_cidr`) cannot parse the GeoIP tag notation, so they get the bare ranges.
+TELEGRAM_IP_CIDRS: list = [
+    "91.108.0.0/16",
+    "149.154.160.0/20",
+    "185.76.151.0/24",
+    "91.105.192.0/23",
+]
+TELEGRAM_DOMAINS: list = [
+    "geosite:telegram",
+    "domain:telegram.org",
+    "domain:telegram-cdn.org",
+    "domain:telesco.pe",
+]
+
+
 DEFAULT_XRAY_CONFIG = {
     "log": {"loglevel": "warning"},
     "dns": {
@@ -76,8 +102,12 @@ DEFAULT_SINGBOX_CONFIG = {
         # sniffing is expressed as a route rule action instead.
         "rules": [
             # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
-            # so proxy-bound MTProto flows are never fingerprinted.
-            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": "direct"},
+            # so proxy-bound MTProto flows are never fingerprinted. Full pool
+            # incl. the Telegram media CDN subnet (91.105.192.0/23).
+            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": list(TELEGRAM_IP_CIDRS), "outbound": "direct"},
+            # Telegram domains (control / CDN): route by domain before the sniff
+            # fallback ever sees the flow.
+            {"action": "route", "inbound": ["socks-in", "http-in"], "domain": list(TELEGRAM_DOMAINS), "outbound": "direct"},
             {"action": "sniff", "inbound": ["socks-in", "http-in"]},
         ],
     },
@@ -100,11 +130,11 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
                 # block minimal - routeOnly is rejected by some Xray builds.
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
         ],
         "outbounds": [],
@@ -122,9 +152,12 @@ def build_xray_config(servers: list, active_idx: int = 0) -> dict:
     cfg["routing"] = {
         "domainStrategy": "IPIfNonMatch",
         "rules": [
-            # Telegram MTProto / QUIC: matched by IP FIRST so these flows are
-            # routed through the proxy without stalling on HTTP/TLS sniffing.
-            {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": tag},
+            # Telegram MTProto / QUIC + media CDN: matched by IP FIRST (full
+            # pool incl. the Telegram CDN subnet 91.105.192.0/23) so these flows
+            # are routed through the proxy without stalling on HTTP/TLS sniffing;
+            # then by domain before fallback rules.
+            {"type": "field", "ip": list(TELEGRAM_IP_RULES), "outboundTag": tag},
+            {"type": "field", "domain": list(TELEGRAM_DOMAINS), "outboundTag": tag},
             {"type": "field", "port": 53, "network": "udp", "outboundTag": tag},
             {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": tag},
         ],
@@ -194,21 +227,21 @@ def _xray_mux(flow_str: str = "") -> dict:
 
     The tunnel endpoint is an Xray (3x-ui) server, so mux.cool is the native
     multiplexing protocol here (unlike sing-box's h2mux which Xray rejects).
-    xudp keeps UDP/QUIC flows multiplexed too; 443 UDP is rejected so QUIC
-    traffic falls back to TCP inside the tunnel instead of leaking.
 
-    mux.cool is INCOMPATIBLE with XTLS flows (e.g. xtls-rprx-vision): Xray
-    accepts the connection but the TLS handshake never completes, so when a
-    flow is set we disable mux entirely. Only xhttp is excluded here for a
-    different reason (it uses its own extra.xmux) and is handled by the caller.
+    mux.cool is FORCED OFF for all client outbounds: it multiplexes parallel
+    streams (e.g. Telegram photo uploads/downloads) into a single TCP stream,
+    which causes Head-of-Line blocking and an artificial queue inside the
+    tunnel - media messages appear to hang / load with seconds of delay.
+    XTLS flows (e.g. xtls-rprx-vision) are also incompatible with mux.cool and
+    were disabled before; xhttp is handled by the caller (it uses its own
+    extra.xmux instead). Only xhttp is excluded here for its own reason and is
+    handled by the caller.
     """
-    if flow_str:
-        return {"enabled": False}
+    # mux disabled unconditionally: enabled=false is authoritative, concurrency
+    # -1 keeps the (unused) mux pool at its neutral value.
     return {
-        "enabled": True,
-        "concurrency": 8,
-        "xudpConcurrency": 8,
-        "xudpProxyUDP443": "reject",
+        "enabled": False,
+        "concurrency": -1,
     }
 
 
@@ -273,7 +306,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             "streamSettings": {
                 "network": net_type,
                 "security": security_str,
-                "sockopt": {"tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "tcpKeepAliveIdle": 15, "domainStrategy": "UseIPv4"},
             },
         }
 
@@ -305,15 +338,12 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                 },
             }
 
-        # mux.cool everywhere except xhttp: xhttp has its own built-in xmux
-        # multiplexing (extra.xmux), so mux.cool on top would double-multiplex.
-        # XTLS flows (e.g. xtls-rprx-vision) are incompatible with mux.cool and
-        # are disabled inside _xray_mux(); xhttp is disabled here for its own
-        # reason (it multiplexes via extra.xmux instead).
-        if net_type != "xhttp":
-            ob["mux"] = _xray_mux(flow_str)
-        else:
-            ob["mux"] = {"enabled": False}
+        # Mux is now disabled for every client outbound (see _xray_mux): mux.cool
+        # caused Head-of-Line blocking on parallel Telegram media streams, so it
+        # must never sit on top of an Xray (3x-ui) tunnel. xhttp is the only
+        # exception - it multiplexes via its own extra.xmux - and is disabled here
+        # for that reason only.
+        ob["mux"] = {"enabled": False} if net_type == "xhttp" else _xray_mux(flow_str)
         return ob
 
     if stype == "vmess":
@@ -341,7 +371,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             "streamSettings": {
                 "network": net_type,
                 "security": security_str,
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
         }
         if security_str == "tls":
@@ -366,7 +396,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
                 "network": "tcp",
                 "security": "tls",
                 "tlsSettings": {"serverName": srv.get("sni", "") or host},
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
         }
         ob["mux"] = _xray_mux()
@@ -381,7 +411,7 @@ def _xray_outbound(srv: dict) -> Optional[dict]:
             "streamSettings": {
                 "network": "tcp",
                 "security": "none",
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
         }
         ob["mux"] = _xray_mux()
@@ -405,11 +435,11 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
                 # block minimal - routeOnly is rejected by some Xray builds.
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
                 "tag": "socks-in",
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
             {
                 "port": 6358, "listen": "0.0.0.0", "protocol": "http", "tag": "http-in",
-                "sockopt": {"tcpKeepAliveInterval": 15},
+                "sockopt": {"tcpKeepAliveInterval": 15, "domainStrategy": "UseIPv4"},
             },
         ],
         "outbounds": [ob, {"protocol": "freedom", "tag": "direct", "streamSettings": {"sockopt": {"tcpKeepAliveInterval": 15}}}],
@@ -417,8 +447,10 @@ def _xray_cfg_with_outbound(ob: dict) -> dict:
             "domainStrategy": "IPIfNonMatch",
             "rules": [
                 # Telegram MTProto / QUIC IP ranges: matched FIRST so these
-                # flows bypass sniffing fallbacks entirely.
-                {"type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": ob.get("tag", "proxy")},
+                # flows bypass sniffing fallbacks entirely. Full pool incl. the
+                # Telegram media CDN subnet (91.105.192.0/23).
+                {"type": "field", "ip": list(TELEGRAM_IP_RULES), "outboundTag": ob.get("tag", "proxy")},
+                {"type": "field", "domain": list(TELEGRAM_DOMAINS), "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "port": 53, "network": "udp", "outboundTag": ob.get("tag", "proxy")},
                 {"type": "field", "inboundTag": ["socks-in", "http-in"], "outboundTag": ob.get("tag", "proxy")},
             ],
@@ -481,8 +513,12 @@ def _singbox_cfg_with_outbound(ob: dict) -> dict:
             "default_domain_resolver": "resolver",
             "rules": [
                 # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
-                # so proxy-bound MTProto flows are never fingerprinted.
-                {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": ob.get("tag", "proxy")},
+                # so proxy-bound MTProto flows are never fingerprinted. Full pool
+                # incl. the Telegram media CDN subnet (91.105.192.0/23).
+                {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": list(TELEGRAM_IP_CIDRS), "outbound": ob.get("tag", "proxy")},
+                # Telegram domains (control / CDN): route by domain before the sniff
+                # fallback ever sees the flow.
+                {"action": "route", "inbound": ["socks-in", "http-in"], "domain": list(TELEGRAM_DOMAINS), "outbound": ob.get("tag", "proxy")},
                 # Resolve client-supplied domains to IPv4 (replaces the removed
                 # legacy outbound domain_strategy option).
                 {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},
@@ -563,8 +599,12 @@ def build_singbox_config(servers: list, active_idx: int = 0) -> dict:
         # sniffing is expressed as a route rule action instead.
         "rules": [
             # Telegram MTProto / QUIC: route by IP BEFORE the sniff action,
-            # so proxy-bound MTProto flows are never fingerprinted.
-            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outbound": final_tag},
+            # so proxy-bound MTProto flows are never fingerprinted. Full pool
+            # incl. the Telegram media CDN subnet (91.105.192.0/23).
+            {"action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": list(TELEGRAM_IP_CIDRS), "outbound": final_tag},
+            # Telegram domains (control / CDN): route by domain before the sniff
+            # fallback ever sees the flow.
+            {"action": "route", "inbound": ["socks-in", "http-in"], "domain": list(TELEGRAM_DOMAINS), "outbound": final_tag},
             # Resolve client-supplied domains to IPv4 (replaces the removed
             # legacy outbound domain_strategy option).
             {"action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only"},

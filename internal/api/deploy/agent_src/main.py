@@ -70,17 +70,22 @@ def _has_default_route() -> bool:
     return False
 
 
-def _wait_for_network() -> None:
-    """Block until the host has a default route.
+def _wait_for_network(max_wait: float = 120.0) -> bool:
+    """Block until the host has a default route (bounded).
 
-    A node that boots during an internet outage would otherwise start the
-    engine containers with stale/absent configs and fail every subscription
-    fetch. The node is useless offline anyway, so wait indefinitely (polling
-    every 10s) until raw connectivity exists.
+    A node that boots during an internet outage must not hang forever here: the
+    agent carries a cached last-known-good config and must be able to start the
+    engine stack (offline fallback) while the master keeps being polled in the
+    background. After `max_wait` seconds of no route the boot continues and the
+    normal offline-fallback / polling paths take over.
     """
+    deadline = time.monotonic() + max_wait
     while not _has_default_route():
-        agent.log("No network interface detected, waiting for connectivity...")
+        if time.monotonic() >= deadline:
+            agent.log(f"No network interface detected within {max_wait}s - continuing with offline fallback")
+            return False
         time.sleep(10)
+    return True
 
 
 def _stop_both_engines() -> None:
@@ -166,6 +171,18 @@ def health_loop() -> None:
                         agent.log(f"Container healthy again after {fail_count} failures")
                     fail_count = 0
                 else:
+                    state = agent.load_state()
+                    container = "singbox-node" if state.get("active_engine", "xray") == "singbox" else "xray-node"
+                    container_status = docker_utils._docker_output(["inspect", "-f", "{{.State.Status}}", container])
+                    if container_status == "exited":
+                        # Watchdog: the engine container hard-exited (crash / bad
+                        # config) - attempt an immediate restart instead of waiting
+                        # for the full failure threshold.
+                        agent.log(f"Container {container} reported 'exited' - watchdog restarting it")
+                        docker_utils.docker_restart(container)
+                        network.report(status="Proxy dead", message=f"Container {container} exited, restarted")
+                        fail_count = 0
+                        continue
                     if not _has_default_route():
                         # No internet path: the probe miss is expected, not a
                         # dead proxy. Do NOT count it against the failure
@@ -509,7 +526,7 @@ def _purge_pycache(app_dir: str) -> int:
     return removed
 
 
-def _download_with_retry(url: str, what: str, timeout: int = 30) -> bytes:
+def _download_with_retry(url: str, what: str, timeout: int = 10) -> bytes:
     """Download `url` with retry-with-backoff for transient failures.
 
     Up to 3 attempts (1 original + 2 retries, 5s then 15s backoff). HTTP 4xx
@@ -772,7 +789,15 @@ def _worker_loop() -> None:
                 applied = engine.update_subscription()
                 _reselect_after_update()
                 if not applied:
-                    engine.restore_active_vpn()
+                    # Master API unreachable / no servers resolved: offline boot
+                    # fallback - start the engine from the cached last-known-good
+                    # config instead of leaving the node dead until a manual
+                    # restart. Background poll loop keeps fetching master updates
+                    # as soon as the external link is back.
+                    agent.log("[boot] subscription update did not apply - trying offline fallback (last_known_good.json)")
+                    applied = engine.restore_last_known_good()
+                if not applied:
+                    engine.ensure_default_configs()
                 network.report()
             elif typ == "update_sub":
                 engine.update_subscription()
@@ -872,6 +897,7 @@ def _worker_loop() -> None:
 # --- Poll Loop ---
 
 def poll_loop() -> None:
+    poll_failures = 0
     while True:
         state = agent.load_state()
         auto_update = state.get("auto_update", "true")
@@ -882,8 +908,14 @@ def poll_loop() -> None:
             cmd = network.poll()
             if cmd:
                 execute_command(cmd.get("command", cmd))
+            poll_failures = 0
         except Exception as e:
+            poll_failures += 1
             agent.log(f"Poll error: {e}")
+            # Exponential backoff while the master is unreachable: never reuse
+            # a dead session / hammer the network, grow the interval up to 30s.
+            time.sleep(min(agent.POLL_INTERVAL * 1.5, 30))
+            continue
         time.sleep(agent.POLL_INTERVAL)
 
 
@@ -897,7 +929,9 @@ def main() -> None:
 
     # Never start the VPN stack before the host has internet: booting during
     # an outage would produce stale/absent configs and failed subscription
-    # fetches. Wait (indefinitely) for a default route first.
+    # fetches. The wait is BOUNDED: when no default route shows up within the
+    # budget the boot continues and the offline fallback (last_known_good.json)
+    # / master polling takes over instead of hanging forever.
     _wait_for_network()
 
     # --- Mutual exclusion on boot (addresses EADDRINUSE on 6357/6358) ---

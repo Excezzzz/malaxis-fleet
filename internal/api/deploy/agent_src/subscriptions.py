@@ -19,7 +19,7 @@ SUB_USER_AGENT = "v2rayN/6.23 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWeb
 def parse_subscription(sub_url: str) -> list:
     servers = []
     try:
-        resp = requests.get(sub_url, headers={"User-Agent": SUB_USER_AGENT}, verify=False, timeout=15)
+        resp = requests.get(sub_url, headers={"User-Agent": SUB_USER_AGENT}, verify=False, timeout=(3.05, 10))
         agent.log(f"Sub response status: {resp.status_code}, length: {len(resp.text)}")
         if resp.status_code != 200:
             agent.log(f"Subscription fetch returned {resp.status_code}")

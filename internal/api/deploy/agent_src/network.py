@@ -32,7 +32,10 @@ def _request(method: str, url: str, payload: dict) -> Tuple[int, Union[dict, str
     }
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        # Explicit timeout (connect/read budget): a socket without timeout can
+        # hang forever at the kernel level when the master is unreachable/offline
+        # -> offline boot deadlock. 10s covers connect + read comfortably.
+        with urllib.request.urlopen(req, timeout=10) as resp:
             raw = resp.read()
             if resp.status == 200:
                 try:

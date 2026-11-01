@@ -34,6 +34,9 @@ AGENT_STATE = "/app/configs/agent_state.json"
 ROLLBACK_DIR = os.path.join(CONFIG_DIR, ".rollback")
 BENCH_FILE = os.path.join(CONFIG_DIR, "benchmark_cache.json")
 APPLY_LOCK_FILE = os.path.join(CONFIG_DIR, "apply.lock")
+# Last known good engine config: persisted on every successful apply so the
+# agent can boot the tunnel from cache when the master API is offline.
+LAST_KNOWN_GOOD = os.path.join(CONFIG_DIR, "last_known_good.json")
 
 
 def log(msg: str) -> None:
@@ -111,6 +114,23 @@ def get_sub_urls(state: dict = None) -> list:
     if not urls and legacy:
         urls = [legacy]
     return urls
+
+
+def load_last_known_good() -> Union[dict, list]:
+    """Last engine config that was verified healthy.
+
+    Used for the offline boot fallback: when the master API is unreachable the
+    agent starts the tunnel from this cached config instead of hanging or
+    waiting for a successful master response.
+    """
+    return load_json(LAST_KNOWN_GOOD)
+
+
+def save_last_known_good(data: Union[dict, list]) -> None:
+    try:
+        save_json(LAST_KNOWN_GOOD, data)
+    except Exception as e:
+        log(f"Failed to cache last known good config: {e}")
 
 
 def save_rollback(engine: str) -> None:

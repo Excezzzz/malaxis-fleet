@@ -11,9 +11,10 @@ arbitrary number of Dockerized Python agents, each running Xray-core (primary)
 and sing-box (for Hysteria2/TUIC/WireGuard) behind one TLS-terminating Caddy
 instance.
 
-The stack is tuned for networks under active deep packet inspection: mux.cool
-stream multiplexing, XHTTP xmux, route-only sniffing, TCP keepalive hardening,
-and DoH resolution are configured by default.
+The stack is tuned for networks under active deep packet inspection: XHTTP xmux,
+route-only sniffing, TCP keepalive hardening, DoH resolution (IPv4-only) and a
+Telegram-aware routing policy are configured by default. Stream multiplexing
+(mux.cool) is **disabled** for client traffic — see the anti-DPI notes below.
 
 ---
 
@@ -124,11 +125,11 @@ agent code (`agent_src.zip`) and client assets fleet-wide in one action.
 
 | Transport | Engine | Mux |
 |-----------|--------|-----|
-| VLESS Reality | Xray (default) | mux.cool |
+| VLESS Reality | Xray (default) | **Disabled** (off for Telegram media) |
 | VLESS XHTTP | Xray | xmux (built-in) |
-| VMess | Xray (default) | mux.cool |
-| Trojan | Xray (default) | mux.cool |
-| Shadowsocks | Xray (default) | mux.cool |
+| VMess | Xray (default) | **Disabled** (off for Telegram media) |
+| Trojan | Xray (default) | **Disabled** (off for Telegram media) |
+| Shadowsocks | Xray (default) | **Disabled** (off for Telegram media) |
 | Hysteria2 | sing-box | built-in |
 | TUIC | sing-box | built-in |
 | WireGuard | sing-box | N/A |
@@ -144,8 +145,9 @@ sing-box for Hysteria2/TUIC/WireGuard).
   DNS leaks.
 - `tcpNoDelay` and aggressive TCP keepalive drop stale connections quickly.
 - Telegram MTProto and QUIC CIDRs (`91.108.0.0/16`, `149.154.160.0/20`,
-  `185.76.151.0/24`) are routed first, before sniffing rules, so media flows
-  bypass sniff-based fallbacks.
+  `185.76.151.0/24`, `91.105.192.0/23` CDN) plus the Telegram domain list are
+  routed first, before sniffing rules, so media flows bypass sniff-based
+  fallbacks.
 - Xray sniffing uses `routeOnly`: sniffed results drive routing only and never
   rewrite the destination.
 - XHTTP `xmux` multiplexes a channel over parallel HTTP requests with adaptive
@@ -153,9 +155,11 @@ sing-box for Hysteria2/TUIC/WireGuard).
 - **Xray is the default engine** for VLESS, VMess, Trojan, and Shadowsocks
   (like Hiddify's `useXrayCoreWhenPossible`). sing-box is used only for
   Hysteria2, TUIC, and WireGuard where Xray lacks native support.
-- **mux.cool** multiplexes up to 8 concurrent streams over a single TLS
-  connection, eliminating per-connection handshake overhead (~300ms each).
-  Media-heavy apps like Telegram load images instantly.
+- **mux.cool is disabled** on every client outbound (`"mux": {"enabled": false,
+  "concurrency": -1}`): multiplexing parallel Telegram media streams into a
+  single TCP stream causes Head-of-Line blocking and artificial queuing, so
+  photo messages stalled seconds before sending. Plain per-stream TCP handles
+  Telegram media instantly now.
 
 ### Smart routing
 
@@ -219,6 +223,15 @@ without WiFi at boot):
 - Health checks are skipped when no route exists (no false "proxy dead").
 - When a network interface appears, the agent auto-recovers without
   manual container restarts.
+
+### Offline boot / master unreachable
+
+- The agent no longer hangs waiting for the master API: it starts the engine
+  from the cached `configs/last_known_good.json` when a subscription apply did
+  not succeed at boot, and keeps polling the master in the background.
+- On every verified-healthy apply the engine config is cached
+  (`last_known_good.json`); once the master link is restored the next poll
+  refreshes the tunnel without container restarts.
 
 ---
 

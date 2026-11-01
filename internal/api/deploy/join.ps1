@@ -333,8 +333,8 @@ try {
   "routing": {
     "domainStrategy": "IPIfNonMatch",
     "rules": [
-      { "type": "field", "port": 53, "network": "udp", "outboundTag": "direct" },
-      { "type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24"], "outboundTag": "direct" }
+      { "type": "field", "ip": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24", "91.105.192.0/23", "geoip:telegram"], "outboundTag": "direct" },
+      { "type": "field", "port": 53, "network": "udp", "outboundTag": "direct" }
     ]
   }
 }
@@ -358,7 +358,16 @@ try {
     { "type": "socks", "tag": "socks-in", "listen": "0.0.0.0", "listen_port": 6357, "udp": true, "users": [], "sniff": { "enabled": true, "override_destination": false, "route_only": true } },
     { "type": "http", "tag": "http-in", "listen": "0.0.0.0", "listen_port": 6358, "users": [], "sniff": { "enabled": true, "override_destination": true, "route_only": true } }
   ],
-  "route": { "final": "direct", "auto_detect_interface": true },
+  "route": {
+    "final": "direct",
+    "auto_detect_interface": true,
+    "rules": [
+      { "action": "route", "inbound": ["socks-in", "http-in"], "ip_cidr": ["91.108.0.0/16", "149.154.160.0/20", "185.76.151.0/24", "91.105.192.0/23"], "outbound": "direct" },
+      { "action": "route", "inbound": ["socks-in", "http-in"], "domain": ["geosite:telegram", "domain:telegram.org", "domain:telegram-cdn.org", "domain:telesco.pe"], "outbound": "direct" },
+      { "action": "resolve", "inbound": ["socks-in", "http-in"], "strategy": "ipv4_only" },
+      { "action": "sniff", "inbound": ["socks-in", "http-in"] }
+    ]
+  },
   "outbounds": [ { "type": "direct", "tag": "direct" } ]
 }
 '@ -Encoding UTF8
